@@ -194,7 +194,8 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - **Property 13: Backdrops Directory Creation**
     - **Validates: Requirements 5.2**
 
-  - [ ]* 6.4 Write property test for output path structure
+  - [x] 6.4 Write property test for output path structure
+
     - **Property 12: Output Path Structure**
     - **Validates: Requirements 5.1, 5.4, 5.5**
 

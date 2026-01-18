@@ -814,6 +814,176 @@ mod tests {
         }
     }
 
+    // Feature: video-clip-extractor, Property 12: Output Path Structure
+    // **Validates: Requirements 5.1, 5.4, 5.5**
+    proptest! {
+        #[test]
+        fn test_output_path_structure(
+            // Generate various video file names
+            video_name in "[a-zA-Z0-9_-]{1,20}\\.(mp4|mkv)",
+            // Test with different parent directory names
+            parent_dir_name in "[a-zA-Z0-9_-]{1,15}",
+            // Test with nested directory structures
+            use_nested in proptest::bool::ANY,
+        ) {
+            // Property: For any processed video, the output path should be in a subdirectory
+            // named "backdrops" (lowercase) relative to the source video's parent directory,
+            // with filename "backdrop.mp4" (lowercase).
+            
+            // Create a temporary directory for testing
+            let temp_base = std::env::temp_dir().join(format!(
+                "processor_path_structure_test_{}_{}",
+                std::process::id(),
+                rand::random::<u32>()
+            ));
+            let _ = fs::remove_dir_all(&temp_base);
+            
+            // Create parent directory structure (optionally nested)
+            let parent_dir = if use_nested {
+                // Create a nested structure: temp_base/nested/parent_dir_name
+                let nested = temp_base.join("nested");
+                fs::create_dir_all(&nested).unwrap();
+                nested.join(&parent_dir_name)
+            } else {
+                // Create a flat structure: temp_base/parent_dir_name
+                temp_base.join(&parent_dir_name)
+            };
+            
+            fs::create_dir_all(&parent_dir).unwrap();
+            
+            // Create test video file
+            let video_file = create_test_video_structure(&parent_dir, &video_name);
+            
+            // Create processor with mock selector
+            let selector = Box::new(MockSelector);
+            let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
+            let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0);
+            
+            // Call create_output_directory to get the output path
+            let output_path = processor.create_output_directory(&video_file);
+            
+            // Property 1: The method should succeed
+            prop_assert!(
+                output_path.is_ok(),
+                "create_output_directory should succeed for video {:?}",
+                video_file.path
+            );
+            
+            let output_path = output_path.unwrap();
+            
+            // Property 2 (CORE): The output path should be in a subdirectory named "backdrops"
+            // relative to the source video's parent directory
+            let expected_backdrops_dir = video_file.parent_dir.join("backdrops");
+            let actual_backdrops_dir = output_path.parent().unwrap();
+            
+            prop_assert_eq!(
+                actual_backdrops_dir,
+                &expected_backdrops_dir,
+                "Output path should be in a 'backdrops' subdirectory relative to the video's parent directory"
+            );
+            
+            // Property 3: The backdrops directory name should be "backdrops" in lowercase
+            let backdrops_dir_name = actual_backdrops_dir.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            
+            prop_assert_eq!(
+                backdrops_dir_name,
+                "backdrops",
+                "Subdirectory name should be 'backdrops' in lowercase (not 'Backdrops' or 'BACKDROPS')"
+            );
+            
+            // Property 4: The output filename should be "backdrop.mp4" in lowercase
+            let output_filename = output_path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            
+            prop_assert_eq!(
+                output_filename,
+                "backdrop.mp4",
+                "Output filename should be 'backdrop.mp4' in lowercase (not 'Backdrop.mp4' or 'BACKDROP.MP4')"
+            );
+            
+            // Property 5: The complete output path structure should be:
+            // <video_parent_dir>/backdrops/backdrop.mp4
+            let expected_output_path = video_file.parent_dir.join("backdrops").join("backdrop.mp4");
+            
+            prop_assert_eq!(
+                &output_path,
+                &expected_output_path,
+                "Complete output path should follow the structure: <video_parent_dir>/backdrops/backdrop.mp4"
+            );
+            
+            // Property 6: The backdrops directory should be a direct child of the video's parent directory
+            let backdrops_parent = actual_backdrops_dir.parent().unwrap();
+            
+            prop_assert_eq!(
+                backdrops_parent,
+                &video_file.parent_dir,
+                "Backdrops directory should be a direct child of the video's parent directory"
+            );
+            
+            // Property 7: The output path should be relative to the video's parent directory,
+            // not to some other location
+            prop_assert!(
+                output_path.starts_with(&video_file.parent_dir),
+                "Output path should start with the video's parent directory: {:?}",
+                video_file.parent_dir
+            );
+            
+            // Property 8: The path components should be in the correct order:
+            // parent_dir -> backdrops -> backdrop.mp4
+            let path_components: Vec<_> = output_path.components().collect();
+            let parent_components: Vec<_> = video_file.parent_dir.components().collect();
+            
+            // The output path should have exactly 2 more components than the parent dir
+            // (backdrops + backdrop.mp4)
+            prop_assert_eq!(
+                path_components.len(),
+                parent_components.len() + 2,
+                "Output path should have exactly 2 more components than parent dir (backdrops + backdrop.mp4)"
+            );
+            
+            // Property 9: Verify the backdrops directory was actually created
+            prop_assert!(
+                expected_backdrops_dir.exists(),
+                "Backdrops directory should be created at {:?}",
+                expected_backdrops_dir
+            );
+            
+            prop_assert!(
+                expected_backdrops_dir.is_dir(),
+                "Backdrops path should be a directory, not a file"
+            );
+            
+            // Property 10: The structure should work regardless of nesting level
+            // (whether the video is in a flat or nested directory structure)
+            if use_nested {
+                prop_assert!(
+                    output_path.to_string_lossy().contains("nested"),
+                    "Output path should preserve nested directory structure"
+                );
+            }
+            
+            // Property 11: The output path should not contain the video filename
+            // (it should be backdrop.mp4, not the original video name)
+            let video_filename = video_file.path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            
+            if video_filename != "backdrop.mp4" {
+                prop_assert!(
+                    !output_path.to_string_lossy().ends_with(video_filename),
+                    "Output path should not end with the original video filename '{}', should be 'backdrop.mp4'",
+                    video_filename
+                );
+            }
+            
+            // Clean up
+            let _ = fs::remove_dir_all(&temp_base);
+        }
+    }
+
     // Feature: video-clip-extractor, Property 14: Overwrite Existing Clips
     // **Validates: Requirements 5.3**
     proptest! {
