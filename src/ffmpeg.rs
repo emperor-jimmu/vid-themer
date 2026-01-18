@@ -1,6 +1,7 @@
 // FFmpeg command execution and video processing
 
 use crate::cli::Resolution;
+use std::path::Path;
 use std::process::Command;
 
 pub struct FFmpegExecutor {
@@ -40,6 +41,41 @@ impl FFmpegExecutor {
             Err(_) => Err(FFmpegError::NotFound),
         }
     }
+
+    /// Get the duration of a video file in seconds
+    pub fn get_duration(&self, video_path: &Path) -> Result<f64, FFmpegError> {
+        // Execute ffprobe to get video duration
+        // Command: ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 <video>
+        let output = Command::new("ffprobe")
+            .arg("-v")
+            .arg("error")
+            .arg("-show_entries")
+            .arg("format=duration")
+            .arg("-of")
+            .arg("default=noprint_wrappers=1:nokey=1")
+            .arg(video_path)
+            .output()
+            .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to execute ffprobe: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(FFmpegError::ExecutionFailed(format!(
+                "ffprobe failed: {}",
+                stderr
+            )));
+        }
+
+        // Parse the output to f64
+        let duration_str = String::from_utf8_lossy(&output.stdout);
+        let duration_str = duration_str.trim();
+
+        duration_str
+            .parse::<f64>()
+            .map_err(|e| FFmpegError::ParseError(format!(
+                "Failed to parse duration '{}': {}",
+                duration_str, e
+            )))
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -60,6 +96,7 @@ pub enum FFmpegError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn test_ffmpeg_availability() {
@@ -89,5 +126,38 @@ mod tests {
         // Test that we can create and match the NotFound error variant
         let error = FFmpegError::NotFound;
         assert_eq!(error.to_string(), "FFmpeg not found in PATH");
+    }
+
+    #[test]
+    fn test_get_duration_with_nonexistent_file() {
+        // Test error handling when video file doesn't exist
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let nonexistent_path = PathBuf::from("nonexistent_video.mp4");
+        
+        let result = executor.get_duration(&nonexistent_path);
+        
+        // Should return an error
+        assert!(result.is_err());
+        
+        // Verify it's an ExecutionFailed error
+        match result {
+            Err(FFmpegError::ExecutionFailed(_)) => {
+                // Expected error type
+            }
+            _ => panic!("Expected ExecutionFailed error for nonexistent file"),
+        }
+    }
+
+    #[test]
+    fn test_ffmpeg_error_variants() {
+        // Test that all error variants can be created and have correct messages
+        let execution_error = FFmpegError::ExecutionFailed("test error".to_string());
+        assert!(execution_error.to_string().contains("test error"));
+        
+        let parse_error = FFmpegError::ParseError("invalid format".to_string());
+        assert!(parse_error.to_string().contains("invalid format"));
+        
+        let no_audio_error = FFmpegError::NoAudioTrack;
+        assert_eq!(no_audio_error.to_string(), "Video has no audio track");
     }
 }

@@ -20,7 +20,7 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - Return appropriate error if FFmpeg not found
     - _Requirements: 2.11_
 
-  - [ ] 2.2 Implement video duration detection
+  - [x] 2.2 Implement video duration detection
     - Use `ffprobe` to query video duration
     - Parse duration output to f64 (handle fractional seconds)
     - Handle errors for corrupted or invalid videos
