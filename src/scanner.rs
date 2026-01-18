@@ -476,4 +476,128 @@ mod tests {
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
     }
+
+    // Feature: video-clip-extractor, Property 3: Skip Directories with Existing Clips
+    proptest! {
+        #[test]
+        fn test_skip_directories_with_existing_clips(
+            num_dirs_with_clips in 0usize..5,
+            num_dirs_without_clips in 1usize..5,
+            videos_per_dir in 1usize..3,
+        ) {
+            // Property: For any directory containing a backdrops/backdrop.mp4 file,
+            // the scanner should exclude all video files in that directory from the processing list
+            
+            // Create a temporary directory for testing
+            let temp_dir = std::env::temp_dir().join(format!(
+                "skip_dirs_test_{}_{}",
+                std::process::id(),
+                rand::random::<u32>()
+            ));
+            let _ = fs::remove_dir_all(&temp_dir); // Clean up if exists
+            fs::create_dir_all(&temp_dir).unwrap();
+            
+            let mut expected_videos = Vec::new();
+            let mut skipped_videos = Vec::new();
+            
+            // Create directories WITH existing backdrops/backdrop.mp4 (should be skipped)
+            for i in 0..num_dirs_with_clips {
+                let dir = temp_dir.join(format!("with_clip_{}", i));
+                fs::create_dir_all(&dir).unwrap();
+                
+                // Create the backdrops/backdrop.mp4 file
+                let backdrops_dir = dir.join("backdrops");
+                fs::create_dir_all(&backdrops_dir).unwrap();
+                let backdrop_file = backdrops_dir.join("backdrop.mp4");
+                let mut file = fs::File::create(&backdrop_file).unwrap();
+                file.write_all(b"existing backdrop content").unwrap();
+                
+                // Create video files in this directory (should be skipped)
+                for j in 0..videos_per_dir {
+                    let video_path = dir.join(format!("video_{}.mp4", j));
+                    let mut file = fs::File::create(&video_path).unwrap();
+                    file.write_all(b"video content").unwrap();
+                    skipped_videos.push(video_path);
+                }
+            }
+            
+            // Create directories WITHOUT existing backdrops (should be scanned)
+            for i in 0..num_dirs_without_clips {
+                let dir = temp_dir.join(format!("without_clip_{}", i));
+                fs::create_dir_all(&dir).unwrap();
+                
+                // Create video files in this directory (should be found)
+                for j in 0..videos_per_dir {
+                    let video_path = dir.join(format!("video_{}.mp4", j));
+                    let mut file = fs::File::create(&video_path).unwrap();
+                    file.write_all(b"video content").unwrap();
+                    expected_videos.push(video_path);
+                }
+            }
+            
+            // Create the scanner
+            let scanner = VideoScanner::new(temp_dir.clone());
+            
+            // Scan for videos
+            let result = scanner.scan();
+            prop_assert!(
+                result.is_ok(),
+                "Scanner should successfully scan directory structure"
+            );
+            
+            let found_videos = result.unwrap();
+            
+            // Property 1: Scanner should find only videos from directories WITHOUT existing clips
+            prop_assert_eq!(
+                found_videos.len(),
+                expected_videos.len(),
+                "Scanner should find exactly {} videos from {} directories without clips, \
+                 ignoring {} videos from {} directories with existing clips",
+                expected_videos.len(),
+                num_dirs_without_clips,
+                skipped_videos.len(),
+                num_dirs_with_clips
+            );
+            
+            // Property 2: All found videos should be from directories without existing clips
+            for video in &found_videos {
+                prop_assert!(
+                    expected_videos.contains(&video.path),
+                    "Found video {:?} should be from a directory without existing clips",
+                    video.path
+                );
+            }
+            
+            // Property 3: No videos from directories with existing clips should be found
+            for video in &found_videos {
+                prop_assert!(
+                    !skipped_videos.contains(&video.path),
+                    "Found video {:?} should NOT be from a directory with existing clips",
+                    video.path
+                );
+            }
+            
+            // Property 4: All expected videos should be found
+            for expected in &expected_videos {
+                prop_assert!(
+                    found_videos.iter().any(|v| v.path == *expected),
+                    "Expected video {:?} from directory without clips should be found",
+                    expected
+                );
+            }
+            
+            // Property 5: Verify that directories with backdrops/backdrop.mp4 are actually skipped
+            // by checking that none of their videos appear in results
+            for skipped in &skipped_videos {
+                prop_assert!(
+                    !found_videos.iter().any(|v| v.path == *skipped),
+                    "Skipped video {:?} from directory with existing clip should NOT be found",
+                    skipped
+                );
+            }
+            
+            // Clean up
+            let _ = fs::remove_dir_all(&temp_dir);
+        }
+    }
 }

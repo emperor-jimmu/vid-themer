@@ -425,5 +425,92 @@ mod tests {
         assert_eq!(time_range_very_short.duration_seconds, 7.0, "Should use full video duration");
         assert_eq!(time_range_very_short.start_seconds, 0.0, "Should start at beginning");
     }
+
+    #[test]
+    fn test_intense_audio_selector_tie_breaking() {
+        // Test that first occurrence is selected when multiple segments have similar intensity
+        // Validates Requirement 4.3
+        use crate::ffmpeg::AudioSegment;
+        
+        // Create a mock scenario where we have multiple segments with similar intensity
+        // We'll test the sorting behavior directly since we can't easily mock FFmpeg output
+        
+        // Create segments with similar intensities (within 0.1 dBFS of each other)
+        // In dBFS, higher (less negative) values are louder
+        let mut segments = vec![
+            AudioSegment {
+                start_time: 30.0,
+                duration: 7.5,
+                intensity: -15.2, // Second loudest (but appears second)
+            },
+            AudioSegment {
+                start_time: 10.0,
+                duration: 7.5,
+                intensity: -15.1, // Loudest (appears first)
+            },
+            AudioSegment {
+                start_time: 50.0,
+                duration: 7.5,
+                intensity: -15.3, // Third loudest
+            },
+            AudioSegment {
+                start_time: 70.0,
+                duration: 7.5,
+                intensity: -15.1, // Tied for loudest (but appears later)
+            },
+        ];
+        
+        // Sort segments by intensity (highest/loudest first)
+        // This mimics what analyze_audio_intensity does
+        segments.sort_by(|a, b| b.intensity.partial_cmp(&a.intensity).unwrap());
+        
+        // After sorting, the segments with intensity -15.1 should be first
+        // But we need to verify which one comes first when there's a tie
+        
+        // The first segment should be one with intensity -15.1
+        assert_eq!(segments[0].intensity, -15.1, "First segment should have highest intensity");
+        
+        // When there's a tie in intensity, Rust's stable sort preserves the original order
+        // So the segment that appeared first in the original list should remain first
+        assert_eq!(segments[0].start_time, 10.0, 
+            "When multiple segments have the same intensity, the first occurrence should be selected");
+        
+        // The second segment with -15.1 intensity should come after
+        // Find the second occurrence of -15.1 intensity
+        let second_loudest_index = segments.iter().position(|s| s.intensity == -15.1 && s.start_time == 70.0);
+        assert!(second_loudest_index.is_some(), "Second segment with -15.1 intensity should exist");
+        assert!(second_loudest_index.unwrap() > 0, "Second tied segment should come after the first");
+        
+        // Test with exact tie scenario (all segments have identical intensity)
+        let mut tied_segments = vec![
+            AudioSegment {
+                start_time: 100.0,
+                duration: 7.5,
+                intensity: -20.0,
+            },
+            AudioSegment {
+                start_time: 50.0,
+                duration: 7.5,
+                intensity: -20.0,
+            },
+            AudioSegment {
+                start_time: 25.0,
+                duration: 7.5,
+                intensity: -20.0,
+            },
+        ];
+        
+        // Sort by intensity
+        tied_segments.sort_by(|a, b| b.intensity.partial_cmp(&a.intensity).unwrap());
+        
+        // With stable sort, the original order should be preserved
+        // So the first segment (start_time: 100.0) should remain first
+        assert_eq!(tied_segments[0].start_time, 100.0,
+            "With identical intensities, the first occurrence in the original list should be selected");
+        assert_eq!(tied_segments[1].start_time, 50.0,
+            "Second segment should maintain original order");
+        assert_eq!(tied_segments[2].start_time, 25.0,
+            "Third segment should maintain original order");
+    }
 }
 

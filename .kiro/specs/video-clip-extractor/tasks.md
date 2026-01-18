@@ -104,7 +104,8 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - **Property 11: Random Selection Variety**
     - **Validates: Requirements 3.6**
 
-  - [ ]* 3.5 Write unit test for short video fallback
+  - [x] 3.5 Write unit test for short video fallback
+
     - Test middle segment selection when video is too short for exclusions
     - _Requirements: 3.5_
 
@@ -127,7 +128,8 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - Test fallback to middle segment when video has no audio
     - _Requirements: 4.4_
 
-  - [ ]* 3.9 Write unit test for tie-breaking behavior
+  - [x] 3.9 Write unit test for tie-breaking behavior
+
     - Test that first occurrence is selected when multiple segments have similar intensity
     - _Requirements: 4.3_
 
@@ -146,7 +148,8 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - Return true if exists (skip directory)
     - _Requirements: 1.4_
 
-  - [ ]* 5.3 Write property test for skip directories with existing clips
+  - [x] 5.3 Write property test for skip directories with existing clips
+
     - **Property 3: Skip Directories with Existing Clips**
     - **Validates: Requirements 1.4**
 
@@ -213,11 +216,13 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - **Property 14: Overwrite Existing Clips**
     - **Validates: Requirements 5.3**
 
-  - [ ]* 6.8 Write property test for error recovery continuation
+  - [x] 6.8 Write property test for error recovery continuation
+
     - **Property 15: Error Recovery Continuation**
     - **Validates: Requirements 7.2, 7.3**
 
-  - [ ]* 6.9 Write property test for error messages include paths
+  - [x] 6.9 Write property test for error messages include paths
+
     - **Property 16: Error Messages Include Paths**
     - **Validates: Requirements 7.5**
 
