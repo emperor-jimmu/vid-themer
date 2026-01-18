@@ -26,10 +26,10 @@ impl ClipSelector for RandomSelector {
     ) -> Result<TimeRange, SelectionError> {
         const INTRO_EXCLUSION: f64 = 60.0;  // Exclude first 60 seconds
         const OUTRO_EXCLUSION: f64 = 240.0; // Exclude last 240 seconds
-        const MIN_CLIP_DURATION: f64 = 5.0;
-        const MAX_CLIP_DURATION: f64 = 10.0;
+        const MIN_CLIP_DURATION: f64 = 8.0;
+        const MAX_CLIP_DURATION: f64 = 12.0;
         
-        // Generate random clip duration between 5 and 10 seconds
+        // Generate random clip duration between 8 and 12 seconds
         let mut rng = rand::thread_rng();
         let clip_duration = rng.gen_range(MIN_CLIP_DURATION..=MAX_CLIP_DURATION);
         
@@ -78,15 +78,15 @@ impl ClipSelector for IntenseAudioSelector {
         video_path: &Path,
         duration: f64,
     ) -> Result<TimeRange, SelectionError> {
-        const MIN_CLIP_DURATION: f64 = 5.0;
-        const MAX_CLIP_DURATION: f64 = 10.0;
+        const MIN_CLIP_DURATION: f64 = 8.0;
+        const MAX_CLIP_DURATION: f64 = 12.0;
         
         // Try to analyze audio intensity
         match self.ffmpeg_executor.analyze_audio_intensity(video_path, duration) {
             Ok(segments) => {
                 // Select the segment with highest audio intensity (first in sorted list)
                 if let Some(loudest_segment) = segments.first() {
-                    // Use the segment's duration, but cap it between 5-10 seconds
+                    // Use the segment's duration, but cap it between 8-12 seconds
                     let clip_duration = loudest_segment.duration
                         .max(MIN_CLIP_DURATION)
                         .min(MAX_CLIP_DURATION)
@@ -129,10 +129,10 @@ impl ClipSelector for IntenseAudioSelector {
 impl IntenseAudioSelector {
     /// Calculate middle segment as fallback when audio analysis fails or no audio track exists
     fn middle_segment(duration: f64) -> Result<TimeRange, SelectionError> {
-        const MIN_CLIP_DURATION: f64 = 5.0;
-        const MAX_CLIP_DURATION: f64 = 10.0;
+        const MIN_CLIP_DURATION: f64 = 8.0;
+        const MAX_CLIP_DURATION: f64 = 12.0;
         
-        // Use 7.5 seconds as default clip duration (middle of 5-10 range)
+        // Use 10 seconds as default clip duration (middle of 8-12 range)
         let clip_duration = MAX_CLIP_DURATION.min(duration);
         let actual_duration = clip_duration.max(MIN_CLIP_DURATION).min(duration);
         
@@ -165,28 +165,28 @@ mod tests {
     // Feature: video-clip-extractor, Property 10: Random Selection Valid Bounds
     proptest! {
         #[test]
-        fn test_random_selection_valid_bounds(duration in 315.0..3600.0f64) {
+        fn test_random_selection_valid_bounds(duration in 320.0..3600.0f64) {
             // Test that for videos long enough to accommodate exclusions,
             // the selected segment respects the intro and outro exclusion zones
             
             const INTRO_EXCLUSION: f64 = 60.0;
             const OUTRO_EXCLUSION: f64 = 240.0;
-            const MIN_CLIP_DURATION: f64 = 5.0;
-            const MAX_CLIP_DURATION: f64 = 10.0;
+            const MIN_CLIP_DURATION: f64 = 8.0;
+            const MAX_CLIP_DURATION: f64 = 12.0;
             
             let selector = RandomSelector;
             let video_path = PathBuf::from("test.mp4");
             
             // Only test videos that are long enough for exclusions
-            // Required: INTRO_EXCLUSION + MIN_CLIP_DURATION + OUTRO_EXCLUSION = 305 seconds
-            // We test from 315 seconds to give some margin
+            // Required: INTRO_EXCLUSION + MIN_CLIP_DURATION + OUTRO_EXCLUSION = 308 seconds
+            // We test from 320 seconds to give some margin
             
             let result = selector.select_segment(&video_path, duration);
             prop_assert!(result.is_ok(), "Selection should succeed for valid duration");
             
             let time_range = result.unwrap();
             
-            // Property 1: Clip duration should be between 5 and 10 seconds
+            // Property 1: Clip duration should be between 8 and 12 seconds
             prop_assert!(time_range.duration_seconds >= MIN_CLIP_DURATION,
                 "Clip duration {} should be >= {}", time_range.duration_seconds, MIN_CLIP_DURATION);
             prop_assert!(time_range.duration_seconds <= MAX_CLIP_DURATION,
@@ -220,9 +220,9 @@ mod tests {
         
         let time_range = result.unwrap();
         
-        // Verify clip duration is between 5 and 10 seconds
-        assert!(time_range.duration_seconds >= 5.0);
-        assert!(time_range.duration_seconds <= 10.0);
+        // Verify clip duration is between 8 and 12 seconds
+        assert!(time_range.duration_seconds >= 8.0);
+        assert!(time_range.duration_seconds <= 12.0);
         
         // Verify start time respects exclusion zones
         assert!(time_range.start_seconds >= 60.0); // After intro exclusion
@@ -240,9 +240,9 @@ mod tests {
         
         let time_range = result.unwrap();
         
-        // Verify clip duration is between 5 and 10 seconds
-        assert!(time_range.duration_seconds >= 5.0);
-        assert!(time_range.duration_seconds <= 10.0);
+        // Verify clip duration is between 8 and 12 seconds
+        assert!(time_range.duration_seconds >= 8.0);
+        assert!(time_range.duration_seconds <= 12.0);
         
         // Verify it uses middle segment (start should be roughly in the middle)
         let expected_middle = (duration - time_range.duration_seconds) / 2.0;
@@ -327,11 +327,11 @@ mod tests {
         
         let time_range = result.unwrap();
         
-        // Should use 10 seconds (max clip duration)
-        assert_eq!(time_range.duration_seconds, 10.0);
+        // Should use 12 seconds (max clip duration)
+        assert_eq!(time_range.duration_seconds, 12.0);
         
-        // Should be centered: (600 - 10) / 2 = 295
-        assert_eq!(time_range.start_seconds, 295.0);
+        // Should be centered: (600 - 12) / 2 = 294
+        assert_eq!(time_range.start_seconds, 294.0);
     }
 
     #[test]
@@ -395,10 +395,10 @@ mod tests {
         let time_range = result.unwrap();
         
         // Verify it uses middle segment calculation
-        // For a 600 second video, with 10 second clip duration:
-        // start = (600 - 10) / 2 = 295
-        assert_eq!(time_range.duration_seconds, 10.0, "Should use max clip duration (10s)");
-        assert_eq!(time_range.start_seconds, 295.0, "Should center the clip in the video");
+        // For a 600 second video, with 12 second clip duration:
+        // start = (600 - 12) / 2 = 294
+        assert_eq!(time_range.duration_seconds, 12.0, "Should use max clip duration (12s)");
+        assert_eq!(time_range.start_seconds, 294.0, "Should center the clip in the video");
         
         // Test with a shorter video
         let short_duration = 120.0; // 2 minutes
@@ -408,12 +408,12 @@ mod tests {
         
         let time_range_short = result_short.unwrap();
         
-        // For a 120 second video, with 10 second clip:
-        // start = (120 - 10) / 2 = 55
-        assert_eq!(time_range_short.duration_seconds, 10.0);
-        assert_eq!(time_range_short.start_seconds, 55.0);
+        // For a 120 second video, with 12 second clip:
+        // start = (120 - 12) / 2 = 54
+        assert_eq!(time_range_short.duration_seconds, 12.0);
+        assert_eq!(time_range_short.start_seconds, 54.0);
         
-        // Test with a very short video (< 10 seconds)
+        // Test with a very short video (< 12 seconds)
         let very_short_duration = 7.0; // 7 seconds
         let result_very_short = selector.select_segment(&video_path, very_short_duration);
         
