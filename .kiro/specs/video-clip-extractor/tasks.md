@@ -202,11 +202,13 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - Handle errors gracefully (log and continue)
     - _Requirements: 2.1, 2.2, 2.3, 5.1, 5.2, 5.3, 7.2, 7.3_
 
-  - [ ]* 6.6 Write property test for output file naming
+  - [x] 6.6 Write property test for output file naming
+
     - **Property 6: Output File Naming**
     - **Validates: Requirements 2.3, 5.5**
 
-  - [ ]* 6.7 Write property test for overwrite existing clips
+  - [x] 6.7 Write property test for overwrite existing clips
+
     - **Property 14: Overwrite Existing Clips**
     - **Validates: Requirements 5.3**
 
