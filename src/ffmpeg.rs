@@ -132,6 +132,35 @@ impl FFmpegExecutor {
 
         Ok((width, height))
     }
+
+    /// Calculate the scale filter for FFmpeg based on target resolution
+    /// Returns None if source resolution is smaller than target (no upscaling)
+    /// Returns Some(filter_string) with letterboxing if scaling is needed
+    pub fn calculate_scale_filter(&self, source_resolution: (u32, u32)) -> Option<String> {
+        let (source_width, source_height) = source_resolution;
+        
+        // Determine target resolution based on configuration
+        let (target_width, target_height) = match self.resolution {
+            Resolution::Hd720 => (1280u32, 720u32),
+            Resolution::Hd1080 => (1920u32, 1080u32),
+        };
+
+        // No upscaling: if source is smaller than target, return None
+        if source_width <= target_width && source_height <= target_height {
+            return None;
+        }
+
+        // Generate scale filter with letterboxing
+        // scale=W:H:force_original_aspect_ratio=decrease,pad=W:H:(ow-iw)/2:(oh-ih)/2
+        // This scales down to fit within target dimensions while maintaining aspect ratio,
+        // then pads with black bars to reach exact target dimensions
+        let filter = format!(
+            "scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2",
+            target_width, target_height, target_width, target_height
+        );
+
+        Some(filter)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -259,5 +288,129 @@ mod tests {
         
         // Should return an error (either ExecutionFailed or ParseError)
         assert!(result.is_err());
+    }
+
+    // Tests for calculate_scale_filter
+
+    #[test]
+    fn test_calculate_scale_filter_no_upscaling_smaller_source() {
+        // Test that no scaling is applied when source is smaller than target
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        
+        // Source: 1280x720 (smaller than 1920x1080)
+        let result = executor.calculate_scale_filter((1280, 720));
+        
+        // Should return None (no upscaling)
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_calculate_scale_filter_no_upscaling_equal_source() {
+        // Test that no scaling is applied when source equals target
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        
+        // Source: 1920x1080 (equal to target)
+        let result = executor.calculate_scale_filter((1920, 1080));
+        
+        // Should return None (no upscaling)
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_calculate_scale_filter_downscaling_1080p() {
+        // Test that scaling is applied when source is larger than target (1080p)
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        
+        // Source: 3840x2160 (4K, larger than 1920x1080)
+        let result = executor.calculate_scale_filter((3840, 2160));
+        
+        // Should return scale filter with letterboxing
+        assert!(result.is_some());
+        let filter = result.unwrap();
+        assert!(filter.contains("scale=1920:1080"));
+        assert!(filter.contains("force_original_aspect_ratio=decrease"));
+        assert!(filter.contains("pad=1920:1080"));
+        assert!(filter.contains("(ow-iw)/2:(oh-ih)/2"));
+    }
+
+    #[test]
+    fn test_calculate_scale_filter_downscaling_720p() {
+        // Test that scaling is applied when source is larger than target (720p)
+        let executor = FFmpegExecutor::new(Resolution::Hd720, true);
+        
+        // Source: 1920x1080 (larger than 1280x720)
+        let result = executor.calculate_scale_filter((1920, 1080));
+        
+        // Should return scale filter with letterboxing
+        assert!(result.is_some());
+        let filter = result.unwrap();
+        assert!(filter.contains("scale=1280:720"));
+        assert!(filter.contains("force_original_aspect_ratio=decrease"));
+        assert!(filter.contains("pad=1280:720"));
+        assert!(filter.contains("(ow-iw)/2:(oh-ih)/2"));
+    }
+
+    #[test]
+    fn test_calculate_scale_filter_no_upscaling_720p_smaller() {
+        // Test no upscaling for 720p target with smaller source
+        let executor = FFmpegExecutor::new(Resolution::Hd720, true);
+        
+        // Source: 640x480 (smaller than 1280x720)
+        let result = executor.calculate_scale_filter((640, 480));
+        
+        // Should return None (no upscaling)
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_calculate_scale_filter_partial_upscaling_width() {
+        // Test no upscaling when only width is smaller
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        
+        // Source: 1280x2160 (width smaller, height larger)
+        let result = executor.calculate_scale_filter((1280, 2160));
+        
+        // Should return scale filter (height is larger, so we scale down)
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_calculate_scale_filter_partial_upscaling_height() {
+        // Test no upscaling when only height is smaller
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        
+        // Source: 3840x720 (width larger, height smaller)
+        let result = executor.calculate_scale_filter((3840, 720));
+        
+        // Should return scale filter (width is larger, so we scale down)
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_calculate_scale_filter_format_correctness() {
+        // Test that the filter string format is exactly as expected
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        
+        // Source: 3840x2160
+        let result = executor.calculate_scale_filter((3840, 2160));
+        
+        assert_eq!(
+            result,
+            Some("scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_calculate_scale_filter_format_correctness_720p() {
+        // Test that the filter string format is exactly as expected for 720p
+        let executor = FFmpegExecutor::new(Resolution::Hd720, true);
+        
+        // Source: 1920x1080
+        let result = executor.calculate_scale_filter((1920, 1080));
+        
+        assert_eq!(
+            result,
+            Some("scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2".to_string())
+        );
     }
 }

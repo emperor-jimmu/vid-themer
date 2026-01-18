@@ -36,7 +36,7 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - Handle errors for invalid videos
     - _Requirements: 2.5, 2.6, 2.7_
 
-  - [ ] 2.5 Implement scale filter calculation
+  - [x] 2.5 Implement scale filter calculation
     - Determine target resolution based on configuration
     - Return None if source resolution is smaller (no upscaling)
     - Generate FFmpeg scale filter string with letterboxing
