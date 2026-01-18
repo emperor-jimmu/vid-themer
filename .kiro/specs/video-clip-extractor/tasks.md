@@ -115,14 +115,15 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - Return sorted list of audio segments by intensity
     - _Requirements: 4.2, 4.5_
 
-  - [ ] 3.7 Implement IntenseAudioSelector
+  - [x] 3.7 Implement IntenseAudioSelector
     - Use FFmpegExecutor to analyze audio intensity
     - Select segment with highest audio intensity
     - Handle tie-breaking (select first occurrence)
     - Fall back to middle segment if no audio track
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
 
-  - [ ]* 3.8 Write unit test for no audio fallback
+  - [x] 3.8 Write unit test for no audio fallback
+
     - Test fallback to middle segment when video has no audio
     - _Requirements: 4.4_
 

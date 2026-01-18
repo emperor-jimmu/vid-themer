@@ -62,7 +62,89 @@ impl ClipSelector for RandomSelector {
     }
 }
 
-pub struct IntenseAudioSelector;
+pub struct IntenseAudioSelector {
+    ffmpeg_executor: crate::ffmpeg::FFmpegExecutor,
+}
+
+impl IntenseAudioSelector {
+    pub fn new(ffmpeg_executor: crate::ffmpeg::FFmpegExecutor) -> Self {
+        Self { ffmpeg_executor }
+    }
+}
+
+impl ClipSelector for IntenseAudioSelector {
+    fn select_segment(
+        &self,
+        video_path: &Path,
+        duration: f64,
+    ) -> Result<TimeRange, SelectionError> {
+        const MIN_CLIP_DURATION: f64 = 5.0;
+        const MAX_CLIP_DURATION: f64 = 10.0;
+        
+        // Try to analyze audio intensity
+        match self.ffmpeg_executor.analyze_audio_intensity(video_path, duration) {
+            Ok(segments) => {
+                // Select the segment with highest audio intensity (first in sorted list)
+                if let Some(loudest_segment) = segments.first() {
+                    // Use the segment's duration, but cap it between 5-10 seconds
+                    let clip_duration = loudest_segment.duration
+                        .max(MIN_CLIP_DURATION)
+                        .min(MAX_CLIP_DURATION)
+                        .min(duration); // Don't exceed video duration
+                    
+                    // Ensure the clip fits within the video
+                    let start = loudest_segment.start_time;
+                    let end = start + clip_duration;
+                    
+                    if end <= duration {
+                        return Ok(TimeRange {
+                            start_seconds: start,
+                            duration_seconds: clip_duration,
+                        });
+                    } else {
+                        // Adjust start time to fit the clip within video duration
+                        let adjusted_start = (duration - clip_duration).max(0.0);
+                        return Ok(TimeRange {
+                            start_seconds: adjusted_start,
+                            duration_seconds: clip_duration,
+                        });
+                    }
+                }
+                
+                // No segments found, fall back to middle segment
+                Self::middle_segment(duration)
+            }
+            Err(crate::ffmpeg::FFmpegError::NoAudioTrack) => {
+                // No audio track, fall back to middle segment
+                Self::middle_segment(duration)
+            }
+            Err(e) => {
+                // Other errors, return as SelectionError
+                Err(SelectionError::AudioAnalysisFailed(e.to_string()))
+            }
+        }
+    }
+}
+
+impl IntenseAudioSelector {
+    /// Calculate middle segment as fallback when audio analysis fails or no audio track exists
+    fn middle_segment(duration: f64) -> Result<TimeRange, SelectionError> {
+        const MIN_CLIP_DURATION: f64 = 5.0;
+        const MAX_CLIP_DURATION: f64 = 10.0;
+        
+        // Use 7.5 seconds as default clip duration (middle of 5-10 range)
+        let clip_duration = MAX_CLIP_DURATION.min(duration);
+        let actual_duration = clip_duration.max(MIN_CLIP_DURATION).min(duration);
+        
+        // Calculate start time to center the clip
+        let start = ((duration - actual_duration) / 2.0).max(0.0);
+        
+        Ok(TimeRange {
+            start_seconds: start,
+            duration_seconds: actual_duration,
+        })
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum SelectionError {
@@ -231,4 +313,117 @@ mod tests {
                 start_times.len(), first);
         }
     }
+
+    // Tests for IntenseAudioSelector
+
+    #[test]
+    fn test_intense_audio_selector_middle_segment_fallback() {
+        // Test that middle_segment helper calculates correct fallback
+        let duration = 600.0; // 10 minutes
+        
+        let result = IntenseAudioSelector::middle_segment(duration);
+        assert!(result.is_ok());
+        
+        let time_range = result.unwrap();
+        
+        // Should use 10 seconds (max clip duration)
+        assert_eq!(time_range.duration_seconds, 10.0);
+        
+        // Should be centered: (600 - 10) / 2 = 295
+        assert_eq!(time_range.start_seconds, 295.0);
+    }
+
+    #[test]
+    fn test_intense_audio_selector_middle_segment_short_video() {
+        // Test middle_segment with a short video
+        let duration = 7.0; // 7 seconds
+        
+        let result = IntenseAudioSelector::middle_segment(duration);
+        assert!(result.is_ok());
+        
+        let time_range = result.unwrap();
+        
+        // Should use full video duration (7 seconds)
+        assert_eq!(time_range.duration_seconds, 7.0);
+        
+        // Should start at 0 (centered)
+        assert_eq!(time_range.start_seconds, 0.0);
+    }
+
+    #[test]
+    fn test_intense_audio_selector_middle_segment_very_short_video() {
+        // Test middle_segment with a very short video (< 5 seconds)
+        let duration = 3.0; // 3 seconds
+        
+        let result = IntenseAudioSelector::middle_segment(duration);
+        assert!(result.is_ok());
+        
+        let time_range = result.unwrap();
+        
+        // Should use full video duration
+        assert_eq!(time_range.duration_seconds, 3.0);
+        
+        // Should start at 0
+        assert_eq!(time_range.start_seconds, 0.0);
+    }
+
+    #[test]
+    fn test_intense_audio_selector_no_audio_fallback() {
+        // Test fallback to middle segment when video has no audio
+        // Validates Requirement 4.4
+        use crate::cli::Resolution;
+        use std::path::PathBuf;
+
+        // Create an FFmpegExecutor
+        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
+        
+        // Create IntenseAudioSelector
+        let selector = IntenseAudioSelector::new(ffmpeg_executor);
+        
+        // Use a non-existent video path - this will cause audio analysis to fail
+        // which simulates a video with no audio track
+        let video_path = PathBuf::from("/nonexistent/video_no_audio.mp4");
+        let duration = 600.0; // 10 minutes
+        
+        // The selector should fall back to middle segment when audio analysis fails
+        let result = selector.select_segment(&video_path, duration);
+        
+        // The result should be Ok (fallback to middle segment)
+        assert!(result.is_ok(), "Should fall back to middle segment when no audio track");
+        
+        let time_range = result.unwrap();
+        
+        // Verify it uses middle segment calculation
+        // For a 600 second video, with 10 second clip duration:
+        // start = (600 - 10) / 2 = 295
+        assert_eq!(time_range.duration_seconds, 10.0, "Should use max clip duration (10s)");
+        assert_eq!(time_range.start_seconds, 295.0, "Should center the clip in the video");
+        
+        // Test with a shorter video
+        let short_duration = 120.0; // 2 minutes
+        let result_short = selector.select_segment(&video_path, short_duration);
+        
+        assert!(result_short.is_ok(), "Should fall back to middle segment for short video");
+        
+        let time_range_short = result_short.unwrap();
+        
+        // For a 120 second video, with 10 second clip:
+        // start = (120 - 10) / 2 = 55
+        assert_eq!(time_range_short.duration_seconds, 10.0);
+        assert_eq!(time_range_short.start_seconds, 55.0);
+        
+        // Test with a very short video (< 10 seconds)
+        let very_short_duration = 7.0; // 7 seconds
+        let result_very_short = selector.select_segment(&video_path, very_short_duration);
+        
+        assert!(result_very_short.is_ok(), "Should fall back to middle segment for very short video");
+        
+        let time_range_very_short = result_very_short.unwrap();
+        
+        // For a 7 second video, clip duration should be capped at 7 seconds
+        // start = (7 - 7) / 2 = 0
+        assert_eq!(time_range_very_short.duration_seconds, 7.0, "Should use full video duration");
+        assert_eq!(time_range_very_short.start_seconds, 0.0, "Should start at beginning");
+    }
 }
+
