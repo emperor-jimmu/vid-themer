@@ -184,6 +184,133 @@ mod tests {
         }
     }
 
+    // Feature: video-clip-extractor, Property 13: Backdrops Directory Creation
+    // **Validates: Requirements 5.2**
+    proptest! {
+        #[test]
+        fn test_backdrops_directory_creation(
+            // Generate various video file names
+            video_name in "[a-zA-Z0-9_-]{1,20}\\.(mp4|mkv)",
+            // Test with different parent directory names
+            parent_dir_name in "[a-zA-Z0-9_-]{1,15}",
+        ) {
+            // Property: For any video in a directory without an existing backdrops folder,
+            // the tool should create the backdrops directory before writing the output
+            
+            // Create a temporary directory for testing
+            let temp_base = std::env::temp_dir().join(format!(
+                "processor_backdrops_test_{}_{}",
+                std::process::id(),
+                rand::random::<u32>()
+            ));
+            let _ = fs::remove_dir_all(&temp_base);
+            
+            // Create parent directory with the generated name
+            let parent_dir = temp_base.join(&parent_dir_name);
+            fs::create_dir_all(&parent_dir).unwrap();
+            
+            // Create test video file
+            let video_file = create_test_video_structure(&parent_dir, &video_name);
+            
+            // Verify the backdrops directory does NOT exist initially
+            let backdrops_dir = parent_dir.join("backdrops");
+            prop_assert!(
+                !backdrops_dir.exists(),
+                "Backdrops directory should not exist before processing"
+            );
+            
+            // Create processor with mock selector
+            let selector = Box::new(MockSelector);
+            let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
+            let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0);
+            
+            // Call create_output_directory to trigger directory creation
+            let output_path = processor.create_output_directory(&video_file);
+            
+            // Property 1: The method should succeed
+            prop_assert!(
+                output_path.is_ok(),
+                "create_output_directory should succeed for video {:?}",
+                video_file.path
+            );
+            
+            let output_path = output_path.unwrap();
+            
+            // Property 2 (CORE): The backdrops directory should now exist
+            // This is the main property being tested - directory creation
+            prop_assert!(
+                backdrops_dir.exists(),
+                "Backdrops directory should be created at {:?} when it didn't exist before",
+                backdrops_dir
+            );
+            
+            // Property 3: The created path should be a directory (not a file)
+            prop_assert!(
+                backdrops_dir.is_dir(),
+                "Backdrops path should be a directory, not a file"
+            );
+            
+            // Property 4: The backdrops directory should be in the video's parent directory
+            let backdrops_parent = backdrops_dir.parent().unwrap();
+            prop_assert_eq!(
+                backdrops_parent,
+                &video_file.parent_dir,
+                "Backdrops directory should be created in the video's parent directory"
+            );
+            
+            // Property 5: The backdrops directory name should be "backdrops" (lowercase)
+            let backdrops_dir_name = backdrops_dir.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            
+            prop_assert_eq!(
+                backdrops_dir_name,
+                "backdrops",
+                "Directory name should be 'backdrops' in lowercase"
+            );
+            
+            // Property 6: The output path should point to backdrop.mp4 inside the created directory
+            let expected_output = backdrops_dir.join("backdrop.mp4");
+            prop_assert_eq!(
+                &output_path,
+                &expected_output,
+                "Output path should be backdrops/backdrop.mp4"
+            );
+            
+            // Property 7: The parent of the output file should be the backdrops directory
+            let output_parent = output_path.parent().unwrap();
+            prop_assert_eq!(
+                output_parent,
+                &backdrops_dir,
+                "Output file's parent should be the backdrops directory"
+            );
+            
+            // Property 8: Calling create_output_directory again should succeed (idempotent)
+            // The directory already exists now, but the method should still work
+            let output_path_2 = processor.create_output_directory(&video_file);
+            prop_assert!(
+                output_path_2.is_ok(),
+                "create_output_directory should succeed even when directory already exists (idempotent)"
+            );
+            
+            // Property 9: The backdrops directory should still exist after second call
+            prop_assert!(
+                backdrops_dir.exists(),
+                "Backdrops directory should still exist after second call"
+            );
+            
+            // Property 10: Both calls should return the same output path
+            prop_assert_eq!(
+                &output_path,
+                &output_path_2.unwrap(),
+                "Multiple calls should return the same output path"
+            );
+            
+            // Clean up
+            let _ = fs::remove_dir_all(&temp_base);
+        }
+    }
+
     // Feature: video-clip-extractor, Property 6: Output File Naming
     // **Validates: Requirements 2.3, 5.5**
     proptest! {
