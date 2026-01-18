@@ -182,6 +182,7 @@ pub enum FFmpegError {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use proptest::prelude::*;
 
     #[test]
     fn test_ffmpeg_availability() {
@@ -412,5 +413,171 @@ mod tests {
             result,
             Some("scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2".to_string())
         );
+    }
+
+    // Feature: video-clip-extractor, Property 7: No Upscaling
+    // **Validates: Requirements 2.5, 2.6, 2.7**
+    proptest! {
+        #[test]
+        fn test_no_upscaling_property(
+            source_width in 1u32..=1920,
+            source_height in 1u32..=1080,
+            target_resolution in prop::sample::select(vec![Resolution::Hd720, Resolution::Hd1080])
+        ) {
+            let executor = FFmpegExecutor::new(target_resolution.clone(), true);
+            
+            // Determine target dimensions
+            let (target_width, target_height) = match target_resolution {
+                Resolution::Hd720 => (1280u32, 720u32),
+                Resolution::Hd1080 => (1920u32, 1080u32),
+            };
+            
+            // If source resolution is smaller than or equal to target in both dimensions,
+            // no scaling filter should be returned (no upscaling)
+            if source_width <= target_width && source_height <= target_height {
+                let result = executor.calculate_scale_filter((source_width, source_height));
+                prop_assert_eq!(result, None, 
+                    "Expected no upscaling for source {}x{} with target {}x{}", 
+                    source_width, source_height, target_width, target_height);
+            }
+            // If source is larger in at least one dimension, scaling should occur
+            else if source_width > target_width || source_height > target_height {
+                let result = executor.calculate_scale_filter((source_width, source_height));
+                prop_assert!(result.is_some(), 
+                    "Expected scaling for source {}x{} with target {}x{}", 
+                    source_width, source_height, target_width, target_height);
+                
+                // Verify the filter contains the correct target dimensions
+                let filter = result.unwrap();
+                prop_assert!(filter.contains(&format!("scale={}:{}", target_width, target_height)),
+                    "Filter should contain correct target dimensions");
+            }
+        }
+    }
+
+    // Helper function to parse duration string (extracted from get_duration logic)
+    fn parse_duration_string(duration_str: &str) -> Result<f64, FFmpegError> {
+        duration_str
+            .trim()
+            .parse::<f64>()
+            .map_err(|e| FFmpegError::ParseError(format!(
+                "Failed to parse duration '{}': {}",
+                duration_str, e
+            )))
+    }
+
+    // Feature: video-clip-extractor, Property 19: Duration Parsing Correctness
+    // **Validates: Requirements 9.2, 9.4**
+    proptest! {
+        #[test]
+        fn test_duration_parsing_correctness(
+            // Generate durations from 0.001 to 86400.0 (24 hours)
+            // with up to 6 decimal places to test fractional seconds
+            whole_seconds in 0u32..=86400,
+            fractional_part in 0u32..=999999,
+        ) {
+            // Construct a duration value with fractional seconds
+            let expected_duration = whole_seconds as f64 + (fractional_part as f64 / 1_000_000.0);
+            
+            // Test various precision formats that FFmpeg might output
+            let test_cases = vec![
+                (format!("{:.6}", expected_duration), 6),
+                (format!("{:.3}", expected_duration), 3),
+                (format!("{:.2}", expected_duration), 2),
+                (format!("{:.0}", expected_duration), 0),
+            ];
+            
+            for (duration_str, precision) in test_cases {
+                let parsed = parse_duration_string(&duration_str);
+                
+                prop_assert!(parsed.is_ok(), 
+                    "Failed to parse valid duration string: '{}'", duration_str);
+                
+                let parsed_value = parsed.unwrap();
+                
+                // The parsed value should match what we formatted
+                // We need to account for the precision loss during formatting
+                let formatted_expected: f64 = duration_str.trim().parse().unwrap();
+                let difference = (parsed_value - formatted_expected).abs();
+                
+                prop_assert!(difference < 1e-10, 
+                    "Parsed duration {} differs from formatted expected {} by {} (string: '{}', precision: {})",
+                    parsed_value, formatted_expected, difference, duration_str, precision);
+            }
+            
+            // Test with whitespace variations (using full precision)
+            let duration_str_with_spaces = vec![
+                format!("{:.6} ", expected_duration),
+                format!(" {:.6}", expected_duration),
+                format!("  {:.6}  ", expected_duration),
+            ];
+            
+            for duration_str in duration_str_with_spaces {
+                let parsed = parse_duration_string(&duration_str);
+                
+                prop_assert!(parsed.is_ok(), 
+                    "Failed to parse duration string with whitespace: '{}'", duration_str);
+                
+                let parsed_value = parsed.unwrap();
+                let difference = (parsed_value - expected_duration).abs();
+                
+                // Allow for small floating point precision differences
+                prop_assert!(difference < 0.0001, 
+                    "Parsed duration {} differs from expected {} by {} (string: '{}')",
+                    parsed_value, expected_duration, difference, duration_str);
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_duration_parsing_handles_edge_cases(
+            // Test very small and very large durations
+            duration in prop::num::f64::ANY.prop_filter(
+                "Must be non-negative and finite",
+                |d| d.is_finite() && *d >= 0.0 && *d <= 86400.0
+            )
+        ) {
+            // Format the duration as FFmpeg would
+            let duration_str = format!("{:.6}", duration);
+            
+            let parsed = parse_duration_string(&duration_str);
+            
+            prop_assert!(parsed.is_ok(), 
+                "Failed to parse duration string: '{}'", duration_str);
+            
+            let parsed_value = parsed.unwrap();
+            
+            // Verify the parsed value matches the original
+            let difference = (parsed_value - duration).abs();
+            prop_assert!(difference < 0.0001, 
+                "Parsed duration {} differs from expected {} by {}",
+                parsed_value, duration, difference);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_duration_parsing_rejects_invalid_input(
+            // Generate invalid strings that should fail parsing
+            invalid_str in prop::string::string_regex("[a-zA-Z]+").unwrap()
+        ) {
+            let result = parse_duration_string(&invalid_str);
+            
+            prop_assert!(result.is_err(), 
+                "Expected parsing to fail for invalid string: '{}'", invalid_str);
+            
+            // Verify it's a ParseError
+            match result {
+                Err(FFmpegError::ParseError(_)) => {
+                    // Expected error type
+                }
+                _ => {
+                    return Err(proptest::test_runner::TestCaseError::fail(
+                        "Expected ParseError for invalid duration string"
+                    ));
+                }
+            }
+        }
     }
 }

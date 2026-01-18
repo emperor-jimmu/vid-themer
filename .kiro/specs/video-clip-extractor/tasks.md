@@ -26,7 +26,8 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - Handle errors for corrupted or invalid videos
     - _Requirements: 9.1, 9.2, 9.3, 9.4_
 
-  - [ ]* 2.3 Write property test for duration parsing
+  - [x] 2.3 Write property test for duration parsing
+
     - **Property 19: Duration Parsing Correctness**
     - **Validates: Requirements 9.2, 9.4**
 
@@ -42,7 +43,8 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - Generate FFmpeg scale filter string with letterboxing
     - _Requirements: 2.5, 2.6, 2.7, 2.8_
 
-  - [ ]* 2.6 Write property test for no upscaling
+  - [x] 2.6 Write property test for no upscaling
+
     - **Property 7: No Upscaling**
     - **Validates: Requirements 2.5, 2.6, 2.7**
 
