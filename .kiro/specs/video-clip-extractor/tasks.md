@@ -14,7 +14,7 @@ This implementation plan breaks down the video clip extractor into discrete codi
   - _Requirements: All_
 
 - [ ] 2. Implement FFmpeg executor core functionality
-  - [ ] 2.1 Implement FFmpeg availability check
+  - [x] 2.1 Implement FFmpeg availability check
     - Create `FFmpegExecutor` struct with configuration fields
     - Implement method to check if FFmpeg is in PATH
     - Return appropriate error if FFmpeg not found
