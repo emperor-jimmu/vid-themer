@@ -393,7 +393,7 @@ enum SelectionError {
 **Validates: Requirements 1.5**
 
 ### Property 5: Extracted Clip Duration
-*For any* video longer than 10 seconds, the extracted clip duration should be between 5 and 10 seconds inclusive.
+*For any* video longer than 12 seconds, the extracted clip duration should be between 8 and 12 seconds inclusive.
 **Validates: Requirements 2.1**
 
 ### Property 6: Output File Naming
@@ -413,7 +413,7 @@ enum SelectionError {
 **Validates: Requirements 2.9, 2.10**
 
 ### Property 10: Random Selection Valid Bounds
-*For any* video processed with random selection strategy, the selected start time should be at least 60 seconds from the beginning and the end time (start + duration) should be at least 240 seconds before the video end, when the video is long enough to accommodate these exclusions.
+*For any* video processed with random selection strategy, the selected start time should be at least 1% of the video duration from the beginning and the end time (start + duration) should be at least 40% of the video duration before the video end, when the video is long enough to accommodate these exclusions.
 **Validates: Requirements 3.1, 3.2, 3.3, 3.4**
 
 ### Property 11: Random Selection Variety

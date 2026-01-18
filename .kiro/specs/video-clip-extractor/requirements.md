@@ -11,7 +11,7 @@ A command-line tool that recursively scans directories for video files and autom
 - **Clip_Extractor**: The component that extracts video segments using FFmpeg
 - **Selection_Strategy**: The algorithm used to determine which segment of a video to extract (Random or Intense_Audio)
 - **Source_Video**: An mp4 or mkv video file found during directory scanning
-- **Theme_Clip**: The extracted 5-10 second video segment saved as "backdrop.mp4"
+- **Theme_Clip**: The extracted 8-12 second video segment saved as "backdrop.mp4"
 - **Backdrops_Folder**: The subdirectory named "backdrops" where theme clips are stored
 - **FFmpeg**: External video processing tool used for clip extraction and audio analysis
 
@@ -36,10 +36,10 @@ A command-line tool that recursively scans directories for video files and autom
 
 #### Acceptance Criteria
 
-1. WHEN a Source_Video is processed, THE Clip_Extractor SHALL extract a segment between 5 and 10 seconds in duration
+1. WHEN a Source_Video is processed, THE Clip_Extractor SHALL extract a segment between 8 and 12 seconds in duration
 2. WHEN extracting a clip, THE Clip_Extractor SHALL invoke FFmpeg with appropriate parameters
 3. WHEN the extraction completes successfully, THE Clip_Extractor SHALL save the output as "backdrop.mp4"
-4. WHEN the Source_Video duration is less than 5 seconds, THE Clip_Extractor SHALL extract the entire video
+4. WHEN the Source_Video duration is less than 8 seconds, THE Clip_Extractor SHALL extract the entire video
 5. WHEN the output resolution is set to 1080p, THE Clip_Extractor SHALL scale the output to 1920x1080 only if the source resolution is higher
 6. WHEN the output resolution is set to 720p, THE Clip_Extractor SHALL scale the output to 1280x720 only if the source resolution is higher
 7. WHEN the Source_Video resolution is lower than the target resolution, THE Clip_Extractor SHALL keep the original resolution without upscaling
