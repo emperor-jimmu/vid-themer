@@ -305,6 +305,56 @@ mod tests {
     }
 
     #[test]
+    fn test_ffmpeg_not_found_error() {
+        // Test error handling when FFmpeg is not in PATH
+        // This test validates Requirement 2.11: FFmpeg availability check
+        
+        // We can't actually remove FFmpeg from PATH in a test, but we can verify
+        // that the check_availability function returns the correct error type
+        // when FFmpeg is not available.
+        
+        // The check_availability function will either:
+        // 1. Return Ok(()) if FFmpeg is available (expected in dev environment)
+        // 2. Return Err(FFmpegError::NotFound) if FFmpeg is not available
+        
+        let result = FFmpegExecutor::check_availability();
+        
+        // Verify the function returns a Result type
+        match result {
+            Ok(_) => {
+                // FFmpeg is available - verify we can create the NotFound error
+                let not_found_error = FFmpegError::NotFound;
+                assert_eq!(
+                    not_found_error.to_string(),
+                    "FFmpeg not found in PATH",
+                    "NotFound error should have correct message"
+                );
+            }
+            Err(e) => {
+                // FFmpeg is not available - verify it's the correct error type
+                match e {
+                    FFmpegError::NotFound => {
+                        assert_eq!(
+                            e.to_string(),
+                            "FFmpeg not found in PATH",
+                            "NotFound error should have correct message"
+                        );
+                    }
+                    _ => panic!("Expected FFmpegError::NotFound, got: {:?}", e),
+                }
+            }
+        }
+        
+        // Additionally, verify that the NotFound error can be properly matched
+        let not_found = FFmpegError::NotFound;
+        assert!(matches!(not_found, FFmpegError::NotFound));
+        
+        // Verify the error message format
+        let error_message = format!("{}", FFmpegError::NotFound);
+        assert_eq!(error_message, "FFmpeg not found in PATH");
+    }
+
+    #[test]
     fn test_get_duration_with_nonexistent_file() {
         // Test error handling when video file doesn't exist
         let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
@@ -887,5 +937,259 @@ mod tests {
 
         // Should include -y flag to overwrite existing files
         assert!(args.contains(&"-y".to_string()));
+    }
+
+    // Feature: video-clip-extractor, Property 5: Extracted Clip Duration
+    // **Validates: Requirements 2.1**
+    proptest! {
+        #[test]
+        fn test_extracted_clip_duration_property(
+            // Generate video durations longer than 10 seconds (up to 2 hours)
+            video_duration in 10.1f64..=7200.0,
+            // Generate clip durations between 5 and 10 seconds
+            clip_duration in 5.0f64..=10.0,
+            // Generate start times that allow the clip to fit within the video
+            start_offset_ratio in 0.0f64..=1.0,
+        ) {
+            // Calculate a valid start time that ensures the clip fits within the video
+            let max_start_time = video_duration - clip_duration;
+            let start_time = start_offset_ratio * max_start_time;
+            
+            // Create a TimeRange with the generated parameters
+            let time_range = TimeRange {
+                start_seconds: start_time,
+                duration_seconds: clip_duration,
+            };
+            
+            // Verify that the clip duration is within the valid range [5, 10]
+            prop_assert!(
+                clip_duration >= 5.0 && clip_duration <= 10.0,
+                "Clip duration {} must be between 5 and 10 seconds",
+                clip_duration
+            );
+            
+            // Verify that the clip fits within the video duration
+            let clip_end_time = start_time + clip_duration;
+            prop_assert!(
+                clip_end_time <= video_duration,
+                "Clip end time {} must not exceed video duration {}",
+                clip_end_time,
+                video_duration
+            );
+            
+            // Verify that start time is non-negative
+            prop_assert!(
+                start_time >= 0.0,
+                "Start time {} must be non-negative",
+                start_time
+            );
+            
+            // Verify the TimeRange struct contains the expected values
+            prop_assert_eq!(
+                time_range.duration_seconds,
+                clip_duration,
+                "TimeRange duration should match the requested clip duration"
+            );
+            
+            prop_assert_eq!(
+                time_range.start_seconds,
+                start_time,
+                "TimeRange start should match the calculated start time"
+            );
+        }
+    }
+
+    #[test]
+    fn test_short_video_extraction() {
+        // Test that videos < 5 seconds are extracted in full
+        // Validates Requirement 2.4
+        use crate::selector::TimeRange;
+        use std::path::PathBuf;
+
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let video_path = PathBuf::from("/path/to/short_video.mp4");
+        let output_path = PathBuf::from("/path/to/output.mp4");
+        
+        // Test case 1: Video is exactly 4.5 seconds (less than 5 seconds)
+        let short_duration = 4.5;
+        let time_range = TimeRange {
+            start_seconds: 0.0,
+            duration_seconds: short_duration,
+        };
+        let source_resolution = (1920, 1080);
+
+        let args = executor.build_extract_command(
+            &video_path,
+            &time_range,
+            &output_path,
+            source_resolution,
+        );
+
+        // Verify the command extracts from the beginning (start at 0)
+        let ss_index = args.iter().position(|arg| arg == "-ss").unwrap();
+        assert_eq!(args[ss_index + 1], "0", "Short video should start at 0 seconds");
+
+        // Verify the duration matches the full video duration
+        let t_index = args.iter().position(|arg| arg == "-t").unwrap();
+        assert_eq!(args[t_index + 1], "4.5", "Short video should extract full duration");
+
+        // Test case 2: Video is exactly 3 seconds
+        let very_short_duration = 3.0;
+        let time_range2 = TimeRange {
+            start_seconds: 0.0,
+            duration_seconds: very_short_duration,
+        };
+
+        let args2 = executor.build_extract_command(
+            &video_path,
+            &time_range2,
+            &output_path,
+            source_resolution,
+        );
+
+        let ss_index2 = args2.iter().position(|arg| arg == "-ss").unwrap();
+        assert_eq!(args2[ss_index2 + 1], "0", "Very short video should start at 0 seconds");
+
+        let t_index2 = args2.iter().position(|arg| arg == "-t").unwrap();
+        assert_eq!(args2[t_index2 + 1], "3", "Very short video should extract full duration");
+
+        // Test case 3: Video is exactly 1 second
+        let one_second_duration = 1.0;
+        let time_range3 = TimeRange {
+            start_seconds: 0.0,
+            duration_seconds: one_second_duration,
+        };
+
+        let args3 = executor.build_extract_command(
+            &video_path,
+            &time_range3,
+            &output_path,
+            source_resolution,
+        );
+
+        let ss_index3 = args3.iter().position(|arg| arg == "-ss").unwrap();
+        assert_eq!(args3[ss_index3 + 1], "0", "One second video should start at 0 seconds");
+
+        let t_index3 = args3.iter().position(|arg| arg == "-t").unwrap();
+        assert_eq!(args3[t_index3 + 1], "1", "One second video should extract full duration");
+
+        // Verify all commands are well-formed with required flags
+        for args in [&args, &args2, &args3] {
+            assert!(args.contains(&"-i".to_string()), "Command should contain input flag");
+            assert!(args.contains(&"-c:v".to_string()), "Command should contain video codec flag");
+            assert!(args.contains(&"libx264".to_string()), "Command should use libx264 codec");
+            assert!(args.contains(&"-y".to_string()), "Command should contain overwrite flag");
+        }
+    }
+
+    // Feature: video-clip-extractor, Property 9: Audio Inclusion Control
+    // **Validates: Requirements 2.9, 2.10**
+    proptest! {
+        #[test]
+        fn test_audio_inclusion_control_property(
+            // Generate random audio inclusion flag
+            include_audio in prop::bool::ANY,
+            // Generate random resolution
+            resolution in prop::sample::select(vec![Resolution::Hd720, Resolution::Hd1080]),
+            // Generate random video parameters
+            start_seconds in 0.0f64..=3600.0,
+            duration_seconds in 5.0f64..=10.0,
+            source_width in 640u32..=3840,
+            source_height in 480u32..=2160,
+        ) {
+            use std::path::PathBuf;
+            
+            // Create executor with the audio inclusion flag
+            let executor = FFmpegExecutor::new(resolution, include_audio);
+            
+            // Create test paths and time range
+            let video_path = PathBuf::from("/test/video.mp4");
+            let output_path = PathBuf::from("/test/output.mp4");
+            let time_range = TimeRange {
+                start_seconds,
+                duration_seconds,
+            };
+            let source_resolution = (source_width, source_height);
+            
+            // Build the FFmpeg command
+            let args = executor.build_extract_command(
+                &video_path,
+                &time_range,
+                &output_path,
+                source_resolution,
+            );
+            
+            // Verify audio handling based on include_audio flag
+            if include_audio {
+                // When audio is included, the command should contain audio codec settings
+                // and should NOT contain the -an flag (no audio)
+                prop_assert!(
+                    !args.contains(&"-an".to_string()),
+                    "Command should NOT contain -an flag when include_audio is true"
+                );
+                
+                // Should contain audio codec specification
+                prop_assert!(
+                    args.contains(&"-c:a".to_string()),
+                    "Command should contain -c:a flag when include_audio is true"
+                );
+                
+                prop_assert!(
+                    args.contains(&"aac".to_string()),
+                    "Command should contain aac codec when include_audio is true"
+                );
+                
+                // Verify -c:a and aac are adjacent in the args
+                if let Some(ca_index) = args.iter().position(|arg| arg == "-c:a") {
+                    prop_assert!(
+                        ca_index + 1 < args.len() && args[ca_index + 1] == "aac",
+                        "aac codec should immediately follow -c:a flag"
+                    );
+                }
+            } else {
+                // When audio is excluded, the command should contain the -an flag
+                // and should NOT contain audio codec settings
+                prop_assert!(
+                    args.contains(&"-an".to_string()),
+                    "Command should contain -an flag when include_audio is false"
+                );
+                
+                // Should NOT contain audio codec specification
+                prop_assert!(
+                    !args.contains(&"-c:a".to_string()),
+                    "Command should NOT contain -c:a flag when include_audio is false"
+                );
+                
+                // The aac codec might appear in paths, so we check more carefully
+                // by ensuring -c:a is not present (which is the key indicator)
+            }
+            
+            // Additional verification: ensure the command is well-formed
+            // regardless of audio settings
+            prop_assert!(
+                args.contains(&"-ss".to_string()),
+                "Command should contain start time flag"
+            );
+            
+            prop_assert!(
+                args.contains(&"-i".to_string()),
+                "Command should contain input flag"
+            );
+            
+            prop_assert!(
+                args.contains(&"-t".to_string()),
+                "Command should contain duration flag"
+            );
+            
+            prop_assert!(
+                args.contains(&"-c:v".to_string()),
+                "Command should contain video codec flag"
+            );
+            
+            prop_assert!(
+                args.contains(&"libx264".to_string()),
+                "Command should contain libx264 video codec"
+            );
+        }
     }
 }

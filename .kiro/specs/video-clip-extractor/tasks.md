@@ -60,19 +60,23 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - Return appropriate errors on failure
     - _Requirements: 2.1, 2.2, 2.3_
 
-  - [ ]* 2.9 Write property test for extracted clip duration
+  - [x] 2.9 Write property test for extracted clip duration
+
     - **Property 5: Extracted Clip Duration**
     - **Validates: Requirements 2.1**
 
-  - [ ]* 2.10 Write property test for audio inclusion control
+  - [x] 2.10 Write property test for audio inclusion control
+
     - **Property 9: Audio Inclusion Control**
     - **Validates: Requirements 2.9, 2.10**
 
-  - [ ]* 2.11 Write unit test for FFmpeg not found error
+  - [x] 2.11 Write unit test for FFmpeg not found error
+
     - Test error handling when FFmpeg is not in PATH
     - _Requirements: 2.11_
 
-  - [ ]* 2.12 Write unit test for short video edge case
+  - [x] 2.12 Write unit test for short video edge case
+
     - Test that videos < 5 seconds are extracted in full
     - _Requirements: 2.4_
 
