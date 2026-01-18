@@ -251,6 +251,115 @@ impl FFmpegExecutor {
 
         Ok(())
     }
+
+    /// Analyze audio intensity across the video duration
+    /// Returns a sorted list of audio segments by intensity (highest first)
+    /// Uses FFmpeg's ebur128 filter to measure audio levels
+    pub fn analyze_audio_intensity(
+        &self,
+        video_path: &Path,
+        duration: f64,
+    ) -> Result<Vec<AudioSegment>, FFmpegError> {
+        // Execute FFmpeg with ebur128 filter to analyze audio levels
+        // Command: ffmpeg -i <video> -filter_complex ebur128=peak=true -f null -
+        let output = Command::new("ffmpeg")
+            .arg("-i")
+            .arg(video_path)
+            .arg("-filter_complex")
+            .arg("ebur128=peak=true")
+            .arg("-f")
+            .arg("null")
+            .arg("-")
+            .output()
+            .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to execute ffmpeg for audio analysis: {}", e)))?;
+
+        // The ebur128 filter outputs to stderr, not stdout
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        // Check if there's an audio track
+        if stderr.contains("Output file #0 does not contain any stream") 
+            || stderr.contains("Stream specifier ':a' in filtergraph") {
+            return Err(FFmpegError::NoAudioTrack);
+        }
+
+        // Parse the output to extract audio measurements
+        // The ebur128 filter outputs lines like:
+        // [Parsed_ebur128_0 @ 0x...] t: 1.0    M: -23.4 S: -23.5    I: -23.4 LUFS     LRA:  0.0 LU  FTPK: -12.3 dBFS  TPK: -12.3 dBFS
+        
+        let mut measurements: Vec<(f64, f64)> = Vec::new(); // (time, peak_level)
+        
+        for line in stderr.lines() {
+            if line.contains("Parsed_ebur128") && line.contains("t:") {
+                // Extract time and peak values
+                if let Some(time) = Self::extract_value_after(line, "t:") {
+                    if let Some(peak) = Self::extract_value_after(line, "FTPK:") {
+                        measurements.push((time, peak));
+                    }
+                }
+            }
+        }
+
+        // If no measurements were found, return error
+        if measurements.is_empty() {
+            return Err(FFmpegError::NoAudioTrack);
+        }
+
+        // Group measurements into segments (5-10 second windows)
+        // We'll use 7.5 second segments as a middle ground
+        const SEGMENT_DURATION: f64 = 7.5;
+        let num_segments = (duration / SEGMENT_DURATION).ceil() as usize;
+        
+        let mut segments: Vec<AudioSegment> = Vec::new();
+        
+        for i in 0..num_segments {
+            let segment_start = i as f64 * SEGMENT_DURATION;
+            let segment_end = ((i + 1) as f64 * SEGMENT_DURATION).min(duration);
+            let segment_duration = segment_end - segment_start;
+            
+            // Find all measurements within this segment
+            let segment_measurements: Vec<f64> = measurements
+                .iter()
+                .filter(|(time, _)| *time >= segment_start && *time < segment_end)
+                .map(|(_, peak)| *peak)
+                .collect();
+            
+            if !segment_measurements.is_empty() {
+                // Calculate intensity as the average of peak values
+                // Higher (less negative) dBFS values indicate louder audio
+                let intensity: f64 = segment_measurements.iter().sum::<f64>() 
+                    / segment_measurements.len() as f64;
+                
+                segments.push(AudioSegment {
+                    start_time: segment_start,
+                    duration: segment_duration,
+                    intensity,
+                });
+            }
+        }
+
+        // Sort segments by intensity (highest/loudest first)
+        // Since dBFS values are negative, higher (less negative) values are louder
+        segments.sort_by(|a, b| b.intensity.partial_cmp(&a.intensity).unwrap());
+
+        Ok(segments)
+    }
+
+    /// Helper function to extract a numeric value after a label in a string
+    fn extract_value_after(line: &str, label: &str) -> Option<f64> {
+        if let Some(pos) = line.find(label) {
+            let after_label = &line[pos + label.len()..];
+            // Extract the numeric part (may include negative sign and decimal point)
+            let value_str: String = after_label
+                .trim_start()
+                .chars()
+                .take_while(|c| c.is_numeric() || *c == '.' || *c == '-')
+                .collect();
+            
+            value_str.parse::<f64>().ok()
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1191,5 +1300,63 @@ mod tests {
                 "Command should contain libx264 video codec"
             );
         }
+    }
+
+    // Tests for audio analysis helper
+
+    #[test]
+    fn test_extract_value_after_basic() {
+        // Test extracting a simple numeric value
+        let line = "Some text t: 123.45 more text";
+        let result = FFmpegExecutor::extract_value_after(line, "t:");
+        assert_eq!(result, Some(123.45));
+    }
+
+    #[test]
+    fn test_extract_value_after_negative() {
+        // Test extracting a negative value (common for dBFS)
+        let line = "Audio level FTPK: -12.3 dBFS";
+        let result = FFmpegExecutor::extract_value_after(line, "FTPK:");
+        assert_eq!(result, Some(-12.3));
+    }
+
+    #[test]
+    fn test_extract_value_after_with_spaces() {
+        // Test extracting value with leading spaces
+        let line = "Time t:   456.789 seconds";
+        let result = FFmpegExecutor::extract_value_after(line, "t:");
+        assert_eq!(result, Some(456.789));
+    }
+
+    #[test]
+    fn test_extract_value_after_not_found() {
+        // Test when label is not found
+        let line = "Some text without the label";
+        let result = FFmpegExecutor::extract_value_after(line, "t:");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_value_after_invalid_number() {
+        // Test when text after label is not a valid number
+        let line = "Label t: not_a_number";
+        let result = FFmpegExecutor::extract_value_after(line, "t:");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_value_after_zero() {
+        // Test extracting zero value
+        let line = "Value M: 0.0 units";
+        let result = FFmpegExecutor::extract_value_after(line, "M:");
+        assert_eq!(result, Some(0.0));
+    }
+
+    #[test]
+    fn test_extract_value_after_integer() {
+        // Test extracting integer value
+        let line = "Count n: 42 items";
+        let result = FFmpegExecutor::extract_value_after(line, "n:");
+        assert_eq!(result, Some(42.0));
     }
 }

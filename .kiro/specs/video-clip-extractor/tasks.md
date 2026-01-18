@@ -81,24 +81,26 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - _Requirements: 2.4_
 
 - [ ] 3. Implement selection strategies
-  - [ ] 3.1 Define ClipSelector trait
+  - [x] 3.1 Define ClipSelector trait
     - Create trait with `select_segment` method
     - Define `TimeRange` struct for start time and duration
     - Define `SelectionError` enum
     - _Requirements: 3.1, 3.2, 4.1_
 
-  - [ ] 3.2 Implement RandomSelector
+  - [x] 3.2 Implement RandomSelector
     - Calculate valid time range (exclude first 60s and last 240s)
     - Generate random start time within valid bounds
     - Handle edge case: video too short for exclusions (use middle segment)
     - Ensure clip fits within video duration
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-  - [ ]* 3.3 Write property test for random selection valid bounds
+  - [x] 3.3 Write property test for random selection valid bounds
+
     - **Property 10: Random Selection Valid Bounds**
     - **Validates: Requirements 3.1, 3.2, 3.3, 3.4**
 
-  - [ ]* 3.4 Write property test for random selection variety
+  - [x] 3.4 Write property test for random selection variety
+
     - **Property 11: Random Selection Variety**
     - **Validates: Requirements 3.6**
 
@@ -106,7 +108,7 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - Test middle segment selection when video is too short for exclusions
     - _Requirements: 3.5_
 
-  - [ ] 3.6 Implement audio analysis helper in FFmpegExecutor
+  - [x] 3.6 Implement audio analysis helper in FFmpegExecutor
     - Execute FFmpeg with ebur128 filter to analyze audio levels
     - Parse output to extract time and peak/RMS values
     - Group into segments and calculate intensity
