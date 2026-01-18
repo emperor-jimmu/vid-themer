@@ -109,8 +109,8 @@ impl FFmpegExecutor {
         let resolution_str = String::from_utf8_lossy(&output.stdout);
         let resolution_str = resolution_str.trim();
 
-        // Split by 'x' to get width and height
-        let parts: Vec<&str> = resolution_str.split('x').collect();
+        // Split by 'x' to get width and height, filtering out empty parts
+        let parts: Vec<&str> = resolution_str.split('x').filter(|s| !s.is_empty()).collect();
         if parts.len() != 2 {
             return Err(FFmpegError::ParseError(format!(
                 "Invalid resolution format '{}', expected 'WIDTHxHEIGHT'",
