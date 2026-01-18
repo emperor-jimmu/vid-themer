@@ -35,11 +35,11 @@ impl ProgressReporter {
         
         if result.success {
             self.successful += 1;
-            println!("  → Output: {}", result.output_path.display());
+            println!("  -> Output: {}", result.output_path.display());
         } else {
             self.failed += 1;
             if let Some(error) = &result.error_message {
-                println!("  ✗ Error: {}", error);
+                println!("  X Error: {}", error);
             }
         }
     }
