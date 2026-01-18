@@ -333,9 +333,9 @@ impl FFmpegExecutor {
             return Err(FFmpegError::NoAudioTrack);
         }
 
-        // Group measurements into segments (5-10 second windows)
-        // We'll use 7.5 second segments as a middle ground
-        const SEGMENT_DURATION: f64 = 7.5;
+        // Group measurements into segments (10-15 second windows)
+        // We'll use 12.5 second segments as a middle ground
+        const SEGMENT_DURATION: f64 = 12.5;
         let num_segments = (duration / SEGMENT_DURATION).ceil() as usize;
         
         let mut segments: Vec<AudioSegment> = Vec::new();
@@ -1099,10 +1099,10 @@ mod tests {
     proptest! {
         #[test]
         fn test_extracted_clip_duration_property(
-            // Generate video durations longer than 10 seconds (up to 2 hours)
-            video_duration in 10.1f64..=7200.0,
-            // Generate clip durations between 8 and 12 seconds
-            clip_duration in 8.0f64..=12.0,
+            // Generate video durations longer than 15 seconds (up to 2 hours)
+            video_duration in 15.1f64..=7200.0,
+            // Generate clip durations between 10 and 15 seconds
+            clip_duration in 10.0f64..=15.0,
             // Generate start times that allow the clip to fit within the video
             start_offset_ratio in 0.0f64..=1.0,
         ) {
@@ -1116,10 +1116,10 @@ mod tests {
                 duration_seconds: clip_duration,
             };
             
-            // Verify that the clip duration is within the valid range [8, 12]
+            // Verify that the clip duration is within the valid range [10, 15]
             prop_assert!(
-                clip_duration >= 8.0 && clip_duration <= 12.0,
-                "Clip duration {} must be between 8 and 12 seconds",
+                clip_duration >= 10.0 && clip_duration <= 15.0,
+                "Clip duration {} must be between 10 and 15 seconds",
                 clip_duration
             );
             
@@ -1248,7 +1248,7 @@ mod tests {
             resolution in prop::sample::select(vec![Resolution::Hd720, Resolution::Hd1080]),
             // Generate random video parameters
             start_seconds in 0.0f64..=3600.0,
-            duration_seconds in 8.0f64..=12.0,
+            duration_seconds in 10.0f64..=15.0,
             source_width in 640u32..=3840,
             source_height in 480u32..=2160,
         ) {

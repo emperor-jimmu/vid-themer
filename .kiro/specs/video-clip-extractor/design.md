@@ -136,7 +136,7 @@ impl ClipSelector for RandomSelector {
     ) -> Result<TimeRange, SelectionError> {
         // Exclude first 60 seconds and last 240 seconds
         // Select random start time within valid range
-        // Ensure clip duration fits (5-10 seconds)
+        // Ensure clip duration fits (10-15 seconds)
         // Handle edge case: video too short for exclusions
     }
 }
@@ -312,7 +312,7 @@ struct VideoFile {
 // Time range for clip extraction
 struct TimeRange {
     start_seconds: f64,      // Start time in seconds
-    duration_seconds: f64,   // Duration in seconds (5-10)
+    duration_seconds: f64,   // Duration in seconds (10-15)
 }
 
 // Audio analysis result
@@ -393,7 +393,7 @@ enum SelectionError {
 **Validates: Requirements 1.5**
 
 ### Property 5: Extracted Clip Duration
-*For any* video longer than 12 seconds, the extracted clip duration should be between 8 and 12 seconds inclusive.
+*For any* video longer than 15 seconds, the extracted clip duration should be between 10 and 15 seconds inclusive.
 **Validates: Requirements 2.1**
 
 ### Property 6: Output File Naming

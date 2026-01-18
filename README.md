@@ -1,6 +1,6 @@
 # Video Clip Extractor
 
-A command-line tool that recursively scans directories for video files and automatically extracts short thematic clips (5-10 seconds) from each video. Perfect for creating preview thumbnails or theme videos for media libraries.
+A command-line tool that recursively scans directories for video files and automatically extracts short thematic clips (10-15 seconds) from each video. Perfect for creating preview thumbnails or theme videos for media libraries.
 
 ## Features
 
@@ -89,7 +89,7 @@ video-clip-extractor ~/Videos --intro-exclusion 0 --outro-exclusion 0
 ## Selection Strategies
 
 ### Random Strategy (Default)
-Selects a random 8-12 second segment from the video. By default, excludes the first 1% (intro) and last 40% (outro) of the video to skip opening credits and end credits. These exclusion zones are configurable via CLI parameters.
+Selects a random 10-15 second segment from the video. By default, excludes the first 1% (intro) and last 40% (outro) of the video to skip opening credits and end credits. These exclusion zones are configurable via CLI parameters.
 
 ### Intense Audio Strategy
 Analyzes audio levels throughout the video and selects the segment with the highest audio intensity, ideal for action scenes or dramatic moments. Note: Exclusion zones do not apply to this strategy as it selects based on audio analysis.

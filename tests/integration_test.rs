@@ -248,11 +248,11 @@ fn test_full_pipeline_with_sample_videos() {
                 expected_output
             );
             
-            // Verify clip duration is between 8 and 12 seconds
+            // Verify clip duration is between 10 and 15 seconds
             if let Some(duration) = get_video_duration(expected_output) {
                 assert!(
-                    duration >= 7.5 && duration <= 12.5,
-                    "Clip duration should be between 8 and 12 seconds, got: {:.2}s for {:?}",
+                    duration >= 9.5 && duration <= 15.5,
+                    "Clip duration should be between 10 and 15 seconds, got: {:.2}s for {:?}",
                     duration,
                     expected_output
                 );
