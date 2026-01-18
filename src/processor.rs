@@ -8,11 +8,23 @@ use std::path::PathBuf;
 pub struct VideoProcessor {
     selector: Box<dyn ClipSelector>,
     ffmpeg: FFmpegExecutor,
+    intro_exclusion_percent: f64,
+    outro_exclusion_percent: f64,
 }
 
 impl VideoProcessor {
-    pub fn new(selector: Box<dyn ClipSelector>, ffmpeg: FFmpegExecutor) -> Self {
-        Self { selector, ffmpeg }
+    pub fn new(
+        selector: Box<dyn ClipSelector>,
+        ffmpeg: FFmpegExecutor,
+        intro_exclusion_percent: f64,
+        outro_exclusion_percent: f64,
+    ) -> Self {
+        Self {
+            selector,
+            ffmpeg,
+            intro_exclusion_percent,
+            outro_exclusion_percent,
+        }
     }
 
     /// Process a video file: detect duration, select segment, create output directory, and extract clip
@@ -35,7 +47,12 @@ impl VideoProcessor {
         };
         
         // Step 2: Select segment using ClipSelector strategy
-        let time_range = match self.selector.select_segment(&video.path, duration) {
+        let time_range = match self.selector.select_segment(
+            &video.path,
+            duration,
+            self.intro_exclusion_percent,
+            self.outro_exclusion_percent,
+        ) {
             Ok(tr) => tr,
             Err(e) => {
                 return ProcessResult {
@@ -142,6 +159,8 @@ mod tests {
             &self,
             _video_path: &std::path::Path,
             duration: f64,
+            _intro_exclusion_percent: f64,
+            _outro_exclusion_percent: f64,
         ) -> Result<TimeRange, crate::selector::SelectionError> {
             // Return a simple time range for testing
             Ok(TimeRange {
@@ -196,7 +215,7 @@ mod tests {
             // Create processor with mock selector
             let selector = Box::new(MockSelector);
             let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
-            let processor = VideoProcessor::new(selector, ffmpeg);
+            let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0);
             
             // Call create_output_directory to get the output path
             let output_path = processor.create_output_directory(&video_file);
@@ -285,7 +304,7 @@ mod tests {
         // Create processor
         let selector = Box::new(MockSelector);
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
-        let processor = VideoProcessor::new(selector, ffmpeg);
+        let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0);
         
         // Get output path
         let output_path = processor.create_output_directory(&video_file).unwrap();
@@ -328,7 +347,7 @@ mod tests {
         
         let selector = Box::new(MockSelector);
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
-        let processor = VideoProcessor::new(selector, ffmpeg);
+        let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0);
         
         for video_name in test_video_names {
             let video_file = create_test_video_structure(&temp_dir, video_name);
@@ -390,7 +409,7 @@ mod tests {
             // which is perfect for testing error recovery
             let selector = Box::new(MockSelector);
             let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
-            let processor = VideoProcessor::new(selector, ffmpeg);
+            let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0);
             
             // Process all videos and collect results
             // Since we're using fake video files, FFmpeg will fail to get duration
@@ -502,7 +521,7 @@ mod tests {
         // Create processor
         let selector = Box::new(MockSelector);
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
-        let processor = VideoProcessor::new(selector, ffmpeg);
+        let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0);
         
         // Process all videos
         let mut results = Vec::new();
@@ -581,7 +600,7 @@ mod tests {
             // Create processor with mock selector
             let selector = Box::new(MockSelector);
             let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
-            let processor = VideoProcessor::new(selector, ffmpeg);
+            let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0);
             
             // Process the video (will fail because it's a fake video file)
             let result = processor.process_video(&video_file);
@@ -697,7 +716,7 @@ mod tests {
             // Create processor with mock selector
             let selector = Box::new(MockSelector);
             let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
-            let processor = VideoProcessor::new(selector, ffmpeg);
+            let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0);
             
             // Step 1: Create the backdrops directory and an existing backdrop.mp4 file
             let backdrops_dir = parent_dir.join("backdrops");

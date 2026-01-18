@@ -88,3 +88,5 @@ No configuration files - all settings via CLI arguments:
 - `--strategy` / `-s`: random | intense-audio (default: random)
 - `--resolution` / `-r`: 720p | 1080p (default: 1080p)
 - `--audio` / `-a`: true | false (default: true)
+- `--intro-exclusion`: percentage of video duration to exclude from start (0-100, default: 1.0)
+- `--outro-exclusion`: percentage of video duration to exclude from end (0-100, default: 40.0)

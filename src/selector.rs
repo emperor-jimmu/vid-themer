@@ -13,6 +13,8 @@ pub trait ClipSelector {
         &self,
         video_path: &Path,
         duration: f64,
+        intro_exclusion_percent: f64,
+        outro_exclusion_percent: f64,
     ) -> Result<TimeRange, SelectionError>;
 }
 
@@ -23,18 +25,22 @@ impl ClipSelector for RandomSelector {
         &self,
         _video_path: &Path,
         duration: f64,
+        intro_exclusion_percent: f64,
+        outro_exclusion_percent: f64,
     ) -> Result<TimeRange, SelectionError> {
-        const INTRO_EXCLUSION: f64 = 60.0;  // Exclude first 60 seconds
-        const OUTRO_EXCLUSION: f64 = 240.0; // Exclude last 240 seconds
         const MIN_CLIP_DURATION: f64 = 8.0;
         const MAX_CLIP_DURATION: f64 = 12.0;
+        
+        // Calculate exclusion zones as percentages of video duration
+        let intro_exclusion = duration * (intro_exclusion_percent / 100.0);
+        let outro_exclusion = duration * (outro_exclusion_percent / 100.0);
         
         // Generate random clip duration between 8 and 12 seconds
         let mut rng = rand::thread_rng();
         let clip_duration = rng.gen_range(MIN_CLIP_DURATION..=MAX_CLIP_DURATION);
         
         // Calculate the minimum required duration for exclusions
-        let required_duration = INTRO_EXCLUSION + clip_duration + OUTRO_EXCLUSION;
+        let required_duration = intro_exclusion + clip_duration + outro_exclusion;
         
         // Check if video is too short for exclusions
         if duration < required_duration {
@@ -49,8 +55,8 @@ impl ClipSelector for RandomSelector {
         }
         
         // Calculate valid range for random selection
-        let earliest_start = INTRO_EXCLUSION;
-        let latest_start = duration - OUTRO_EXCLUSION - clip_duration;
+        let earliest_start = intro_exclusion;
+        let latest_start = duration - outro_exclusion - clip_duration;
         
         // Generate random start time within valid bounds
         let start = rng.gen_range(earliest_start..=latest_start);
@@ -77,6 +83,8 @@ impl ClipSelector for IntenseAudioSelector {
         &self,
         video_path: &Path,
         duration: f64,
+        _intro_exclusion_percent: f64,
+        _outro_exclusion_percent: f64,
     ) -> Result<TimeRange, SelectionError> {
         const MIN_CLIP_DURATION: f64 = 8.0;
         const MAX_CLIP_DURATION: f64 = 12.0;
@@ -169,19 +177,19 @@ mod tests {
             // Test that for videos long enough to accommodate exclusions,
             // the selected segment respects the intro and outro exclusion zones
             
-            const INTRO_EXCLUSION: f64 = 60.0;
-            const OUTRO_EXCLUSION: f64 = 240.0;
+            const INTRO_EXCLUSION_PERCENT: f64 = 1.0;
+            const OUTRO_EXCLUSION_PERCENT: f64 = 40.0;
             const MIN_CLIP_DURATION: f64 = 8.0;
             const MAX_CLIP_DURATION: f64 = 12.0;
             
             let selector = RandomSelector;
             let video_path = PathBuf::from("test.mp4");
             
-            // Only test videos that are long enough for exclusions
-            // Required: INTRO_EXCLUSION + MIN_CLIP_DURATION + OUTRO_EXCLUSION = 308 seconds
-            // We test from 320 seconds to give some margin
+            // Calculate actual exclusion zones based on percentages
+            let intro_exclusion = duration * (INTRO_EXCLUSION_PERCENT / 100.0);
+            let outro_exclusion = duration * (OUTRO_EXCLUSION_PERCENT / 100.0);
             
-            let result = selector.select_segment(&video_path, duration);
+            let result = selector.select_segment(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT);
             prop_assert!(result.is_ok(), "Selection should succeed for valid duration");
             
             let time_range = result.unwrap();
@@ -192,16 +200,16 @@ mod tests {
             prop_assert!(time_range.duration_seconds <= MAX_CLIP_DURATION,
                 "Clip duration {} should be <= {}", time_range.duration_seconds, MAX_CLIP_DURATION);
             
-            // Property 2: Start time should be at least 60 seconds from beginning
-            prop_assert!(time_range.start_seconds >= INTRO_EXCLUSION,
+            // Property 2: Start time should be at least intro_exclusion from beginning
+            prop_assert!(time_range.start_seconds >= intro_exclusion,
                 "Start time {} should be >= {} (intro exclusion)", 
-                time_range.start_seconds, INTRO_EXCLUSION);
+                time_range.start_seconds, intro_exclusion);
             
-            // Property 3: End time should be at least 240 seconds before video end
+            // Property 3: End time should be at least outro_exclusion before video end
             let end_time = time_range.start_seconds + time_range.duration_seconds;
-            prop_assert!(end_time <= duration - OUTRO_EXCLUSION,
+            prop_assert!(end_time <= duration - outro_exclusion,
                 "End time {} should be <= {} (duration {} - outro exclusion {})",
-                end_time, duration - OUTRO_EXCLUSION, duration, OUTRO_EXCLUSION);
+                end_time, duration - outro_exclusion, duration, outro_exclusion);
             
             // Property 4: The selected segment should fit within video duration
             prop_assert!(end_time <= duration,
@@ -215,34 +223,38 @@ mod tests {
         let video_path = PathBuf::from("test.mp4");
         let duration = 600.0; // 10 minutes
         
-        let result = selector.select_segment(&video_path, duration);
+        let result = selector.select_segment(&video_path, duration, 1.0, 40.0);
         assert!(result.is_ok());
         
         let time_range = result.unwrap();
+        
+        // Calculate actual exclusion zones (1% intro, 40% outro)
+        let intro_exclusion = duration * 0.01; // 6 seconds
+        let outro_exclusion = duration * 0.40; // 240 seconds
         
         // Verify clip duration is between 8 and 12 seconds
         assert!(time_range.duration_seconds >= 8.0);
         assert!(time_range.duration_seconds <= 12.0);
         
         // Verify start time respects exclusion zones
-        assert!(time_range.start_seconds >= 60.0); // After intro exclusion
-        assert!(time_range.start_seconds + time_range.duration_seconds <= duration - 240.0); // Before outro exclusion
+        assert!(time_range.start_seconds >= intro_exclusion); // After intro exclusion
+        assert!(time_range.start_seconds + time_range.duration_seconds <= duration - outro_exclusion); // Before outro exclusion
     }
 
     #[test]
     fn test_random_selector_short_video_fallback() {
         let selector = RandomSelector;
         let video_path = PathBuf::from("test.mp4");
-        let duration = 100.0; // 100 seconds - too short for exclusions
+        let duration = 10.0; // 10 seconds - too short for 1% intro (0.1s) + 8-12s clip + 40% outro (4s) = needs >12.1s
         
-        let result = selector.select_segment(&video_path, duration);
+        let result = selector.select_segment(&video_path, duration, 1.0, 40.0);
         assert!(result.is_ok());
         
         let time_range = result.unwrap();
         
-        // Verify clip duration is between 8 and 12 seconds
+        // Verify clip duration is between 8 and 10 seconds (capped at video duration)
         assert!(time_range.duration_seconds >= 8.0);
-        assert!(time_range.duration_seconds <= 12.0);
+        assert!(time_range.duration_seconds <= 10.0);
         
         // Verify it uses middle segment (start should be roughly in the middle)
         let expected_middle = (duration - time_range.duration_seconds) / 2.0;
@@ -255,7 +267,7 @@ mod tests {
         let video_path = PathBuf::from("test.mp4");
         let duration = 3.0; // 3 seconds - shorter than minimum clip duration
         
-        let result = selector.select_segment(&video_path, duration);
+        let result = selector.select_segment(&video_path, duration, 1.0, 40.0);
         assert!(result.is_ok());
         
         let time_range = result.unwrap();
@@ -274,7 +286,7 @@ mod tests {
         // Run multiple times and collect start times
         let mut start_times = Vec::new();
         for _ in 0..10 {
-            let result = selector.select_segment(&video_path, duration);
+            let result = selector.select_segment(&video_path, duration, 1.0, 40.0);
             assert!(result.is_ok());
             start_times.push(result.unwrap().start_seconds);
         }
@@ -298,7 +310,7 @@ mod tests {
             // Run selection multiple times (10 iterations)
             let mut start_times = Vec::new();
             for _ in 0..10 {
-                let result = selector.select_segment(&video_path, duration);
+                let result = selector.select_segment(&video_path, duration, 1.0, 40.0);
                 prop_assert!(result.is_ok(), "Selection should succeed");
                 start_times.push(result.unwrap().start_seconds);
             }
@@ -387,7 +399,7 @@ mod tests {
         let duration = 600.0; // 10 minutes
         
         // The selector should fall back to middle segment when audio analysis fails
-        let result = selector.select_segment(&video_path, duration);
+        let result = selector.select_segment(&video_path, duration, 1.0, 40.0);
         
         // The result should be Ok (fallback to middle segment)
         assert!(result.is_ok(), "Should fall back to middle segment when no audio track");
@@ -402,7 +414,7 @@ mod tests {
         
         // Test with a shorter video
         let short_duration = 120.0; // 2 minutes
-        let result_short = selector.select_segment(&video_path, short_duration);
+        let result_short = selector.select_segment(&video_path, short_duration, 1.0, 40.0);
         
         assert!(result_short.is_ok(), "Should fall back to middle segment for short video");
         
@@ -415,7 +427,7 @@ mod tests {
         
         // Test with a very short video (< 12 seconds)
         let very_short_duration = 7.0; // 7 seconds
-        let result_very_short = selector.select_segment(&video_path, very_short_duration);
+        let result_very_short = selector.select_segment(&video_path, very_short_duration, 1.0, 40.0);
         
         assert!(result_very_short.is_ok(), "Should fall back to middle segment for very short video");
         

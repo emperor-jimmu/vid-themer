@@ -22,6 +22,22 @@ pub struct CliArgs {
     /// Include audio in output clip
     #[arg(short = 'a', long = "audio", action = clap::ArgAction::Set, default_value_t = true)]
     pub include_audio: bool,
+
+    /// Intro exclusion zone as percentage of video duration (0-100)
+    #[arg(long = "intro-exclusion", default_value_t = 1.0, value_parser = validate_percentage)]
+    pub intro_exclusion_percent: f64,
+
+    /// Outro exclusion zone as percentage of video duration (0-100)
+    #[arg(long = "outro-exclusion", default_value_t = 40.0, value_parser = validate_percentage)]
+    pub outro_exclusion_percent: f64,
+}
+
+fn validate_percentage(s: &str) -> Result<f64, String> {
+    let value: f64 = s.parse().map_err(|_| format!("'{}' is not a valid number", s))?;
+    if value < 0.0 || value > 100.0 {
+        return Err(format!("percentage must be between 0 and 100, got {}", value));
+    }
+    Ok(value)
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -345,5 +361,138 @@ mod tests {
         assert!(help.contains("--strategy"));
         assert!(help.contains("--resolution"));
         assert!(help.contains("--audio"));
+        assert!(help.contains("--intro-exclusion"));
+        assert!(help.contains("--outro-exclusion"));
+    }
+
+    #[test]
+    fn test_intro_exclusion_default() {
+        // Test that intro exclusion defaults to 1%
+        let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path"]);
+        assert_eq!(args.intro_exclusion_percent, 1.0);
+    }
+
+    #[test]
+    fn test_outro_exclusion_default() {
+        // Test that outro exclusion defaults to 40%
+        let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path"]);
+        assert_eq!(args.outro_exclusion_percent, 40.0);
+    }
+
+    #[test]
+    fn test_intro_exclusion_custom() {
+        // Test custom intro exclusion value
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--intro-exclusion",
+            "5.0"
+        ]);
+        assert_eq!(args.intro_exclusion_percent, 5.0);
+    }
+
+    #[test]
+    fn test_outro_exclusion_custom() {
+        // Test custom outro exclusion value
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--outro-exclusion",
+            "30.0"
+        ]);
+        assert_eq!(args.outro_exclusion_percent, 30.0);
+    }
+
+    #[test]
+    fn test_exclusion_zones_combined() {
+        // Test both exclusion zones together
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--intro-exclusion",
+            "2.5",
+            "--outro-exclusion",
+            "25.0"
+        ]);
+        assert_eq!(args.intro_exclusion_percent, 2.5);
+        assert_eq!(args.outro_exclusion_percent, 25.0);
+    }
+
+    #[test]
+    fn test_intro_exclusion_invalid_negative() {
+        // Test that negative intro exclusion produces an error
+        let result = CliArgs::try_parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--intro-exclusion",
+            "-5.0"
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_intro_exclusion_invalid_over_100() {
+        // Test that intro exclusion over 100 produces an error
+        let result = CliArgs::try_parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--intro-exclusion",
+            "101.0"
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_outro_exclusion_invalid_negative() {
+        // Test that negative outro exclusion produces an error
+        let result = CliArgs::try_parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--outro-exclusion",
+            "-10.0"
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_outro_exclusion_invalid_over_100() {
+        // Test that outro exclusion over 100 produces an error
+        let result = CliArgs::try_parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--outro-exclusion",
+            "150.0"
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_exclusion_zero_values() {
+        // Test that zero exclusion values are valid
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--intro-exclusion",
+            "0",
+            "--outro-exclusion",
+            "0"
+        ]);
+        assert_eq!(args.intro_exclusion_percent, 0.0);
+        assert_eq!(args.outro_exclusion_percent, 0.0);
+    }
+
+    #[test]
+    fn test_exclusion_boundary_values() {
+        // Test boundary values (0 and 100)
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--intro-exclusion",
+            "100",
+            "--outro-exclusion",
+            "100"
+        ]);
+        assert_eq!(args.intro_exclusion_percent, 100.0);
+        assert_eq!(args.outro_exclusion_percent, 100.0);
     }
 }

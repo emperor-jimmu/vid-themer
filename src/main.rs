@@ -88,7 +88,12 @@ fn main() {
     };
     
     // Create VideoProcessor with selector and executor
-    let processor = VideoProcessor::new(selector, ffmpeg_executor);
+    let processor = VideoProcessor::new(
+        selector,
+        ffmpeg_executor,
+        args.intro_exclusion_percent,
+        args.outro_exclusion_percent,
+    );
     
     // Create ProgressReporter
     let mut reporter = ProgressReporter::new();

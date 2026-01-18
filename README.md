@@ -6,6 +6,7 @@ A command-line tool that recursively scans directories for video files and autom
 
 - **Recursive Directory Scanning** - Automatically discovers video files in nested directories
 - **Intelligent Clip Selection** - Choose between random or audio-intensity-based extraction strategies
+- **Configurable Exclusion Zones** - Control intro/outro exclusion as percentages of video duration
 - **Smart Resolution Handling** - Scales videos down to target resolution without upscaling
 - **Organized Output** - Creates `backdrops/backdrop.mp4` subdirectories next to source videos
 - **Skip Existing** - Automatically skips directories that already have extracted clips
@@ -46,14 +47,16 @@ Arguments:
   <DIRECTORY>  Root directory to scan for video files
 
 Options:
-  -s, --strategy <STRATEGY>      Clip selection strategy [default: random]
-                                 [possible values: random, intense-audio]
-  -r, --resolution <RESOLUTION>  Target resolution for extracted clips [default: 1080p]
-                                 [possible values: 720p, 1080p]
-  -a, --audio <AUDIO>           Include audio in extracted clips [default: true]
-                                 [possible values: true, false]
-  -h, --help                    Print help
-  -V, --version                 Print version
+  -s, --strategy <STRATEGY>              Clip selection strategy [default: random]
+                                         [possible values: random, intense-audio]
+  -r, --resolution <RESOLUTION>          Target resolution for extracted clips [default: 1080p]
+                                         [possible values: 720p, 1080p]
+  -a, --audio <AUDIO>                    Include audio in extracted clips [default: true]
+                                         [possible values: true, false]
+      --intro-exclusion <PERCENT>        Intro exclusion zone as percentage of video duration (0-100) [default: 1.0]
+      --outro-exclusion <PERCENT>        Outro exclusion zone as percentage of video duration (0-100) [default: 40.0]
+  -h, --help                             Print help
+  -V, --version                          Print version
 ```
 
 ### Examples
@@ -73,13 +76,23 @@ Extract silent clips:
 video-clip-extractor ~/Videos --audio false
 ```
 
+Customize exclusion zones (skip first 5% and last 30%):
+```bash
+video-clip-extractor ~/Videos --intro-exclusion 5 --outro-exclusion 30
+```
+
+No exclusion zones (select from entire video):
+```bash
+video-clip-extractor ~/Videos --intro-exclusion 0 --outro-exclusion 0
+```
+
 ## Selection Strategies
 
 ### Random Strategy (Default)
-Selects a random 5-10 second segment from the video, avoiding the first and last 10% to skip intros/credits.
+Selects a random 8-12 second segment from the video. By default, excludes the first 1% (intro) and last 40% (outro) of the video to skip opening credits and end credits. These exclusion zones are configurable via CLI parameters.
 
 ### Intense Audio Strategy
-Analyzes audio levels throughout the video and selects the segment with the highest audio intensity, ideal for action scenes or dramatic moments.
+Analyzes audio levels throughout the video and selects the segment with the highest audio intensity, ideal for action scenes or dramatic moments. Note: Exclusion zones do not apply to this strategy as it selects based on audio analysis.
 
 ## Output Structure
 
