@@ -30,7 +30,7 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - **Property 19: Duration Parsing Correctness**
     - **Validates: Requirements 9.2, 9.4**
 
-  - [ ] 2.4 Implement video resolution detection
+  - [x] 2.4 Implement video resolution detection
     - Use `ffprobe` to query video width and height
     - Parse resolution output to (u32, u32)
     - Handle errors for invalid videos

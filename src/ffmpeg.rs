@@ -76,6 +76,62 @@ impl FFmpegExecutor {
                 duration_str, e
             )))
     }
+
+    /// Get the video resolution (width, height) of a video file
+    pub fn get_video_resolution(&self, video_path: &Path) -> Result<(u32, u32), FFmpegError> {
+        // Execute ffprobe to get video width and height
+        // Command: ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 <video>
+        let output = Command::new("ffprobe")
+            .arg("-v")
+            .arg("error")
+            .arg("-select_streams")
+            .arg("v:0")
+            .arg("-show_entries")
+            .arg("stream=width,height")
+            .arg("-of")
+            .arg("csv=s=x:p=0")
+            .arg(video_path)
+            .output()
+            .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to execute ffprobe: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(FFmpegError::ExecutionFailed(format!(
+                "ffprobe failed: {}",
+                stderr
+            )));
+        }
+
+        // Parse the output to (u32, u32)
+        // Expected format: "1920x1080"
+        let resolution_str = String::from_utf8_lossy(&output.stdout);
+        let resolution_str = resolution_str.trim();
+
+        // Split by 'x' to get width and height
+        let parts: Vec<&str> = resolution_str.split('x').collect();
+        if parts.len() != 2 {
+            return Err(FFmpegError::ParseError(format!(
+                "Invalid resolution format '{}', expected 'WIDTHxHEIGHT'",
+                resolution_str
+            )));
+        }
+
+        let width = parts[0]
+            .parse::<u32>()
+            .map_err(|e| FFmpegError::ParseError(format!(
+                "Failed to parse width '{}': {}",
+                parts[0], e
+            )))?;
+
+        let height = parts[1]
+            .parse::<u32>()
+            .map_err(|e| FFmpegError::ParseError(format!(
+                "Failed to parse height '{}': {}",
+                parts[1], e
+            )))?;
+
+        Ok((width, height))
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -159,5 +215,49 @@ mod tests {
         
         let no_audio_error = FFmpegError::NoAudioTrack;
         assert_eq!(no_audio_error.to_string(), "Video has no audio track");
+    }
+
+    #[test]
+    fn test_get_video_resolution_with_nonexistent_file() {
+        // Test error handling when video file doesn't exist
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let nonexistent_path = PathBuf::from("nonexistent_video.mp4");
+        
+        let result = executor.get_video_resolution(&nonexistent_path);
+        
+        // Should return an error
+        assert!(result.is_err());
+        
+        // Verify it's an ExecutionFailed error
+        match result {
+            Err(FFmpegError::ExecutionFailed(_)) => {
+                // Expected error type
+            }
+            _ => panic!("Expected ExecutionFailed error for nonexistent file"),
+        }
+    }
+
+    #[test]
+    fn test_get_video_resolution_with_invalid_file() {
+        // Test error handling when file is not a valid video
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        
+        // Create a temporary invalid file (text file pretending to be video)
+        use std::fs;
+        use std::env;
+        
+        let temp_dir = env::temp_dir();
+        let invalid_video_path = temp_dir.join("invalid_video_test.mp4");
+        
+        // Write some non-video content
+        fs::write(&invalid_video_path, b"This is not a video file").ok();
+        
+        let result = executor.get_video_resolution(&invalid_video_path);
+        
+        // Clean up
+        fs::remove_file(&invalid_video_path).ok();
+        
+        // Should return an error (either ExecutionFailed or ParseError)
+        assert!(result.is_err());
     }
 }
