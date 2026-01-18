@@ -149,6 +149,7 @@ impl IntenseAudioSelector {
 #[derive(Debug, thiserror::Error)]
 pub enum SelectionError {
     #[error("Video too short: {0}s")]
+    #[allow(dead_code)]
     VideoTooShort(f64),
     
     #[error("Failed to analyze audio: {0}")]

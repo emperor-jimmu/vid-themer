@@ -105,18 +105,22 @@ pub struct ProcessResult {
 #[derive(Debug, thiserror::Error)]
 pub enum ProcessError {
     #[error("Failed to process video: {0}")]
+    #[allow(dead_code)]
     ProcessingFailed(String),
     
     #[error("Failed to get video duration: {0}")]
+    #[allow(dead_code)]
     DurationDetectionFailed(String),
     
     #[error("Failed to select clip segment: {0}")]
+    #[allow(dead_code)]
     SegmentSelectionFailed(String),
     
     #[error("Failed to create output directory: {0}")]
     OutputDirectoryCreationFailed(String),
     
     #[error("Failed to extract clip: {0}")]
+    #[allow(dead_code)]
     ClipExtractionFailed(String),
 }
 
