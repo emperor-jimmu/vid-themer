@@ -48,7 +48,7 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - **Property 7: No Upscaling**
     - **Validates: Requirements 2.5, 2.6, 2.7**
 
-  - [ ] 2.7 Implement clip extraction command builder
+  - [x] 2.7 Implement clip extraction command builder
     - Build FFmpeg command with start time, duration, scaling, audio options
     - Handle audio inclusion/exclusion based on configuration
     - Use appropriate codec settings (libx264, preset fast)

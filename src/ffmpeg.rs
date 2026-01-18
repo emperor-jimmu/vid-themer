@@ -1,6 +1,7 @@
 // FFmpeg command execution and video processing
 
 use crate::cli::Resolution;
+use crate::selector::TimeRange;
 use std::path::Path;
 use std::process::Command;
 
@@ -160,6 +161,58 @@ impl FFmpegExecutor {
         );
 
         Some(filter)
+    }
+
+    /// Build FFmpeg command for extracting a clip
+    /// Returns a vector of command arguments ready to be passed to Command
+    pub fn build_extract_command(
+        &self,
+        video_path: &Path,
+        time_range: &TimeRange,
+        output_path: &Path,
+        source_resolution: (u32, u32),
+    ) -> Vec<String> {
+        let mut args = Vec::new();
+
+        // Start time (seek to position before input for faster processing)
+        args.push("-ss".to_string());
+        args.push(time_range.start_seconds.to_string());
+
+        // Input file
+        args.push("-i".to_string());
+        args.push(video_path.to_string_lossy().to_string());
+
+        // Duration
+        args.push("-t".to_string());
+        args.push(time_range.duration_seconds.to_string());
+
+        // Video codec and preset
+        args.push("-c:v".to_string());
+        args.push("libx264".to_string());
+        args.push("-preset".to_string());
+        args.push("fast".to_string());
+
+        // Add scale filter if needed (downscaling only, no upscaling)
+        if let Some(scale_filter) = self.calculate_scale_filter(source_resolution) {
+            args.push("-vf".to_string());
+            args.push(scale_filter);
+        }
+
+        // Audio handling
+        if !self.include_audio {
+            // Exclude audio track
+            args.push("-an".to_string());
+        } else {
+            // Include audio with copy codec for speed
+            args.push("-c:a".to_string());
+            args.push("aac".to_string());
+        }
+
+        // Output file (overwrite if exists)
+        args.push("-y".to_string());
+        args.push(output_path.to_string_lossy().to_string());
+
+        args
     }
 }
 
@@ -579,5 +632,223 @@ mod tests {
                 }
             }
         }
+    }
+
+    // Tests for build_extract_command
+
+    #[test]
+    fn test_build_extract_command_basic() {
+        use crate::selector::TimeRange;
+        use std::path::PathBuf;
+
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let video_path = PathBuf::from("/path/to/video.mp4");
+        let output_path = PathBuf::from("/path/to/output.mp4");
+        let time_range = TimeRange {
+            start_seconds: 120.5,
+            duration_seconds: 7.0,
+        };
+        let source_resolution = (1920, 1080);
+
+        let args = executor.build_extract_command(
+            &video_path,
+            &time_range,
+            &output_path,
+            source_resolution,
+        );
+
+        // Verify essential arguments are present
+        assert!(args.contains(&"-ss".to_string()));
+        assert!(args.contains(&"120.5".to_string()));
+        assert!(args.contains(&"-i".to_string()));
+        assert!(args.contains(&"-t".to_string()));
+        assert!(args.contains(&"7".to_string()));
+        assert!(args.contains(&"-c:v".to_string()));
+        assert!(args.contains(&"libx264".to_string()));
+        assert!(args.contains(&"-preset".to_string()));
+        assert!(args.contains(&"fast".to_string()));
+        assert!(args.contains(&"-y".to_string()));
+
+        // Audio should be included (aac codec)
+        assert!(args.contains(&"-c:a".to_string()));
+        assert!(args.contains(&"aac".to_string()));
+        assert!(!args.contains(&"-an".to_string()));
+    }
+
+    #[test]
+    fn test_build_extract_command_no_audio() {
+        use crate::selector::TimeRange;
+        use std::path::PathBuf;
+
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, false);
+        let video_path = PathBuf::from("/path/to/video.mp4");
+        let output_path = PathBuf::from("/path/to/output.mp4");
+        let time_range = TimeRange {
+            start_seconds: 60.0,
+            duration_seconds: 5.0,
+        };
+        let source_resolution = (1920, 1080);
+
+        let args = executor.build_extract_command(
+            &video_path,
+            &time_range,
+            &output_path,
+            source_resolution,
+        );
+
+        // Audio should be excluded
+        assert!(args.contains(&"-an".to_string()));
+        assert!(!args.contains(&"-c:a".to_string()));
+    }
+
+    #[test]
+    fn test_build_extract_command_with_scaling() {
+        use crate::selector::TimeRange;
+        use std::path::PathBuf;
+
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let video_path = PathBuf::from("/path/to/video.mp4");
+        let output_path = PathBuf::from("/path/to/output.mp4");
+        let time_range = TimeRange {
+            start_seconds: 30.0,
+            duration_seconds: 10.0,
+        };
+        // Source is 4K, should be scaled down to 1080p
+        let source_resolution = (3840, 2160);
+
+        let args = executor.build_extract_command(
+            &video_path,
+            &time_range,
+            &output_path,
+            source_resolution,
+        );
+
+        // Should include scale filter
+        assert!(args.contains(&"-vf".to_string()));
+        
+        // Find the scale filter argument
+        let vf_index = args.iter().position(|arg| arg == "-vf").unwrap();
+        let scale_filter = &args[vf_index + 1];
+        
+        assert!(scale_filter.contains("scale=1920:1080"));
+        assert!(scale_filter.contains("force_original_aspect_ratio=decrease"));
+        assert!(scale_filter.contains("pad=1920:1080"));
+    }
+
+    #[test]
+    fn test_build_extract_command_no_upscaling() {
+        use crate::selector::TimeRange;
+        use std::path::PathBuf;
+
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let video_path = PathBuf::from("/path/to/video.mp4");
+        let output_path = PathBuf::from("/path/to/output.mp4");
+        let time_range = TimeRange {
+            start_seconds: 15.0,
+            duration_seconds: 8.0,
+        };
+        // Source is 720p, should NOT be upscaled to 1080p
+        let source_resolution = (1280, 720);
+
+        let args = executor.build_extract_command(
+            &video_path,
+            &time_range,
+            &output_path,
+            source_resolution,
+        );
+
+        // Should NOT include scale filter
+        assert!(!args.contains(&"-vf".to_string()));
+    }
+
+    #[test]
+    fn test_build_extract_command_720p_target() {
+        use crate::selector::TimeRange;
+        use std::path::PathBuf;
+
+        let executor = FFmpegExecutor::new(Resolution::Hd720, true);
+        let video_path = PathBuf::from("/path/to/video.mp4");
+        let output_path = PathBuf::from("/path/to/output.mp4");
+        let time_range = TimeRange {
+            start_seconds: 45.0,
+            duration_seconds: 6.5,
+        };
+        // Source is 1080p, should be scaled down to 720p
+        let source_resolution = (1920, 1080);
+
+        let args = executor.build_extract_command(
+            &video_path,
+            &time_range,
+            &output_path,
+            source_resolution,
+        );
+
+        // Should include scale filter for 720p
+        assert!(args.contains(&"-vf".to_string()));
+        
+        let vf_index = args.iter().position(|arg| arg == "-vf").unwrap();
+        let scale_filter = &args[vf_index + 1];
+        
+        assert!(scale_filter.contains("scale=1280:720"));
+        assert!(scale_filter.contains("pad=1280:720"));
+    }
+
+    #[test]
+    fn test_build_extract_command_argument_order() {
+        use crate::selector::TimeRange;
+        use std::path::PathBuf;
+
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let video_path = PathBuf::from("/path/to/video.mp4");
+        let output_path = PathBuf::from("/path/to/output.mp4");
+        let time_range = TimeRange {
+            start_seconds: 100.0,
+            duration_seconds: 5.0,
+        };
+        let source_resolution = (1920, 1080);
+
+        let args = executor.build_extract_command(
+            &video_path,
+            &time_range,
+            &output_path,
+            source_resolution,
+        );
+
+        // Verify -ss comes before -i (for faster seeking)
+        let ss_index = args.iter().position(|arg| arg == "-ss").unwrap();
+        let i_index = args.iter().position(|arg| arg == "-i").unwrap();
+        assert!(ss_index < i_index, "Start time (-ss) should come before input (-i)");
+
+        // Verify -t comes after -i
+        let t_index = args.iter().position(|arg| arg == "-t").unwrap();
+        assert!(t_index > i_index, "Duration (-t) should come after input (-i)");
+
+        // Verify output path is last
+        assert_eq!(args.last().unwrap(), &output_path.to_string_lossy().to_string());
+    }
+
+    #[test]
+    fn test_build_extract_command_overwrite_flag() {
+        use crate::selector::TimeRange;
+        use std::path::PathBuf;
+
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let video_path = PathBuf::from("/path/to/video.mp4");
+        let output_path = PathBuf::from("/path/to/output.mp4");
+        let time_range = TimeRange {
+            start_seconds: 0.0,
+            duration_seconds: 5.0,
+        };
+        let source_resolution = (1920, 1080);
+
+        let args = executor.build_extract_command(
+            &video_path,
+            &time_range,
+            &output_path,
+            source_resolution,
+        );
+
+        // Should include -y flag to overwrite existing files
+        assert!(args.contains(&"-y".to_string()));
     }
 }
