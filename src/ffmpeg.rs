@@ -175,6 +175,10 @@ impl FFmpegExecutor {
     ) -> Vec<String> {
         let mut args = Vec::new();
 
+        // Error concealment flags for better handling of corrupted/problematic videos
+        args.push("-err_detect".to_string());
+        args.push("ignore_err".to_string());
+        
         // Start time (seek to position before input for faster processing)
         args.push("-ss".to_string());
         args.push(time_range.start_seconds.to_string());
