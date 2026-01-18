@@ -131,17 +131,17 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - Test that first occurrence is selected when multiple segments have similar intensity
     - _Requirements: 4.3_
 
-- [ ] 4. Checkpoint - Ensure core extraction logic works
+- [x] 4. Checkpoint - Ensure core extraction logic works
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. Implement video scanner
-  - [ ] 5.1 Create VideoFile struct and VideoScanner
+- [x] 5. Implement video scanner
+  - [x] 5.1 Create VideoFile struct and VideoScanner
     - Define `VideoFile` struct with path and parent_dir fields
     - Create `VideoScanner` struct with root_path field
     - Define `ScanError` enum
     - _Requirements: 1.1_
 
-  - [ ] 5.2 Implement directory skip logic
+  - [x] 5.2 Implement directory skip logic
     - Check if directory contains backdrops/backdrop.mp4
     - Return true if exists (skip directory)
     - _Requirements: 1.4_
@@ -150,7 +150,7 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - **Property 3: Skip Directories with Existing Clips**
     - **Validates: Requirements 1.4**
 
-  - [ ] 5.3 Implement recursive directory scanning
+  - [x] 5.3 Implement recursive directory scanning
     - Use `walkdir` crate or std::fs to traverse directory tree
     - Filter for .mp4 and .mkv extensions
     - Skip directories with existing clips
@@ -158,7 +158,8 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - Handle permission errors gracefully (log warning, continue)
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6_
 
-  - [ ]* 5.4 Write property test for recursive directory traversal
+  - [x] 5.4 Write property test for recursive directory traversal
+
     - **Property 1: Recursive Directory Traversal**
     - **Validates: Requirements 1.1**
 
