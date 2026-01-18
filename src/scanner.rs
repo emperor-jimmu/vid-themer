@@ -13,6 +13,11 @@ pub struct VideoFile {
     pub parent_dir: PathBuf,
 }
 
+pub struct ScanResult {
+    pub videos: Vec<VideoFile>,
+    pub skipped_dirs: Vec<PathBuf>,
+}
+
 impl VideoScanner {
     pub fn new(root_path: PathBuf) -> Self {
         Self { root_path }
@@ -24,15 +29,21 @@ impl VideoScanner {
     }
 
     /// Scan the root directory recursively for video files
-    pub fn scan(&self) -> Result<Vec<VideoFile>, ScanError> {
+    pub fn scan(&self) -> Result<ScanResult, ScanError> {
         let mut videos = Vec::new();
+        let mut skipped_dirs = Vec::new();
 
         for entry in WalkDir::new(&self.root_path)
             .into_iter()
             .filter_entry(|e| {
                 // Skip directories that already have backdrops
                 if e.file_type().is_dir() {
-                    !self.should_skip_directory(e.path())
+                    let should_skip = self.should_skip_directory(e.path());
+                    if should_skip {
+                        // Track skipped directories (including root if it has a backdrop)
+                        skipped_dirs.push(e.path().to_path_buf());
+                    }
+                    !should_skip
                 } else {
                     true
                 }
@@ -77,7 +88,10 @@ impl VideoScanner {
             }
         }
 
-        Ok(videos)
+        Ok(ScanResult {
+            videos,
+            skipped_dirs,
+        })
     }
 }
 
@@ -159,7 +173,8 @@ mod tests {
             let result = scanner.scan();
             prop_assert!(result.is_ok(), "Scanner should successfully scan directory structure");
             
-            let found_videos = result.unwrap();
+            let scan_result = result.unwrap();
+            let found_videos = scan_result.videos;
             
             // Property 1: All created video files should be discovered
             // The scanner should find exactly as many videos as we created
@@ -256,7 +271,8 @@ mod tests {
             let result = scanner.scan();
             prop_assert!(result.is_ok(), "Scanner should successfully scan directory");
             
-            let found_videos = result.unwrap();
+            let scan_result = result.unwrap();
+            let found_videos = scan_result.videos;
             
             // Property 1: Scanner should find exactly the number of .mp4 and .mkv files
             let expected_count = num_mp4_files + num_mkv_files;
@@ -364,7 +380,8 @@ mod tests {
                 num_non_video_files
             );
             
-            let found_videos = result.unwrap();
+            let scan_result = result.unwrap();
+            let found_videos = scan_result.videos;
             
             // Property 2: Scanner should find only video files, excluding all non-video files
             prop_assert_eq!(
@@ -432,7 +449,8 @@ mod tests {
         let result = scanner.scan();
         
         assert!(result.is_ok());
-        let videos = result.unwrap();
+        let scan_result = result.unwrap();
+        let videos = scan_result.videos;
         assert_eq!(videos.len(), 1);
         assert_eq!(videos[0].path, video_path);
         
@@ -464,7 +482,8 @@ mod tests {
         let result = scanner.scan();
         
         assert!(result.is_ok());
-        let videos = result.unwrap();
+        let scan_result = result.unwrap();
+        let videos = scan_result.videos;
         assert_eq!(videos.len(), 3, "Should find all 3 videos across all depth levels");
         
         // Verify all videos are found
@@ -545,7 +564,8 @@ mod tests {
                 "Scanner should successfully scan directory structure"
             );
             
-            let found_videos = result.unwrap();
+            let scan_result = result.unwrap();
+            let found_videos = scan_result.videos;
             
             // Property 1: Scanner should find only videos from directories WITHOUT existing clips
             prop_assert_eq!(

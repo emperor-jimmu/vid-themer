@@ -52,8 +52,8 @@ fn main() {
     
     // Create VideoScanner and scan for videos
     let scanner = VideoScanner::new(args.directory.clone());
-    let videos = match scanner.scan() {
-        Ok(v) => v,
+    let scan_result = match scanner.scan() {
+        Ok(r) => r,
         Err(e) => {
             eprintln!("Error scanning directory: {}", e);
             process::exit(1);
@@ -61,10 +61,20 @@ fn main() {
     };
     
     // Exit early if no videos found
-    if videos.is_empty() {
-        println!("No videos found in {}", args.directory.display());
+    if scan_result.videos.is_empty() {
+        if !scan_result.skipped_dirs.is_empty() {
+            println!("All videos in {} already have backdrop clips.", args.directory.display());
+            println!("Skipped {} director{} with existing backdrops.", 
+                scan_result.skipped_dirs.len(),
+                if scan_result.skipped_dirs.len() == 1 { "y" } else { "ies" }
+            );
+        } else {
+            println!("No videos found in {}", args.directory.display());
+        }
         return;
     }
+    
+    let videos = scan_result.videos;
     
     // Create FFmpegExecutor with resolution and audio settings
     let ffmpeg_executor = FFmpegExecutor::new(args.resolution.clone(), args.include_audio);
