@@ -163,7 +163,8 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - **Property 1: Recursive Directory Traversal**
     - **Validates: Requirements 1.1**
 
-  - [ ]* 5.5 Write property test for video file discovery
+  - [x] 5.5 Write property test for video file discovery
+
     - **Property 2: Video File Discovery**
     - **Validates: Requirements 1.2, 1.3**
 
@@ -171,14 +172,14 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - **Property 4: Non-Video File Filtering**
     - **Validates: Requirements 1.5**
 
-- [ ] 6. Implement video processor
-  - [ ] 6.1 Create VideoProcessor struct
+- [x] 6. Implement video processor
+  - [x] 6.1 Create VideoProcessor struct
     - Add fields for selector (Box<dyn ClipSelector>) and FFmpegExecutor
     - Define `ProcessResult` struct
     - Define `ProcessError` enum
     - _Requirements: All processing requirements_
 
-  - [ ] 6.2 Implement output directory creation
+  - [x] 6.2 Implement output directory creation
     - Create backdrops subdirectory in video's parent directory
     - Return full output path (backdrops/backdrop.mp4)
     - Handle directory creation errors
@@ -192,7 +193,7 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - **Property 12: Output Path Structure**
     - **Validates: Requirements 5.1, 5.4, 5.5**
 
-  - [ ] 6.5 Implement process_video method
+  - [x] 6.5 Implement process_video method
     - Get video duration using FFmpegExecutor
     - Select segment using ClipSelector strategy
     - Create output directory

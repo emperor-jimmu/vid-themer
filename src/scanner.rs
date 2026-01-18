@@ -205,6 +205,108 @@ mod tests {
         }
     }
 
+    // Feature: video-clip-extractor, Property 2: Video File Discovery
+    proptest! {
+        #[test]
+        fn test_video_file_discovery(
+            num_mp4_files in 0usize..5,
+            num_mkv_files in 0usize..5,
+            num_other_files in 0usize..5,
+        ) {
+            // Property: For any directory structure containing files with various extensions,
+            // the scanner should include all files with .mp4 or .mkv extensions in the processing list
+            // and exclude files with other extensions
+            
+            // Create a temporary directory for testing
+            let temp_dir = std::env::temp_dir().join(format!("video_discovery_test_{}_{}", std::process::id(), rand::random::<u32>()));
+            let _ = fs::remove_dir_all(&temp_dir); // Clean up if exists
+            fs::create_dir_all(&temp_dir).unwrap();
+            
+            let mut expected_video_files = Vec::new();
+            
+            // Create .mp4 files (should be discovered)
+            for i in 0..num_mp4_files {
+                let video_path = temp_dir.join(format!("video_{}.mp4", i));
+                let mut file = fs::File::create(&video_path).unwrap();
+                file.write_all(b"fake mp4 content").unwrap();
+                expected_video_files.push(video_path);
+            }
+            
+            // Create .mkv files (should be discovered)
+            for i in 0..num_mkv_files {
+                let video_path = temp_dir.join(format!("video_{}.mkv", i));
+                let mut file = fs::File::create(&video_path).unwrap();
+                file.write_all(b"fake mkv content").unwrap();
+                expected_video_files.push(video_path);
+            }
+            
+            // Create files with other extensions (should NOT be discovered)
+            let non_video_extensions = vec!["txt", "jpg", "png", "avi", "mov", "doc"];
+            for i in 0..num_other_files {
+                let ext = non_video_extensions[i % non_video_extensions.len()];
+                let file_path = temp_dir.join(format!("file_{}.{}", i, ext));
+                let mut file = fs::File::create(&file_path).unwrap();
+                file.write_all(b"non-video content").unwrap();
+            }
+            
+            // Create the scanner
+            let scanner = VideoScanner::new(temp_dir.clone());
+            
+            // Scan for videos
+            let result = scanner.scan();
+            prop_assert!(result.is_ok(), "Scanner should successfully scan directory");
+            
+            let found_videos = result.unwrap();
+            
+            // Property 1: Scanner should find exactly the number of .mp4 and .mkv files
+            let expected_count = num_mp4_files + num_mkv_files;
+            prop_assert_eq!(
+                found_videos.len(),
+                expected_count,
+                "Scanner should find exactly {} video files ({} .mp4 + {} .mkv), but found {}. Non-video files ({}) should be excluded.",
+                expected_count,
+                num_mp4_files,
+                num_mkv_files,
+                found_videos.len(),
+                num_other_files
+            );
+            
+            // Property 2: All found videos should be .mp4 or .mkv files
+            for video in &found_videos {
+                let extension = video.path.extension()
+                    .and_then(|e| e.to_str())
+                    .map(|s| s.to_lowercase());
+                prop_assert!(
+                    extension == Some("mp4".to_string()) || extension == Some("mkv".to_string()),
+                    "Found video {:?} should have .mp4 or .mkv extension, but has {:?}",
+                    video.path,
+                    extension
+                );
+            }
+            
+            // Property 3: All expected video files should be found
+            for expected in &expected_video_files {
+                prop_assert!(
+                    found_videos.iter().any(|v| v.path == *expected),
+                    "Expected video {:?} should be found by scanner",
+                    expected
+                );
+            }
+            
+            // Property 4: Each found video should be in our expected list
+            for video in &found_videos {
+                prop_assert!(
+                    expected_video_files.contains(&video.path),
+                    "Found video {:?} should be in expected video list (not a non-video file)",
+                    video.path
+                );
+            }
+            
+            // Clean up
+            let _ = fs::remove_dir_all(&temp_dir);
+        }
+    }
+
     #[test]
     fn test_scanner_basic_functionality() {
         // Basic unit test to verify scanner works with a simple structure
