@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "name": "Code Quality Analyzer",
+  "description": "Analyzes modified Rust source files for code smells, design patterns, and best practices. Provides suggestions for improving readability, maintainability, and performance while preserving functionality.",
+  "version": "1",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Analyze the recently modified code in the edited file for potential improvements. Focus on:\n- Code smells and anti-patterns\n- Rust idioms and best practices\n- Readability and maintainability issues\n- Performance optimization opportunities\n- Error handling improvements\n- Documentation quality\n\nProvide specific, actionable suggestions while maintaining existing functionality. Keep suggestions concise and prioritize the most impactful improvements."
+  },
+  "workspaceFolderName": "vid-themer",
+  "shortName": "code-quality-analyzer"
+}

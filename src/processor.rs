@@ -5,6 +5,10 @@ use crate::scanner::VideoFile;
 use crate::selector::ClipSelector;
 use std::path::PathBuf;
 
+// Constants for output directory and file naming
+const BACKDROPS_DIR: &str = "backdrops";
+const BACKDROP_FILE: &str = "backdrop.mp4";
+
 pub struct VideoProcessor {
     selector: Box<dyn ClipSelector>,
     ffmpeg: FFmpegExecutor,
@@ -98,7 +102,7 @@ impl VideoProcessor {
     /// Returns the path to backdrops/backdrop.mp4 relative to the video's parent directory
     fn create_output_directory(&self, video: &VideoFile) -> Result<PathBuf, ProcessError> {
         // Create backdrops subdirectory in video's parent directory
-        let backdrops_dir = video.parent_dir.join("backdrops");
+        let backdrops_dir = video.parent_dir.join(BACKDROPS_DIR);
         
         std::fs::create_dir_all(&backdrops_dir).map_err(|e| {
             ProcessError::OutputDirectoryCreationFailed(format!(
@@ -108,7 +112,7 @@ impl VideoProcessor {
         })?;
         
         // Return full output path (backdrops/backdrop.mp4)
-        Ok(backdrops_dir.join("backdrop.mp4"))
+        Ok(backdrops_dir.join(BACKDROP_FILE))
     }
 }
 
@@ -120,6 +124,7 @@ pub struct ProcessResult {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[allow(clippy::enum_variant_names)]
 pub enum ProcessError {
     #[error("Failed to process video: {0}")]
     #[allow(dead_code)]

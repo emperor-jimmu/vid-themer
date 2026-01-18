@@ -3,6 +3,29 @@
 use std::path::Path;
 use rand::Rng;
 
+/// Configuration for clip duration constraints
+pub struct ClipConfig {
+    pub min_duration: f64,
+    pub max_duration: f64,
+}
+
+impl Default for ClipConfig {
+    fn default() -> Self {
+        Self {
+            min_duration: 8.0,
+            max_duration: 12.0,
+        }
+    }
+}
+
+impl ClipConfig {
+    /// Get a random duration within the configured range
+    pub fn random_duration(&self) -> f64 {
+        let mut rng = rand::thread_rng();
+        rng.gen_range(self.min_duration..=self.max_duration)
+    }
+}
+
 pub struct TimeRange {
     pub start_seconds: f64,
     pub duration_seconds: f64,
@@ -28,16 +51,14 @@ impl ClipSelector for RandomSelector {
         intro_exclusion_percent: f64,
         outro_exclusion_percent: f64,
     ) -> Result<TimeRange, SelectionError> {
-        const MIN_CLIP_DURATION: f64 = 8.0;
-        const MAX_CLIP_DURATION: f64 = 12.0;
+        let config = ClipConfig::default();
         
         // Calculate exclusion zones as percentages of video duration
         let intro_exclusion = duration * (intro_exclusion_percent / 100.0);
         let outro_exclusion = duration * (outro_exclusion_percent / 100.0);
         
-        // Generate random clip duration between 8 and 12 seconds
-        let mut rng = rand::thread_rng();
-        let clip_duration = rng.gen_range(MIN_CLIP_DURATION..=MAX_CLIP_DURATION);
+        // Generate random clip duration between min and max
+        let clip_duration = config.random_duration();
         
         // Calculate the minimum required duration for exclusions
         let required_duration = intro_exclusion + clip_duration + outro_exclusion;
@@ -59,6 +80,7 @@ impl ClipSelector for RandomSelector {
         let latest_start = duration - outro_exclusion - clip_duration;
         
         // Generate random start time within valid bounds
+        let mut rng = rand::thread_rng();
         let start = rng.gen_range(earliest_start..=latest_start);
         
         Ok(TimeRange {
@@ -86,18 +108,17 @@ impl ClipSelector for IntenseAudioSelector {
         _intro_exclusion_percent: f64,
         _outro_exclusion_percent: f64,
     ) -> Result<TimeRange, SelectionError> {
-        const MIN_CLIP_DURATION: f64 = 8.0;
-        const MAX_CLIP_DURATION: f64 = 12.0;
+        let config = ClipConfig::default();
         
         // Try to analyze audio intensity
         match self.ffmpeg_executor.analyze_audio_intensity(video_path, duration) {
             Ok(segments) => {
                 // Select the segment with highest audio intensity (first in sorted list)
                 if let Some(loudest_segment) = segments.first() {
-                    // Use the segment's duration, but cap it between 8-12 seconds
+                    // Use the segment's duration, but cap it between min-max seconds
                     let clip_duration = loudest_segment.duration
-                        .max(MIN_CLIP_DURATION)
-                        .min(MAX_CLIP_DURATION)
+                        .max(config.min_duration)
+                        .min(config.max_duration)
                         .min(duration); // Don't exceed video duration
                     
                     // Ensure the clip fits within the video
@@ -137,12 +158,11 @@ impl ClipSelector for IntenseAudioSelector {
 impl IntenseAudioSelector {
     /// Calculate middle segment as fallback when audio analysis fails or no audio track exists
     fn middle_segment(duration: f64) -> Result<TimeRange, SelectionError> {
-        const MIN_CLIP_DURATION: f64 = 8.0;
-        const MAX_CLIP_DURATION: f64 = 12.0;
+        let config = ClipConfig::default();
         
-        // Use 10 seconds as default clip duration (middle of 8-12 range)
-        let clip_duration = MAX_CLIP_DURATION.min(duration);
-        let actual_duration = clip_duration.max(MIN_CLIP_DURATION).min(duration);
+        // Use max duration as default clip duration
+        let clip_duration = config.max_duration.min(duration);
+        let actual_duration = clip_duration.max(config.min_duration).min(duration);
         
         // Calculate start time to center the clip
         let start = ((duration - actual_duration) / 2.0).max(0.0);

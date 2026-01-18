@@ -164,6 +164,18 @@ impl FFmpegExecutor {
         Some(filter)
     }
 
+    /// Build audio-related FFmpeg arguments based on configuration
+    /// Returns arguments for either including or excluding audio
+    fn build_audio_args(&self) -> Vec<String> {
+        if !self.include_audio {
+            // Exclude audio track
+            vec!["-an".to_string()]
+        } else {
+            // Include audio with AAC codec
+            vec!["-c:a".to_string(), "aac".to_string()]
+        }
+    }
+
     /// Build FFmpeg command for extracting a clip
     /// Returns a vector of command arguments ready to be passed to Command
     pub fn build_extract_command(
@@ -173,29 +185,25 @@ impl FFmpegExecutor {
         output_path: &Path,
         source_resolution: (u32, u32),
     ) -> Vec<String> {
-        let mut args = Vec::new();
-
-        // Error concealment flags for better handling of corrupted/problematic videos
-        args.push("-err_detect".to_string());
-        args.push("ignore_err".to_string());
-        
-        // Start time (seek to position before input for faster processing)
-        args.push("-ss".to_string());
-        args.push(time_range.start_seconds.to_string());
-
-        // Input file
-        args.push("-i".to_string());
-        args.push(video_path.to_string_lossy().to_string());
-
-        // Duration
-        args.push("-t".to_string());
-        args.push(time_range.duration_seconds.to_string());
-
-        // Video codec and preset
-        args.push("-c:v".to_string());
-        args.push("libx264".to_string());
-        args.push("-preset".to_string());
-        args.push("fast".to_string());
+        let mut args = vec![
+            // Error concealment flags for better handling of corrupted/problematic videos
+            "-err_detect".to_string(),
+            "ignore_err".to_string(),
+            // Start time (seek to position before input for faster processing)
+            "-ss".to_string(),
+            time_range.start_seconds.to_string(),
+            // Input file
+            "-i".to_string(),
+            video_path.to_string_lossy().to_string(),
+            // Duration
+            "-t".to_string(),
+            time_range.duration_seconds.to_string(),
+            // Video codec and preset
+            "-c:v".to_string(),
+            "libx264".to_string(),
+            "-preset".to_string(),
+            "fast".to_string(),
+        ];
 
         // Add scale filter if needed (downscaling only, no upscaling)
         if let Some(scale_filter) = self.calculate_scale_filter(source_resolution) {
@@ -204,14 +212,7 @@ impl FFmpegExecutor {
         }
 
         // Audio handling
-        if !self.include_audio {
-            // Exclude audio track
-            args.push("-an".to_string());
-        } else {
-            // Include audio with copy codec for speed
-            args.push("-c:a".to_string());
-            args.push("aac".to_string());
-        }
+        args.extend(self.build_audio_args());
 
         // Output file (overwrite if exists)
         args.push("-y".to_string());
@@ -296,10 +297,10 @@ impl FFmpegExecutor {
         for line in stderr.lines() {
             if line.contains("Parsed_ebur128") && line.contains("t:") {
                 // Extract time and peak values
-                if let Some(time) = Self::extract_value_after(line, "t:") {
-                    if let Some(peak) = Self::extract_value_after(line, "FTPK:") {
-                        measurements.push((time, peak));
-                    }
+                if let Some(time) = Self::extract_value_after(line, "t:")
+                    && let Some(peak) = Self::extract_value_after(line, "FTPK:")
+                {
+                    measurements.push((time, peak));
                 }
             }
         }

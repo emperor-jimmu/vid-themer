@@ -32,18 +32,27 @@ fn validate_directory(path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Helper function to handle errors and exit with appropriate error code
+/// Prints error message and exits the process with code 1
+fn exit_on_error<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) -> T {
+    match result {
+        Ok(value) => value,
+        Err(e) => {
+            eprintln!("Error {}: {}", context, e);
+            process::exit(1);
+        }
+    }
+}
+
 fn main() {
     // Parse CLI arguments
     let args = CliArgs::parse();
     
     // Validate directory exists (exit with error code 1 if not)
-    if let Err(e) = validate_directory(&args.directory) {
-        eprintln!("Error: {}", e);
-        process::exit(1);
-    }
+    exit_on_error(validate_directory(&args.directory), "validating directory");
     
     // Check FFmpeg availability (exit with error if not found)
-    if let Err(_) = FFmpegExecutor::check_availability() {
+    if FFmpegExecutor::check_availability().is_err() {
         eprintln!("Error: FFmpeg not found in PATH");
         eprintln!("Please install FFmpeg to use this tool.");
         eprintln!("Visit https://ffmpeg.org/download.html for installation instructions.");
@@ -52,13 +61,7 @@ fn main() {
     
     // Create VideoScanner and scan for videos
     let scanner = VideoScanner::new(args.directory.clone());
-    let scan_result = match scanner.scan() {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Error scanning directory: {}", e);
-            process::exit(1);
-        }
-    };
+    let scan_result = exit_on_error(scanner.scan(), "scanning directory");
     
     // Exit early if no videos found
     if scan_result.videos.is_empty() {

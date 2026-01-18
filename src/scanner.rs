@@ -4,6 +4,10 @@ use crate::error::ScanError;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+// Constants for output directory and file naming
+const BACKDROPS_DIR: &str = "backdrops";
+const BACKDROP_FILE: &str = "backdrop.mp4";
+
 pub struct VideoScanner {
     pub root_path: PathBuf,
 }
@@ -26,12 +30,12 @@ impl VideoScanner {
     /// Check if a directory should be skipped
     fn should_skip_directory(&self, dir: &Path) -> bool {
         // Skip if it's a backdrops directory
-        if dir.file_name().and_then(|n| n.to_str()) == Some("backdrops") {
+        if dir.file_name().and_then(|n| n.to_str()) == Some(BACKDROPS_DIR) {
             return true;
         }
         
         // Skip if it already has a backdrop
-        dir.join("backdrops").join("backdrop.mp4").exists()
+        dir.join(BACKDROPS_DIR).join(BACKDROP_FILE).exists()
     }
 
     /// Scan the root directory recursively for video files
@@ -71,7 +75,7 @@ impl VideoScanner {
                             // Skip files named "backdrop.mp4" or "backdrop.mkv" as they're likely output files
                             if let Some(filename) = path.file_name() {
                                 let filename_str = filename.to_string_lossy().to_lowercase();
-                                if filename_str == "backdrop.mp4" || filename_str == "backdrop.mkv" {
+                                if filename_str == BACKDROP_FILE || filename_str == "backdrop.mkv" {
                                     continue;
                                 }
                             }
@@ -89,12 +93,12 @@ impl VideoScanner {
                 }
                 Err(err) => {
                     // Handle permission errors gracefully
-                    if let Some(io_err) = err.io_error() {
-                        if io_err.kind() == std::io::ErrorKind::PermissionDenied {
-                            // Log warning and continue
-                            eprintln!("Warning: Permission denied: {}", err.path().map(|p| p.display().to_string()).unwrap_or_else(|| "unknown".to_string()));
-                            continue;
-                        }
+                    if let Some(io_err) = err.io_error()
+                        && io_err.kind() == std::io::ErrorKind::PermissionDenied
+                    {
+                        // Log warning and continue
+                        eprintln!("Warning: Permission denied: {}", err.path().map(|p| p.display().to_string()).unwrap_or_else(|| "unknown".to_string()));
+                        continue;
                     }
                     // For other errors, return an error
                     return Err(ScanError::DirectoryScanFailed(err.to_string()));

@@ -35,7 +35,7 @@ pub struct CliArgs {
 
 fn validate_percentage(s: &str) -> Result<f64, String> {
     let value: f64 = s.parse().map_err(|_| format!("'{}' is not a valid number", s))?;
-    if value < 0.0 || value > 100.0 {
+    if !(0.0..=100.0).contains(&value) {
         return Err(format!("percentage must be between 0 and 100, got {}", value));
     }
     Ok(value)
