@@ -307,6 +307,116 @@ mod tests {
         }
     }
 
+    // Feature: video-clip-extractor, Property 4: Non-Video File Filtering
+    proptest! {
+        #[test]
+        fn test_non_video_file_filtering(
+            num_video_files in 0usize..5,
+            num_non_video_files in 1usize..10,
+        ) {
+            // Property: For any directory structure containing files with non-video extensions,
+            // the scanner should exclude those files without raising errors
+            
+            // Create a temporary directory for testing
+            let temp_dir = std::env::temp_dir().join(format!("non_video_filter_test_{}_{}", std::process::id(), rand::random::<u32>()));
+            let _ = fs::remove_dir_all(&temp_dir); // Clean up if exists
+            fs::create_dir_all(&temp_dir).unwrap();
+            
+            let mut expected_video_files = Vec::new();
+            
+            // Create video files (should be discovered)
+            for i in 0..num_video_files {
+                let ext = if i % 2 == 0 { "mp4" } else { "mkv" };
+                let video_path = temp_dir.join(format!("video_{}.{}", i, ext));
+                let mut file = fs::File::create(&video_path).unwrap();
+                file.write_all(b"fake video content").unwrap();
+                expected_video_files.push(video_path);
+            }
+            
+            // Create non-video files with various extensions (should be silently skipped)
+            let non_video_extensions = vec![
+                "txt", "jpg", "png", "gif", "bmp", "svg",  // Images and text
+                "avi", "mov", "wmv", "flv", "webm",        // Other video formats (not supported)
+                "mp3", "wav", "flac", "aac",               // Audio files
+                "doc", "pdf", "zip", "tar", "gz",          // Documents and archives
+                "exe", "dll", "so", "dylib",               // Executables and libraries
+                "json", "xml", "yaml", "toml", "ini",      // Config files
+                "rs", "py", "js", "java", "cpp", "h",      // Source code
+            ];
+            
+            for i in 0..num_non_video_files {
+                let ext = non_video_extensions[i % non_video_extensions.len()];
+                let file_path = temp_dir.join(format!("file_{}.{}", i, ext));
+                let mut file = fs::File::create(&file_path).unwrap();
+                file.write_all(format!("content for .{} file", ext).as_bytes()).unwrap();
+            }
+            
+            // Create the scanner
+            let scanner = VideoScanner::new(temp_dir.clone());
+            
+            // Scan for videos - this should NOT produce errors despite non-video files
+            let result = scanner.scan();
+            
+            // Property 1: Scanner should succeed without errors even with non-video files present
+            prop_assert!(
+                result.is_ok(),
+                "Scanner should successfully scan directory with {} non-video files without errors",
+                num_non_video_files
+            );
+            
+            let found_videos = result.unwrap();
+            
+            // Property 2: Scanner should find only video files, excluding all non-video files
+            prop_assert_eq!(
+                found_videos.len(),
+                num_video_files,
+                "Scanner should find exactly {} video files, ignoring {} non-video files",
+                num_video_files,
+                num_non_video_files
+            );
+            
+            // Property 3: All found files should be video files (.mp4 or .mkv)
+            for video in &found_videos {
+                let extension = video.path.extension()
+                    .and_then(|e| e.to_str())
+                    .map(|s| s.to_lowercase());
+                prop_assert!(
+                    extension == Some("mp4".to_string()) || extension == Some("mkv".to_string()),
+                    "Found file {:?} should be a video file (.mp4 or .mkv), not {:?}",
+                    video.path,
+                    extension
+                );
+            }
+            
+            // Property 4: All expected video files should be found
+            for expected in &expected_video_files {
+                prop_assert!(
+                    found_videos.iter().any(|v| v.path == *expected),
+                    "Expected video {:?} should be found by scanner",
+                    expected
+                );
+            }
+            
+            // Property 5: No non-video files should be in the results
+            for video in &found_videos {
+                let extension = video.path.extension()
+                    .and_then(|e| e.to_str())
+                    .map(|s| s.to_lowercase());
+                
+                if let Some(ext) = extension {
+                    prop_assert!(
+                        !non_video_extensions.contains(&ext.as_str()) || ext == "mp4" || ext == "mkv",
+                        "Non-video file with extension .{} should not be in results",
+                        ext
+                    );
+                }
+            }
+            
+            // Clean up
+            let _ = fs::remove_dir_all(&temp_dir);
+        }
+    }
+
     #[test]
     fn test_scanner_basic_functionality() {
         // Basic unit test to verify scanner works with a simple structure

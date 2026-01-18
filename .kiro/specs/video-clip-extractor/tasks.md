@@ -168,7 +168,8 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - **Property 2: Video File Discovery**
     - **Validates: Requirements 1.2, 1.3**
 
-  - [ ]* 5.6 Write property test for non-video file filtering
+  - [x] 5.6 Write property test for non-video file filtering
+
     - **Property 4: Non-Video File Filtering**
     - **Validates: Requirements 1.5**
 
@@ -220,13 +221,13 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - **Property 16: Error Messages Include Paths**
     - **Validates: Requirements 7.5**
 
-- [ ] 7. Implement progress reporter
-  - [ ] 7.1 Create ProgressReporter struct
+- [x] 7. Implement progress reporter
+  - [x] 7.1 Create ProgressReporter struct
     - Add fields for total, current, successful, failed counts
     - Implement start, update, and finish methods
     - _Requirements: 8.1, 8.2, 8.3, 8.4_
 
-  - [ ] 7.2 Implement progress output formatting
+  - [x] 7.2 Implement progress output formatting
     - Display total videos found at start
     - Display current/total progress for each video
     - Display output path on success
@@ -234,19 +235,23 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - Display summary at completion
     - _Requirements: 8.1, 8.2, 8.3, 8.4_
 
-  - [ ]* 7.3 Write property test for progress updates per video
+  - [x] 7.3 Write property test for progress updates per video
+
     - **Property 17: Progress Updates Per Video**
     - **Validates: Requirements 8.2**
 
-  - [ ]* 7.4 Write property test for success messages include output path
+  - [x] 7.4 Write property test for success messages include output path
+
     - **Property 18: Success Messages Include Output Path**
     - **Validates: Requirements 8.3**
 
-  - [ ]* 7.5 Write unit test for initial progress message
+  - [x] 7.5 Write unit test for initial progress message
+
     - Test that total count is displayed at start
     - _Requirements: 8.1_
 
-  - [ ]* 7.6 Write unit test for summary message
+  - [x] 7.6 Write unit test for summary message
+
     - Test that successful and failed counts are displayed at end
     - _Requirements: 8.4_
 
