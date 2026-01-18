@@ -203,9 +203,21 @@ impl FFmpegExecutor {
             "libx264".to_string(),
             "-preset".to_string(),
             "fast".to_string(),
+            // Keyframe interval for better seeking and streaming compatibility
+            "-g".to_string(),
+            "30".to_string(), // Keyframe every 30 frames (~1 second at 30fps)
+            "-keyint_min".to_string(),
+            "30".to_string(),
             // Ensure output is in yuv420p pixel format for compatibility
             "-pix_fmt".to_string(),
             "yuv420p".to_string(),
+            // Set color metadata for proper playback compatibility
+            "-colorspace".to_string(),
+            "bt709".to_string(),
+            "-color_primaries".to_string(),
+            "bt709".to_string(),
+            "-color_trc".to_string(),
+            "bt709".to_string(),
         ];
 
         // Build video filter chain
@@ -880,8 +892,15 @@ mod tests {
         assert!(args.contains(&"libx264".to_string()));
         assert!(args.contains(&"-preset".to_string()));
         assert!(args.contains(&"fast".to_string()));
+        assert!(args.contains(&"-g".to_string()));
+        assert!(args.contains(&"30".to_string()));
+        assert!(args.contains(&"-keyint_min".to_string()));
         assert!(args.contains(&"-pix_fmt".to_string()));
         assert!(args.contains(&"yuv420p".to_string()));
+        assert!(args.contains(&"-colorspace".to_string()));
+        assert!(args.contains(&"bt709".to_string()));
+        assert!(args.contains(&"-color_primaries".to_string()));
+        assert!(args.contains(&"-color_trc".to_string()));
         assert!(args.contains(&"-y".to_string()));
 
         // No scaling needed for same resolution, so no -vf flag
