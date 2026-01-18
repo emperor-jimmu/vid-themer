@@ -203,16 +203,13 @@ impl FFmpegExecutor {
             "libx264".to_string(),
             "-preset".to_string(),
             "fast".to_string(),
+            // Ensure output is in yuv420p pixel format for compatibility
+            "-pix_fmt".to_string(),
+            "yuv420p".to_string(),
         ];
 
         // Build video filter chain
         let mut filters = Vec::new();
-        
-        // Add HDR to SDR tone mapping filter
-        // zscale converts color space and applies tone mapping
-        // tonemap=hable applies Hable/Uncharted 2 tone mapping
-        // format=yuv420p ensures SDR output format
-        filters.push("zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p".to_string());
         
         // Add scale filter if needed (downscaling only, no upscaling)
         if let Some(scale_filter) = self.calculate_scale_filter(source_resolution) {
@@ -883,14 +880,12 @@ mod tests {
         assert!(args.contains(&"libx264".to_string()));
         assert!(args.contains(&"-preset".to_string()));
         assert!(args.contains(&"fast".to_string()));
+        assert!(args.contains(&"-pix_fmt".to_string()));
+        assert!(args.contains(&"yuv420p".to_string()));
         assert!(args.contains(&"-y".to_string()));
 
-        // Video filter should always be present (HDR to SDR conversion)
-        assert!(args.contains(&"-vf".to_string()));
-        let vf_index = args.iter().position(|arg| arg == "-vf").unwrap();
-        let filter = &args[vf_index + 1];
-        assert!(filter.contains("zscale"));
-        assert!(filter.contains("tonemap"));
+        // No scaling needed for same resolution, so no -vf flag
+        assert!(!args.contains(&"-vf".to_string()));
 
         // Audio should be included (aac codec)
         assert!(args.contains(&"-c:a".to_string()));
@@ -919,8 +914,8 @@ mod tests {
             source_resolution,
         );
 
-        // Video filter should always be present (HDR to SDR conversion)
-        assert!(args.contains(&"-vf".to_string()));
+        // No scaling needed for same resolution, so no -vf flag
+        assert!(!args.contains(&"-vf".to_string()));
 
         // Audio should be excluded
         assert!(args.contains(&"-an".to_string()));
@@ -949,16 +944,14 @@ mod tests {
             source_resolution,
         );
 
-        // Should include video filter (HDR to SDR + scale)
+        // Should include video filter for scaling
         assert!(args.contains(&"-vf".to_string()));
         
         // Find the scale filter argument
         let vf_index = args.iter().position(|arg| arg == "-vf").unwrap();
         let filter = &args[vf_index + 1];
         
-        // Should contain both HDR to SDR conversion and scaling
-        assert!(filter.contains("zscale"));
-        assert!(filter.contains("tonemap"));
+        // Should contain scaling
         assert!(filter.contains("scale=1920:1080"));
         assert!(filter.contains("force_original_aspect_ratio=decrease"));
         assert!(filter.contains("pad=1920:1080"));
@@ -986,16 +979,8 @@ mod tests {
             source_resolution,
         );
 
-        // Should include video filter for HDR to SDR conversion
-        assert!(args.contains(&"-vf".to_string()));
-        
-        let vf_index = args.iter().position(|arg| arg == "-vf").unwrap();
-        let filter = &args[vf_index + 1];
-        
-        // Should contain HDR to SDR conversion but NOT scaling
-        assert!(filter.contains("zscale"));
-        assert!(filter.contains("tonemap"));
-        assert!(!filter.contains("scale=1920:1080"));
+        // Should NOT include video filter (no scaling needed)
+        assert!(!args.contains(&"-vf".to_string()));
     }
 
     #[test]
@@ -1020,15 +1005,13 @@ mod tests {
             source_resolution,
         );
 
-        // Should include video filter (HDR to SDR + scale for 720p)
+        // Should include video filter for 720p scaling
         assert!(args.contains(&"-vf".to_string()));
         
         let vf_index = args.iter().position(|arg| arg == "-vf").unwrap();
         let filter = &args[vf_index + 1];
         
-        // Should contain both HDR to SDR conversion and 720p scaling
-        assert!(filter.contains("zscale"));
-        assert!(filter.contains("tonemap"));
+        // Should contain 720p scaling
         assert!(filter.contains("scale=1280:720"));
         assert!(filter.contains("pad=1280:720"));
     }
