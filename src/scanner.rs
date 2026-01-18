@@ -23,8 +23,14 @@ impl VideoScanner {
         Self { root_path }
     }
 
-    /// Check if a directory should be skipped because it already has a backdrop
+    /// Check if a directory should be skipped
     fn should_skip_directory(&self, dir: &Path) -> bool {
+        // Skip if it's a backdrops directory
+        if dir.file_name().and_then(|n| n.to_str()) == Some("backdrops") {
+            return true;
+        }
+        
+        // Skip if it already has a backdrop
         dir.join("backdrops").join("backdrop.mp4").exists()
     }
 
@@ -62,6 +68,14 @@ impl VideoScanner {
                     if let Some(extension) = path.extension() {
                         let ext = extension.to_string_lossy().to_lowercase();
                         if ext == "mp4" || ext == "mkv" {
+                            // Skip files named "backdrop.mp4" or "backdrop.mkv" as they're likely output files
+                            if let Some(filename) = path.file_name() {
+                                let filename_str = filename.to_string_lossy().to_lowercase();
+                                if filename_str == "backdrop.mp4" || filename_str == "backdrop.mkv" {
+                                    continue;
+                                }
+                            }
+                            
                             // Get the parent directory
                             if let Some(parent) = path.parent() {
                                 videos.push(VideoFile {

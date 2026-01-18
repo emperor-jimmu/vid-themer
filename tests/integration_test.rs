@@ -359,7 +359,7 @@ fn test_pipeline_with_existing_clips() {
     
     // The scanner should skip the directory since it has backdrops/backdrop.mp4
     assert!(
-        stdout2.contains("Found 0 videos to process") || stdout2.contains("No videos found"),
+        stdout2.contains("already have backdrop clips") || stdout2.contains("No videos found"),
         "Scanner should skip directory with existing backdrop"
     );
     
