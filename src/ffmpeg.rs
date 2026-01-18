@@ -214,6 +214,43 @@ impl FFmpegExecutor {
 
         args
     }
+
+    /// Extract a clip from a video file
+    /// Executes FFmpeg command and captures stderr for error messages
+    pub fn extract_clip(
+        &self,
+        video_path: &Path,
+        time_range: &TimeRange,
+        output_path: &Path,
+    ) -> Result<(), FFmpegError> {
+        // Get source resolution first
+        let source_resolution = self.get_video_resolution(video_path)?;
+
+        // Build the FFmpeg command
+        let args = self.build_extract_command(
+            video_path,
+            time_range,
+            output_path,
+            source_resolution,
+        );
+
+        // Execute FFmpeg command
+        let output = Command::new("ffmpeg")
+            .args(&args)
+            .output()
+            .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to execute ffmpeg: {}", e)))?;
+
+        // Check if the command was successful
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(FFmpegError::ExecutionFailed(format!(
+                "FFmpeg clip extraction failed: {}",
+                stderr
+            )));
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
