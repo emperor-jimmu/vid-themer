@@ -255,11 +255,11 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - Test that successful and failed counts are displayed at end
     - _Requirements: 8.4_
 
-- [ ] 8. Checkpoint - Ensure processing pipeline works end-to-end
+- [x] 8. Checkpoint - Ensure processing pipeline works end-to-end
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 9. Implement CLI interface
-  - [ ] 9.1 Define CLI argument structure with clap
+  - [x] 9.1 Define CLI argument structure with clap
     - Create `CliArgs` struct with derive(Parser)
     - Add directory path as required positional argument
     - Add optional strategy flag (random or intense-audio, default random)
@@ -268,14 +268,15 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - Add --help flag support
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9_
 
-  - [ ]* 9.2 Write unit tests for CLI argument parsing
+  - [x] 9.2 Write unit tests for CLI argument parsing
+
     - Test default values
     - Test various flag combinations
     - Test invalid arguments produce errors
     - Test --help flag
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9_
 
-  - [ ] 9.3 Implement main application orchestration
+  - [x] 9.3 Implement main application orchestration
     - Parse CLI arguments
     - Validate directory exists (exit with error code 1 if not)
     - Check FFmpeg availability (exit with error if not found)
@@ -288,7 +289,8 @@ This implementation plan breaks down the video clip extractor into discrete codi
     - Display final summary
     - _Requirements: 7.1, All_
 
-  - [ ]* 9.4 Write unit test for directory not found error
+  - [x] 9.4 Write unit test for directory not found error
+
     - Test error handling when directory doesn't exist
     - _Requirements: 7.1_
 

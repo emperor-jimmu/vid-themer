@@ -5,6 +5,7 @@ use crate::selector::TimeRange;
 use std::path::Path;
 use std::process::Command;
 
+#[derive(Clone)]
 pub struct FFmpegExecutor {
     pub resolution: Resolution,
     pub include_audio: bool,
