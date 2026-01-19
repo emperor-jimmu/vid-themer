@@ -79,6 +79,44 @@ impl FFmpegExecutor {
             )))
     }
 
+    /// Get the video codec name for a video file
+    pub fn get_video_codec(&self, video_path: &Path) -> Result<String, FFmpegError> {
+        // Execute ffprobe to get video codec name
+        // Command: ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 <video>
+        let output = Command::new("ffprobe")
+            .arg("-v")
+            .arg("error")
+            .arg("-select_streams")
+            .arg("v:0")
+            .arg("-show_entries")
+            .arg("stream=codec_name")
+            .arg("-of")
+            .arg("default=noprint_wrappers=1:nokey=1")
+            .arg(video_path)
+            .output()
+            .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to execute ffprobe: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(FFmpegError::ExecutionFailed(format!(
+                "ffprobe failed: {}",
+                stderr
+            )));
+        }
+
+        // Parse the output to String
+        let codec_str = String::from_utf8_lossy(&output.stdout);
+        let codec_str = codec_str.trim().to_string();
+
+        if codec_str.is_empty() {
+            return Err(FFmpegError::ParseError(
+                "Failed to detect video codec".to_string()
+            ));
+        }
+
+        Ok(codec_str)
+    }
+
     /// Get the video resolution (width, height) of a video file
     pub fn get_video_resolution(&self, video_path: &Path) -> Result<(u32, u32), FFmpegError> {
         // Execute ffprobe to get video width and height
@@ -184,42 +222,78 @@ impl FFmpegExecutor {
         time_range: &TimeRange,
         output_path: &Path,
         source_resolution: (u32, u32),
+        codec: &str,
     ) -> Vec<String> {
+        // Determine if this is an HEVC video
+        let is_hevc = codec == "hevc" || codec == "h265";
+        
         let mut args = vec![
-            // Hybrid seeking approach for HEVC compatibility and speed:
-            // 1. Fast seek to a few seconds before target (before -i)
-            // 2. Accurate seek to exact position (after -i)
-            // This avoids HEVC corruption while maintaining reasonable speed
-        ];
-        
-        // Calculate fast seek position (seek to 5 seconds before target, or 0 if too close)
-        let fast_seek_offset = 5.0;
-        let fast_seek_pos = if time_range.start_seconds > fast_seek_offset {
-            time_range.start_seconds - fast_seek_offset
-        } else {
-            0.0
-        };
-        
-        // Only add fast seek if we're seeking past the offset
-        if fast_seek_pos > 0.0 {
-            args.push("-ss".to_string());
-            args.push(fast_seek_pos.to_string());
-        }
-        
-        args.extend(vec![
             // Error concealment flags for better handling of corrupted/problematic videos
             "-err_detect".to_string(),
             "ignore_err".to_string(),
-            // Input file
-            "-i".to_string(),
-            video_path.to_string_lossy().to_string(),
-        ]);
+        ];
         
-        // Accurate seek to exact position (relative to fast seek position)
-        let accurate_seek_pos = time_range.start_seconds - fast_seek_pos;
-        if accurate_seek_pos > 0.0 {
-            args.push("-ss".to_string());
-            args.push(accurate_seek_pos.to_string());
+        if is_hevc {
+            // For HEVC: Use moderate fast seek with smaller offset for better balance
+            // Increase buffer sizes to handle HEVC better
+            args.extend(vec![
+                "-analyzeduration".to_string(),
+                "100M".to_string(),
+                "-probesize".to_string(),
+                "100M".to_string(),
+            ]);
+            
+            // Calculate moderate fast seek position (2 seconds before target for HEVC)
+            let fast_seek_offset = 2.0;
+            let fast_seek_pos = if time_range.start_seconds > fast_seek_offset {
+                time_range.start_seconds - fast_seek_offset
+            } else {
+                0.0
+            };
+            
+            // Add fast seek if we're seeking past the offset
+            if fast_seek_pos > 0.0 {
+                args.push("-ss".to_string());
+                args.push(fast_seek_pos.to_string());
+            }
+            
+            args.extend(vec![
+                "-i".to_string(),
+                video_path.to_string_lossy().to_string(),
+            ]);
+            
+            // Accurate seek to exact position (relative to fast seek position)
+            let accurate_seek_pos = time_range.start_seconds - fast_seek_pos;
+            if accurate_seek_pos > 0.0 {
+                args.push("-ss".to_string());
+                args.push(accurate_seek_pos.to_string());
+            }
+        } else {
+            // For non-HEVC (H.264, etc.): Use aggressive fast seek for best performance
+            let fast_seek_offset = 5.0;
+            let fast_seek_pos = if time_range.start_seconds > fast_seek_offset {
+                time_range.start_seconds - fast_seek_offset
+            } else {
+                0.0
+            };
+            
+            // Add fast seek if we're seeking past the offset
+            if fast_seek_pos > 0.0 {
+                args.push("-ss".to_string());
+                args.push(fast_seek_pos.to_string());
+            }
+            
+            args.extend(vec![
+                "-i".to_string(),
+                video_path.to_string_lossy().to_string(),
+            ]);
+            
+            // Accurate seek to exact position (relative to fast seek position)
+            let accurate_seek_pos = time_range.start_seconds - fast_seek_pos;
+            if accurate_seek_pos > 0.0 {
+                args.push("-ss".to_string());
+                args.push(accurate_seek_pos.to_string());
+            }
         }
         
         args.extend(vec![
@@ -283,15 +357,17 @@ impl FFmpegExecutor {
         time_range: &TimeRange,
         output_path: &Path,
     ) -> Result<(), FFmpegError> {
-        // Get source resolution first
+        // Get source resolution and codec
         let source_resolution = self.get_video_resolution(video_path)?;
+        let codec = self.get_video_codec(video_path)?;
 
-        // Build the FFmpeg command
+        // Build the FFmpeg command with codec-aware seeking
         let args = self.build_extract_command(
             video_path,
             time_range,
             output_path,
             source_resolution,
+            &codec,
         );
 
         // Execute FFmpeg command
@@ -911,6 +987,7 @@ mod tests {
             &time_range,
             &output_path,
             source_resolution,
+            "h264", // H.264 codec for fast seeking
         );
 
         // Verify essential arguments are present
@@ -933,11 +1010,20 @@ mod tests {
         assert!(args.contains(&"-color_trc".to_string()));
         assert!(args.contains(&"-y".to_string()));
 
-        // With hybrid seeking, verify we have the correct seek values
-        // Fast seek: 120.5 - 5.0 = 115.5
-        // Accurate seek: 5.0
-        assert!(args.contains(&"115.5".to_string()), "Should have fast seek to 115.5");
-        assert!(args.contains(&"5".to_string()), "Should have accurate seek of 5 seconds");
+        // With H.264 hybrid seeking, verify we have the correct seek values
+        // Fast seek: 120.5 - 5.0 = 115.5, Accurate seek: 5.0
+        let i_index = args.iter().position(|arg| arg == "-i").unwrap();
+        let ss_positions: Vec<usize> = args.iter()
+            .enumerate()
+            .filter(|(_, arg)| *arg == "-ss")
+            .map(|(i, _)| i)
+            .collect();
+        
+        assert_eq!(ss_positions.len(), 2, "Should have 2 -ss flags for hybrid seeking");
+        assert!(ss_positions[0] < i_index, "First -ss should be before -i");
+        assert!(ss_positions[1] > i_index, "Second -ss should be after -i");
+        assert_eq!(args[ss_positions[0] + 1], "115.5", "Fast seek should be 115.5");
+        assert_eq!(args[ss_positions[1] + 1], "5", "Accurate seek should be 5");
 
         // No scaling needed for same resolution, so no -vf flag
         assert!(!args.contains(&"-vf".to_string()));
@@ -967,6 +1053,7 @@ mod tests {
             &time_range,
             &output_path,
             source_resolution,
+            "h264", // H.264 codec
         );
 
         // No scaling needed for same resolution, so no -vf flag
@@ -997,6 +1084,7 @@ mod tests {
             &time_range,
             &output_path,
             source_resolution,
+            "h264", // H.264 codec
         );
 
         // Should include video filter for scaling
@@ -1032,6 +1120,7 @@ mod tests {
             &time_range,
             &output_path,
             source_resolution,
+            "h264", // H.264 codec
         );
 
         // Should NOT include video filter (no scaling needed)
@@ -1058,6 +1147,7 @@ mod tests {
             &time_range,
             &output_path,
             source_resolution,
+            "h264", // H.264 codec
         );
 
         // Should include video filter for 720p scaling
@@ -1090,10 +1180,11 @@ mod tests {
             &time_range,
             &output_path,
             source_resolution,
+            "h264", // H.264 codec
         );
 
-        // With hybrid seeking (start > 5s), we should have:
-        // -ss (fast seek) before -i, then -ss (accurate seek) after -i
+        // With codec-aware seeking for H.264, we should have:
+        // Fast seek before -i (5 seconds), then accurate seek after -i
         let i_index = args.iter().position(|arg| arg == "-i").unwrap();
         
         // Find all -ss positions
@@ -1103,12 +1194,16 @@ mod tests {
             .map(|(i, _)| i)
             .collect();
         
-        // Should have 2 -ss flags for hybrid seeking when start > 5s
-        assert_eq!(ss_positions.len(), 2, "Should have 2 -ss flags for hybrid seeking");
+        // Should have 2 -ss flags for H.264 hybrid seeking (start > 5s)
+        assert_eq!(ss_positions.len(), 2, "Should have 2 -ss flags for H.264 hybrid seeking");
         assert!(ss_positions[0] < i_index, "First -ss (fast seek) should come before -i");
         assert!(ss_positions[1] > i_index, "Second -ss (accurate seek) should come after -i");
+        
+        // Verify seek values: fast seek = 100 - 5 = 95, accurate seek = 5
+        assert_eq!(args[ss_positions[0] + 1], "95", "Fast seek should be 95");
+        assert_eq!(args[ss_positions[1] + 1], "5", "Accurate seek should be 5");
 
-        // Verify -t comes after the second -ss
+        // Verify -t comes after the accurate seek (second -ss)
         let t_index = args.iter().position(|arg| arg == "-t").unwrap();
         assert!(t_index > ss_positions[1], "Duration (-t) should come after accurate seek");
 
@@ -1125,7 +1220,7 @@ mod tests {
         let video_path = PathBuf::from("/path/to/video.mp4");
         let output_path = PathBuf::from("/path/to/output.mp4");
         
-        // Test with start time < 5 seconds (should only use accurate seek)
+        // Test with start time < 5 seconds (should use accurate seek after -i)
         let time_range = TimeRange {
             start_seconds: 3.0,
             duration_seconds: 5.0,
@@ -1137,6 +1232,7 @@ mod tests {
             &time_range,
             &output_path,
             source_resolution,
+            "h264", // H.264 codec
         );
 
         let i_index = args.iter().position(|arg| arg == "-i").unwrap();
@@ -1148,9 +1244,58 @@ mod tests {
             .map(|(i, _)| i)
             .collect();
         
-        // Should have only 1 -ss flag (accurate seek after -i) when start < 5s
+        // Should have only 1 -ss flag (accurate seek after -i) when start < 5s for H.264
         assert_eq!(ss_positions.len(), 1, "Should have only 1 -ss flag when start time < 5s");
         assert!(ss_positions[0] > i_index, "Single -ss (accurate seek) should come after -i");
+        assert_eq!(args[ss_positions[0] + 1], "3", "Should seek to 3 seconds");
+    }
+
+    #[test]
+    fn test_build_extract_command_hevc_codec() {
+        use crate::selector::TimeRange;
+        use std::path::PathBuf;
+
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let video_path = PathBuf::from("/path/to/hevc_video.mp4");
+        let output_path = PathBuf::from("/path/to/output.mp4");
+        
+        // Test HEVC with start time > 2 seconds (should use 2-second offset)
+        let time_range = TimeRange {
+            start_seconds: 120.0,
+            duration_seconds: 10.0,
+        };
+        let source_resolution = (1920, 1080);
+
+        let args = executor.build_extract_command(
+            &video_path,
+            &time_range,
+            &output_path,
+            source_resolution,
+            "hevc", // HEVC codec
+        );
+
+        let i_index = args.iter().position(|arg| arg == "-i").unwrap();
+        
+        // Find all -ss positions
+        let ss_positions: Vec<usize> = args.iter()
+            .enumerate()
+            .filter(|(_, arg)| *arg == "-ss")
+            .map(|(i, _)| i)
+            .collect();
+        
+        // Should have 2 -ss flags for HEVC (moderate fast seek with 2-second offset)
+        assert_eq!(ss_positions.len(), 2, "Should have 2 -ss flags for HEVC");
+        assert!(ss_positions[0] < i_index, "First -ss (fast seek) should come before -i");
+        assert!(ss_positions[1] > i_index, "Second -ss (accurate seek) should come after -i");
+        
+        // Verify seek values: fast seek = 120 - 2 = 118, accurate seek = 2
+        assert_eq!(args[ss_positions[0] + 1], "118", "HEVC fast seek should be 118 (2-second offset)");
+        assert_eq!(args[ss_positions[1] + 1], "2", "HEVC accurate seek should be 2");
+        
+        // Verify HEVC-specific buffer settings are present
+        assert!(args.contains(&"-analyzeduration".to_string()), "Should have analyzeduration for HEVC");
+        assert!(args.contains(&"100M".to_string()), "Should have 100M buffer size for HEVC");
+        assert!(args.contains(&"-probesize".to_string()), "Should have probesize for HEVC");
     }
 
     #[test]
@@ -1172,6 +1317,7 @@ mod tests {
             &time_range,
             &output_path,
             source_resolution,
+            "h264", // H.264 codec
         );
 
         // Should include -y flag to overwrite existing files
@@ -1262,11 +1408,17 @@ mod tests {
             &time_range,
             &output_path,
             source_resolution,
+            "h264", // H.264 codec
         );
 
-        // When start is 0, no -ss flag should be present (extracts from beginning)
-        let ss_count = args.iter().filter(|arg| *arg == "-ss").count();
-        assert_eq!(ss_count, 0, "No -ss flag should be present when starting at 0");
+        // When start is 0, no -ss flags are added (extracts from beginning)
+        let ss_positions: Vec<usize> = args.iter()
+            .enumerate()
+            .filter(|(_, arg)| *arg == "-ss")
+            .map(|(i, _)| i)
+            .collect();
+        // No seek flags when starting at 0
+        assert_eq!(ss_positions.len(), 0, "Should have no -ss flags when starting at 0");
 
         // Verify the duration matches the full video duration
         let t_index = args.iter().position(|arg| arg == "-t").unwrap();
@@ -1283,16 +1435,17 @@ mod tests {
             &time_range2,
             &output_path,
             source_resolution,
+            "h264", // H.264 codec
         );
 
-        // When start < 5s, should have only accurate seek after -i
+        // Should have accurate seek after -i
         let ss_positions2: Vec<usize> = args2.iter()
             .enumerate()
             .filter(|(_, arg)| *arg == "-ss")
             .map(|(i, _)| i)
             .collect();
         
-        assert_eq!(ss_positions2.len(), 1, "Should have 1 -ss flag when start < 5s");
+        assert_eq!(ss_positions2.len(), 1, "Should have 1 -ss flag");
         
         let i_index2 = args2.iter().position(|arg| arg == "-i").unwrap();
         assert!(ss_positions2[0] > i_index2, "Accurate seek should come after -i");
@@ -1345,6 +1498,7 @@ mod tests {
                 &time_range,
                 &output_path,
                 source_resolution,
+                "h264", // H.264 codec for testing
             );
             
             // Verify audio handling based on include_audio flag

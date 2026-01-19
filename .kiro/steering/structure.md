@@ -34,9 +34,12 @@ src/
 ### FFmpeg Integration (`ffmpeg.rs`)
 - `FFmpegExecutor` - Command construction and execution
 - Duration and resolution detection
+- Codec detection for adaptive seeking
 - Scale filter calculation (no upscaling)
 - Audio analysis for intensity-based selection
-- Hybrid seeking for HEVC compatibility (fast + accurate seek)
+- Codec-aware seeking strategy:
+  - H.264/AVC: Aggressive hybrid seeking (5-second fast seek + accurate seek) for best performance
+  - HEVC/H.265: Moderate hybrid seeking (2-second fast seek + accurate seek) with increased buffer sizes for reliability
 - H.264 encoding with CRF 26 compression
 
 ### Processing Pipeline (`processor.rs`)
