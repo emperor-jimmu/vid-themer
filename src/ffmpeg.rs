@@ -186,15 +186,43 @@ impl FFmpegExecutor {
         source_resolution: (u32, u32),
     ) -> Vec<String> {
         let mut args = vec![
+            // Hybrid seeking approach for HEVC compatibility and speed:
+            // 1. Fast seek to a few seconds before target (before -i)
+            // 2. Accurate seek to exact position (after -i)
+            // This avoids HEVC corruption while maintaining reasonable speed
+        ];
+        
+        // Calculate fast seek position (seek to 5 seconds before target, or 0 if too close)
+        let fast_seek_offset = 5.0;
+        let fast_seek_pos = if time_range.start_seconds > fast_seek_offset {
+            time_range.start_seconds - fast_seek_offset
+        } else {
+            0.0
+        };
+        
+        // Only add fast seek if we're seeking past the offset
+        if fast_seek_pos > 0.0 {
+            args.push("-ss".to_string());
+            args.push(fast_seek_pos.to_string());
+        }
+        
+        args.extend(vec![
             // Error concealment flags for better handling of corrupted/problematic videos
             "-err_detect".to_string(),
             "ignore_err".to_string(),
-            // Start time (seek to position before input for faster processing)
-            "-ss".to_string(),
-            time_range.start_seconds.to_string(),
             // Input file
             "-i".to_string(),
             video_path.to_string_lossy().to_string(),
+        ]);
+        
+        // Accurate seek to exact position (relative to fast seek position)
+        let accurate_seek_pos = time_range.start_seconds - fast_seek_pos;
+        if accurate_seek_pos > 0.0 {
+            args.push("-ss".to_string());
+            args.push(accurate_seek_pos.to_string());
+        }
+        
+        args.extend(vec![
             // Duration
             "-t".to_string(),
             time_range.duration_seconds.to_string(),
@@ -203,6 +231,9 @@ impl FFmpegExecutor {
             "libx264".to_string(),
             "-preset".to_string(),
             "fast".to_string(),
+            // CRF for quality/size balance (26 = smaller files, still good quality)
+            "-crf".to_string(),
+            "26".to_string(),
             // Keyframe interval for better seeking and streaming compatibility
             "-g".to_string(),
             "30".to_string(), // Keyframe every 30 frames (~1 second at 30fps)
@@ -218,7 +249,7 @@ impl FFmpegExecutor {
             "bt709".to_string(),
             "-color_trc".to_string(),
             "bt709".to_string(),
-        ];
+        ]);
 
         // Build video filter chain
         let mut filters = Vec::new();
@@ -884,7 +915,6 @@ mod tests {
 
         // Verify essential arguments are present
         assert!(args.contains(&"-ss".to_string()));
-        assert!(args.contains(&"120.5".to_string()));
         assert!(args.contains(&"-i".to_string()));
         assert!(args.contains(&"-t".to_string()));
         assert!(args.contains(&"7".to_string()));
@@ -902,6 +932,12 @@ mod tests {
         assert!(args.contains(&"-color_primaries".to_string()));
         assert!(args.contains(&"-color_trc".to_string()));
         assert!(args.contains(&"-y".to_string()));
+
+        // With hybrid seeking, verify we have the correct seek values
+        // Fast seek: 120.5 - 5.0 = 115.5
+        // Accurate seek: 5.0
+        assert!(args.contains(&"115.5".to_string()), "Should have fast seek to 115.5");
+        assert!(args.contains(&"5".to_string()), "Should have accurate seek of 5 seconds");
 
         // No scaling needed for same resolution, so no -vf flag
         assert!(!args.contains(&"-vf".to_string()));
@@ -1056,17 +1092,65 @@ mod tests {
             source_resolution,
         );
 
-        // Verify -ss comes before -i (for faster seeking)
-        let ss_index = args.iter().position(|arg| arg == "-ss").unwrap();
+        // With hybrid seeking (start > 5s), we should have:
+        // -ss (fast seek) before -i, then -ss (accurate seek) after -i
         let i_index = args.iter().position(|arg| arg == "-i").unwrap();
-        assert!(ss_index < i_index, "Start time (-ss) should come before input (-i)");
+        
+        // Find all -ss positions
+        let ss_positions: Vec<usize> = args.iter()
+            .enumerate()
+            .filter(|(_, arg)| *arg == "-ss")
+            .map(|(i, _)| i)
+            .collect();
+        
+        // Should have 2 -ss flags for hybrid seeking when start > 5s
+        assert_eq!(ss_positions.len(), 2, "Should have 2 -ss flags for hybrid seeking");
+        assert!(ss_positions[0] < i_index, "First -ss (fast seek) should come before -i");
+        assert!(ss_positions[1] > i_index, "Second -ss (accurate seek) should come after -i");
 
-        // Verify -t comes after -i
+        // Verify -t comes after the second -ss
         let t_index = args.iter().position(|arg| arg == "-t").unwrap();
-        assert!(t_index > i_index, "Duration (-t) should come after input (-i)");
+        assert!(t_index > ss_positions[1], "Duration (-t) should come after accurate seek");
 
         // Verify output path is last
         assert_eq!(args.last().unwrap(), &output_path.to_string_lossy().to_string());
+    }
+
+    #[test]
+    fn test_build_extract_command_early_start_time() {
+        use crate::selector::TimeRange;
+        use std::path::PathBuf;
+
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let video_path = PathBuf::from("/path/to/video.mp4");
+        let output_path = PathBuf::from("/path/to/output.mp4");
+        
+        // Test with start time < 5 seconds (should only use accurate seek)
+        let time_range = TimeRange {
+            start_seconds: 3.0,
+            duration_seconds: 5.0,
+        };
+        let source_resolution = (1920, 1080);
+
+        let args = executor.build_extract_command(
+            &video_path,
+            &time_range,
+            &output_path,
+            source_resolution,
+        );
+
+        let i_index = args.iter().position(|arg| arg == "-i").unwrap();
+        
+        // Find all -ss positions
+        let ss_positions: Vec<usize> = args.iter()
+            .enumerate()
+            .filter(|(_, arg)| *arg == "-ss")
+            .map(|(i, _)| i)
+            .collect();
+        
+        // Should have only 1 -ss flag (accurate seek after -i) when start < 5s
+        assert_eq!(ss_positions.len(), 1, "Should have only 1 -ss flag when start time < 5s");
+        assert!(ss_positions[0] > i_index, "Single -ss (accurate seek) should come after -i");
     }
 
     #[test]
@@ -1180,19 +1264,18 @@ mod tests {
             source_resolution,
         );
 
-        // Verify the command extracts from the beginning (start at 0)
-        let ss_index = args.iter().position(|arg| arg == "-ss").unwrap();
-        assert_eq!(args[ss_index + 1], "0", "Short video should start at 0 seconds");
+        // When start is 0, no -ss flag should be present (extracts from beginning)
+        let ss_count = args.iter().filter(|arg| *arg == "-ss").count();
+        assert_eq!(ss_count, 0, "No -ss flag should be present when starting at 0");
 
         // Verify the duration matches the full video duration
         let t_index = args.iter().position(|arg| arg == "-t").unwrap();
         assert_eq!(args[t_index + 1], "4.5", "Short video should extract full duration");
 
-        // Test case 2: Video is exactly 3 seconds
-        let very_short_duration = 3.0;
+        // Test case 2: Video starting at 2 seconds for 3 seconds
         let time_range2 = TimeRange {
-            start_seconds: 0.0,
-            duration_seconds: very_short_duration,
+            start_seconds: 2.0,
+            duration_seconds: 3.0,
         };
 
         let args2 = executor.build_extract_command(
@@ -1202,34 +1285,24 @@ mod tests {
             source_resolution,
         );
 
-        let ss_index2 = args2.iter().position(|arg| arg == "-ss").unwrap();
-        assert_eq!(args2[ss_index2 + 1], "0", "Very short video should start at 0 seconds");
+        // When start < 5s, should have only accurate seek after -i
+        let ss_positions2: Vec<usize> = args2.iter()
+            .enumerate()
+            .filter(|(_, arg)| *arg == "-ss")
+            .map(|(i, _)| i)
+            .collect();
+        
+        assert_eq!(ss_positions2.len(), 1, "Should have 1 -ss flag when start < 5s");
+        
+        let i_index2 = args2.iter().position(|arg| arg == "-i").unwrap();
+        assert!(ss_positions2[0] > i_index2, "Accurate seek should come after -i");
+        assert_eq!(args2[ss_positions2[0] + 1], "2", "Should seek to 2 seconds");
 
         let t_index2 = args2.iter().position(|arg| arg == "-t").unwrap();
-        assert_eq!(args2[t_index2 + 1], "3", "Very short video should extract full duration");
-
-        // Test case 3: Video is exactly 1 second
-        let one_second_duration = 1.0;
-        let time_range3 = TimeRange {
-            start_seconds: 0.0,
-            duration_seconds: one_second_duration,
-        };
-
-        let args3 = executor.build_extract_command(
-            &video_path,
-            &time_range3,
-            &output_path,
-            source_resolution,
-        );
-
-        let ss_index3 = args3.iter().position(|arg| arg == "-ss").unwrap();
-        assert_eq!(args3[ss_index3 + 1], "0", "One second video should start at 0 seconds");
-
-        let t_index3 = args3.iter().position(|arg| arg == "-t").unwrap();
-        assert_eq!(args3[t_index3 + 1], "1", "One second video should extract full duration");
+        assert_eq!(args2[t_index2 + 1], "3", "Should extract 3 seconds");
 
         // Verify all commands are well-formed with required flags
-        for args in [&args, &args2, &args3] {
+        for args in [&args, &args2] {
             assert!(args.contains(&"-i".to_string()), "Command should contain input flag");
             assert!(args.contains(&"-c:v".to_string()), "Command should contain video codec flag");
             assert!(args.contains(&"libx264".to_string()), "Command should use libx264 codec");

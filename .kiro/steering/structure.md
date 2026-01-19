@@ -36,6 +36,8 @@ src/
 - Duration and resolution detection
 - Scale filter calculation (no upscaling)
 - Audio analysis for intensity-based selection
+- Hybrid seeking for HEVC compatibility (fast + accurate seek)
+- H.264 encoding with CRF 26 compression
 
 ### Processing Pipeline (`processor.rs`)
 - `VideoProcessor` - Orchestrates extraction workflow

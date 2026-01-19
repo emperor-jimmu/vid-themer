@@ -109,6 +109,20 @@ For each video file, the tool creates a subdirectory with the extracted clip:
 │       └── backdrop.mp4      # Extracted clip from movie2.mkv
 ```
 
+## Video Encoding
+
+Extracted clips are re-encoded with the following settings:
+
+- **Video Codec**: H.264 (libx264)
+- **Compression**: CRF 26 (optimized for smaller file sizes with good quality)
+- **Preset**: Fast (balanced encoding speed)
+- **Audio Codec**: AAC (when audio is enabled)
+- **Color Space**: BT.709 (standard HD color space)
+- **Pixel Format**: YUV420P (maximum compatibility)
+- **Keyframe Interval**: 30 frames (~1 second for better seeking)
+
+The CRF 26 setting provides a good balance between file size and quality for backdrop/preview clips. Lower values (e.g., 18) produce higher quality but larger files, while higher values (e.g., 28) produce smaller files with reduced quality.
+
 ## Development
 
 ### Build
