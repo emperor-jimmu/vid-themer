@@ -82,6 +82,13 @@ impl FFmpegExecutor {
         let duration_str = String::from_utf8_lossy(&output.stdout);
         let duration_str = duration_str.trim();
 
+        // Check for "N/A" which indicates FFmpeg couldn't determine duration
+        if duration_str == "N/A" || duration_str.is_empty() {
+            return Err(FFmpegError::CorruptedFile(
+                "Unable to determine video duration - file may be corrupted or incomplete".to_string()
+            ));
+        }
+
         duration_str
             .parse::<f64>()
             .map_err(|e| FFmpegError::ParseError(format!(
