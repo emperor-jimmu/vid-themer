@@ -41,11 +41,13 @@ impl VideoProcessor {
         let duration = match self.ffmpeg.get_duration(&video.path) {
             Ok(d) => d,
             Err(e) => {
+                let stderr = e.stderr().map(|s| s.to_string());
                 return ProcessResult {
                     video_path,
                     output_path: PathBuf::new(),
                     success: false,
                     error_message: Some(format!("Failed to get video duration: {}", e)),
+                    ffmpeg_stderr: stderr,
                 };
             }
         };
@@ -64,6 +66,7 @@ impl VideoProcessor {
                     output_path: PathBuf::new(),
                     success: false,
                     error_message: Some(format!("Failed to select clip segment: {}", e)),
+                    ffmpeg_stderr: None,
                 };
             }
         };
@@ -77,6 +80,7 @@ impl VideoProcessor {
                     output_path: PathBuf::new(),
                     success: false,
                     error_message: Some(format!("Failed to create output directory: {}", e)),
+                    ffmpeg_stderr: None,
                 };
             }
         };
@@ -88,12 +92,17 @@ impl VideoProcessor {
                 output_path,
                 success: true,
                 error_message: None,
+                ffmpeg_stderr: None,
             },
-            Err(e) => ProcessResult {
-                video_path,
-                output_path: output_path.clone(),
-                success: false,
-                error_message: Some(format!("Failed to extract clip: {}", e)),
+            Err(e) => {
+                let stderr = e.stderr().map(|s| s.to_string());
+                ProcessResult {
+                    video_path,
+                    output_path: output_path.clone(),
+                    success: false,
+                    error_message: Some(format!("Failed to extract clip: {}", e)),
+                    ffmpeg_stderr: stderr,
+                }
             },
         }
     }
@@ -121,6 +130,7 @@ pub struct ProcessResult {
     pub output_path: PathBuf,
     pub success: bool,
     pub error_message: Option<String>,
+    pub ffmpeg_stderr: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -965,16 +975,21 @@ mod tests {
                 );
             }
             
-            // Property 11: The output path should not contain the video filename
-            // (it should be backdrop.mp4, not the original video name)
+            // Property 11: The output filename should be exactly "backdrop.mp4"
+            // (not the original video name)
             let video_filename = video_file.path.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
             
+            let output_filename_check = output_path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            
             if video_filename != "backdrop.mp4" {
-                prop_assert!(
-                    !output_path.to_string_lossy().ends_with(video_filename),
-                    "Output path should not end with the original video filename '{}', should be 'backdrop.mp4'",
+                prop_assert_ne!(
+                    output_filename_check,
+                    video_filename,
+                    "Output filename should be 'backdrop.mp4', not the original video filename '{}'",
                     video_filename
                 );
             }

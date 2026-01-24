@@ -10,7 +10,9 @@ src/
 ├── selector.rs          # Clip selection strategies (trait + implementations)
 ├── ffmpeg.rs            # FFmpeg command execution and video processing
 ├── processor.rs         # Video processing pipeline coordination
-└── progress.rs          # Progress reporting and user feedback
+├── progress.rs          # Progress reporting and user feedback
+├── logger.rs            # Failure logging for debugging
+└── error.rs             # Error type definitions
 ```
 
 ## Key Components
@@ -50,6 +52,12 @@ src/
 ### Progress Reporting (`progress.rs`)
 - `ProgressReporter` - Real-time progress updates
 - Success/failure tracking and summary
+- Integration with failure logger
+
+### Failure Logging (`logger.rs`)
+- `FailureLogger` - Writes detailed failure information to log file
+- Captures FFmpeg stderr output for debugging
+- Creates `video_clip_extractor_failures.log` in the root directory
 
 ## Error Handling
 

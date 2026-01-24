@@ -7,6 +7,7 @@ mod ffmpeg;
 mod processor;
 mod progress;
 mod error;
+mod logger;
 
 use clap::Parser;
 use cli::{CliArgs, SelectionStrategy};
@@ -15,6 +16,7 @@ use selector::{ClipSelector, RandomSelector, IntenseAudioSelector};
 use ffmpeg::FFmpegExecutor;
 use processor::VideoProcessor;
 use progress::ProgressReporter;
+use logger::FailureLogger;
 use error::AppError;
 use std::process;
 use std::path::Path;
@@ -98,8 +100,27 @@ fn main() {
         args.outro_exclusion_percent,
     );
     
-    // Create ProgressReporter
-    let mut reporter = ProgressReporter::new();
+    // Create ProgressReporter with logger
+    let logger = match FailureLogger::new(&args.directory) {
+        Ok(logger) => logger,
+        Err(e) => {
+            eprintln!("Warning: Failed to create failure log: {}", e);
+            eprintln!("Continuing without failure logging...");
+            // Continue without logger
+            let mut reporter = ProgressReporter::new();
+            reporter.start(videos.len());
+            
+            for video in &videos {
+                let result = processor.process_video(video);
+                reporter.update(&result);
+            }
+            
+            reporter.finish();
+            return;
+        }
+    };
+    
+    let mut reporter = ProgressReporter::with_logger(logger);
     
     // Start progress reporting
     reporter.start(videos.len());

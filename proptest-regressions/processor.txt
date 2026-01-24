@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 29ccd2c14ed35fbe0e36977de146d27db2f7d0d37e0a8b20c4f10dc13c649c07 # shrinks to video_count = 3, failing_video_index = 0
+cc 23fe9d9c31c0402f5f398306847080df28d9580f24188b6d001373b67088a547 # shrinks to video_name = "p.mp4", parent_dir_name = "a", use_nested = false

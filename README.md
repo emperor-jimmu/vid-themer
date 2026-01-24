@@ -10,6 +10,8 @@ A command-line tool that recursively scans directories for video files and autom
 - **Smart Resolution Handling** - Scales videos down to target resolution without upscaling
 - **Organized Output** - Creates `backdrops/backdrop.mp4` subdirectories next to source videos
 - **Skip Existing** - Automatically skips directories that already have extracted clips
+- **0-Byte File Recovery** - Automatically re-processes videos with 0-byte backdrop files
+- **Failure Logging** - Detailed error logs with FFmpeg output for debugging
 - **Progress Tracking** - Real-time feedback on processing status
 
 ## Requirements
@@ -107,7 +109,27 @@ For each video file, the tool creates a subdirectory with the extracted clip:
 │   ├── movie2.mkv
 │   └── backdrops/
 │       └── backdrop.mp4      # Extracted clip from movie2.mkv
+└── video_clip_extractor_failures.log  # Created only if failures occur
 ```
+
+## Error Handling and Debugging
+
+### Failure Logging
+
+When processing failures occur, the tool creates a detailed log file in the root directory:
+
+- **Log File**: `video_clip_extractor_failures.log`
+- **Contents**: 
+  - Video file path that failed
+  - Error message
+  - FFmpeg stderr output (when applicable)
+  - Separated entries for each failure
+
+This log file is invaluable for debugging issues with specific video files or FFmpeg processing errors.
+
+### 0-Byte File Recovery
+
+If a previous run created a 0-byte `backdrop.mp4` file (due to a crash or error), the tool will automatically detect this and re-process the video on subsequent runs. Only backdrop files with actual content are considered valid and will be skipped.
 
 ## Video Encoding
 
@@ -161,11 +183,12 @@ cargo clippy
 
 The project follows a pipeline architecture:
 
-1. **Scanner** - Discovers video files recursively
+1. **Scanner** - Discovers video files recursively, skips directories with valid backdrops
 2. **Selector** - Chooses clip segments using configured strategy
 3. **FFmpeg Executor** - Extracts clips with proper scaling and encoding
 4. **Processor** - Orchestrates the extraction workflow
 5. **Progress Reporter** - Provides real-time feedback
+6. **Failure Logger** - Records detailed error information for debugging
 
 ## Dependencies
 

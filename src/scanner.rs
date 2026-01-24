@@ -34,8 +34,18 @@ impl VideoScanner {
             return true;
         }
         
-        // Skip if it already has a backdrop
-        dir.join(BACKDROPS_DIR).join(BACKDROP_FILE).exists()
+        // Check if it already has a valid backdrop (non-zero size)
+        let backdrop_path = dir.join(BACKDROPS_DIR).join(BACKDROP_FILE);
+        if backdrop_path.exists() {
+            // Check if the file has non-zero size
+            if let Ok(metadata) = std::fs::metadata(&backdrop_path)
+                && metadata.len() > 0
+            {
+                return true; // Skip only if file exists and has content
+            }
+        }
+        
+        false
     }
 
     /// Scan the root directory recursively for video files

@@ -513,6 +513,25 @@ pub enum FFmpegError {
     NoAudioTrack,
 }
 
+impl FFmpegError {
+    /// Extract stderr output from the error message if available
+    pub fn stderr(&self) -> Option<&str> {
+        match self {
+            FFmpegError::ExecutionFailed(msg) => {
+                // Try to extract stderr from the error message
+                if msg.contains("FFmpeg clip extraction failed:") {
+                    msg.strip_prefix("FFmpeg clip extraction failed: ")
+                } else if msg.contains("ffprobe failed:") {
+                    msg.strip_prefix("ffprobe failed: ")
+                } else {
+                    Some(msg.as_str())
+                }
+            }
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

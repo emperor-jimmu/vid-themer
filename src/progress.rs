@@ -1,12 +1,14 @@
 // Progress reporting and user feedback
 
 use crate::processor::ProcessResult;
+use crate::logger::FailureLogger;
 
 pub struct ProgressReporter {
     pub total: usize,
     pub current: usize,
     pub successful: usize,
     pub failed: usize,
+    logger: Option<FailureLogger>,
 }
 
 impl ProgressReporter {
@@ -16,6 +18,17 @@ impl ProgressReporter {
             current: 0,
             successful: 0,
             failed: 0,
+            logger: None,
+        }
+    }
+
+    pub fn with_logger(logger: FailureLogger) -> Self {
+        Self {
+            total: 0,
+            current: 0,
+            successful: 0,
+            failed: 0,
+            logger: Some(logger),
         }
     }
 
@@ -41,11 +54,22 @@ impl ProgressReporter {
             if let Some(error) = &result.error_message {
                 println!("  X Error: {}", error);
             }
+            
+            // Log failure to file if logger is available
+            if let Some(logger) = &self.logger {
+                logger.log_failure(result, result.ffmpeg_stderr.as_deref());
+            }
         }
     }
 
     pub fn finish(&self) {
         println!("Completed: {} successful, {} failed", self.successful, self.failed);
+        
+        if self.failed > 0
+            && let Some(logger) = &self.logger
+        {
+            println!("Failure details logged to: {}", logger.log_path().display());
+        }
     }
 }
 
@@ -67,6 +91,7 @@ mod tests {
             output_path: PathBuf::from(output_path),
             success,
             error_message,
+            ffmpeg_stderr: None,
         }
     }
 
