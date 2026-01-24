@@ -210,7 +210,14 @@ impl FFmpegExecutor {
             vec!["-an".to_string()]
         } else {
             // Include audio with AAC codec
-            vec!["-c:a".to_string(), "aac".to_string()]
+            // Downmix to stereo to handle complex channel layouts (e.g., 5.1.2 Dolby Atmos)
+            // that AAC encoder doesn't support
+            vec![
+                "-c:a".to_string(),
+                "aac".to_string(),
+                "-ac".to_string(),
+                "2".to_string(), // Force stereo output
+            ]
         }
     }
 
