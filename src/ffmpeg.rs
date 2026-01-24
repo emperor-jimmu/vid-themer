@@ -355,6 +355,9 @@ impl FFmpegExecutor {
             // CRF for quality/size balance (26 = smaller files, still good quality)
             "-crf".to_string(),
             "26".to_string(),
+            // Explicitly set output pixel format to 8-bit yuv420p
+            "-pix_fmt".to_string(),
+            "yuv420p".to_string(),
             // Keyframe interval for better seeking and streaming compatibility
             "-g".to_string(),
             "30".to_string(), // Keyframe every 30 frames (~1 second at 30fps)
@@ -372,11 +375,14 @@ impl FFmpegExecutor {
         // Build video filter chain
         let mut filters = Vec::new();
         
-        // Add pixel format conversion first to handle 10-bit sources
-        // This ensures compatibility with libx264 which expects 8-bit input
+        // CRITICAL: Add pixel format conversion FIRST to handle 10-bit sources
+        // This must come before any other filters (especially scale) to ensure
+        // compatibility with libx264 which expects 8-bit input
+        // Using format=yuv420p explicitly converts from any pixel format (including yuv420p10le)
         filters.push("format=yuv420p".to_string());
         
         // Add scale filter if needed (downscaling only, no upscaling)
+        // This comes AFTER format conversion so it works with 8-bit input
         if let Some(scale_filter) = self.calculate_scale_filter(source_resolution) {
             filters.push(scale_filter);
         }
