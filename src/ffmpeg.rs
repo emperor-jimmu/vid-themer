@@ -353,9 +353,6 @@ impl FFmpegExecutor {
             "30".to_string(), // Keyframe every 30 frames (~1 second at 30fps)
             "-keyint_min".to_string(),
             "30".to_string(),
-            // Ensure output is in yuv420p pixel format for compatibility
-            "-pix_fmt".to_string(),
-            "yuv420p".to_string(),
             // Set color metadata for proper playback compatibility
             "-colorspace".to_string(),
             "bt709".to_string(),
@@ -368,16 +365,18 @@ impl FFmpegExecutor {
         // Build video filter chain
         let mut filters = Vec::new();
         
+        // Add pixel format conversion first to handle 10-bit sources
+        // This ensures compatibility with libx264 which expects 8-bit input
+        filters.push("format=yuv420p".to_string());
+        
         // Add scale filter if needed (downscaling only, no upscaling)
         if let Some(scale_filter) = self.calculate_scale_filter(source_resolution) {
             filters.push(scale_filter);
         }
         
-        // Apply video filters if any exist
-        if !filters.is_empty() {
-            args.push("-vf".to_string());
-            args.push(filters.join(","));
-        }
+        // Apply video filters (always present now due to format filter)
+        args.push("-vf".to_string());
+        args.push(filters.join(","));
 
         // Audio handling
         args.extend(self.build_audio_args());
@@ -1064,10 +1063,10 @@ mod tests {
         assert!(args.contains(&"-g".to_string()));
         assert!(args.contains(&"30".to_string()));
         assert!(args.contains(&"-keyint_min".to_string()));
-        assert!(args.contains(&"-pix_fmt".to_string()));
-        assert!(args.contains(&"yuv420p".to_string()));
-        assert!(args.contains(&"-colorspace".to_string()));
+        // Pixel format is now handled in filter chain, not as codec option
+        assert!(args.contains(&"-vf".to_string()));
         assert!(args.contains(&"bt709".to_string()));
+        assert!(args.contains(&"-colorspace".to_string()));
         assert!(args.contains(&"-color_primaries".to_string()));
         assert!(args.contains(&"-color_trc".to_string()));
         assert!(args.contains(&"-y".to_string()));
@@ -1087,8 +1086,10 @@ mod tests {
         assert_eq!(args[ss_positions[0] + 1], "115.5", "Fast seek should be 115.5");
         assert_eq!(args[ss_positions[1] + 1], "5", "Accurate seek should be 5");
 
-        // No scaling needed for same resolution, so no -vf flag
-        assert!(!args.contains(&"-vf".to_string()));
+        // Should have format filter for pixel format conversion
+        let vf_index = args.iter().position(|arg| arg == "-vf").unwrap();
+        let filter = &args[vf_index + 1];
+        assert!(filter.contains("format=yuv420p"), "Should have format filter for pixel format conversion");
 
         // Audio should be included (aac codec)
         assert!(args.contains(&"-c:a".to_string()));
@@ -1118,8 +1119,11 @@ mod tests {
             "h264", // H.264 codec
         );
 
-        // No scaling needed for same resolution, so no -vf flag
-        assert!(!args.contains(&"-vf".to_string()));
+        // Should have format filter for pixel format conversion
+        assert!(args.contains(&"-vf".to_string()));
+        let vf_index = args.iter().position(|arg| arg == "-vf").unwrap();
+        let filter = &args[vf_index + 1];
+        assert!(filter.contains("format=yuv420p"), "Should have format filter");
 
         // Audio should be excluded
         assert!(args.contains(&"-an".to_string()));
@@ -1185,8 +1189,15 @@ mod tests {
             "h264", // H.264 codec
         );
 
-        // Should NOT include video filter (no scaling needed)
-        assert!(!args.contains(&"-vf".to_string()));
+        // Should have format filter but no scaling filter
+        assert!(args.contains(&"-vf".to_string()));
+        let vf_index = args.iter().position(|arg| arg == "-vf").unwrap();
+        let filter = &args[vf_index + 1];
+        
+        // Should have format filter
+        assert!(filter.contains("format=yuv420p"), "Should have format filter");
+        // Should NOT have scale filter (no upscaling)
+        assert!(!filter.contains("scale="), "Should not have scale filter for smaller source");
     }
 
     #[test]

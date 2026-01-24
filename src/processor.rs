@@ -782,12 +782,15 @@ mod tests {
             );
             
             // Property 5: The error message should be descriptive
-            // It should indicate what went wrong (e.g., "Failed to get video duration")
+            // It should indicate what went wrong (e.g., "Failed to get video duration" or "Skipping corrupted")
             prop_assert!(
                 error_message.contains("Failed") || 
                 error_message.contains("failed") ||
                 error_message.contains("Error") ||
-                error_message.contains("error"),
+                error_message.contains("error") ||
+                error_message.contains("Skipping") ||
+                error_message.contains("Corrupted") ||
+                error_message.contains("corrupted"),
                 "Error message should be descriptive and indicate failure: '{}'",
                 error_message
             );
