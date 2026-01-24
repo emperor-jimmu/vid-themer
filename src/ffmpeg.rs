@@ -61,6 +61,17 @@ impl FFmpegExecutor {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            
+            // Check for specific corruption indicators
+            if stderr.contains("EBML header parsing failed") 
+                || stderr.contains("Invalid data found when processing input")
+                || stderr.contains("moov atom not found")
+                || stderr.contains("End of file") {
+                return Err(FFmpegError::CorruptedFile(
+                    "Video file appears to be corrupted or incomplete".to_string()
+                ));
+            }
+            
             return Err(FFmpegError::ExecutionFailed(format!(
                 "ffprobe failed: {}",
                 stderr
@@ -98,6 +109,17 @@ impl FFmpegExecutor {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            
+            // Check for specific corruption indicators
+            if stderr.contains("EBML header parsing failed") 
+                || stderr.contains("Invalid data found when processing input")
+                || stderr.contains("moov atom not found")
+                || stderr.contains("End of file") {
+                return Err(FFmpegError::CorruptedFile(
+                    "Video file appears to be corrupted or incomplete".to_string()
+                ));
+            }
+            
             return Err(FFmpegError::ExecutionFailed(format!(
                 "ffprobe failed: {}",
                 stderr
@@ -136,6 +158,17 @@ impl FFmpegExecutor {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            
+            // Check for specific corruption indicators
+            if stderr.contains("EBML header parsing failed") 
+                || stderr.contains("Invalid data found when processing input")
+                || stderr.contains("moov atom not found")
+                || stderr.contains("End of file") {
+                return Err(FFmpegError::CorruptedFile(
+                    "Video file appears to be corrupted or incomplete".to_string()
+                ));
+            }
+            
             return Err(FFmpegError::ExecutionFailed(format!(
                 "ffprobe failed: {}",
                 stderr
@@ -518,6 +551,9 @@ pub enum FFmpegError {
     
     #[error("Video has no audio track")]
     NoAudioTrack,
+    
+    #[error("Corrupted or invalid video file: {0}")]
+    CorruptedFile(String),
 }
 
 impl FFmpegError {

@@ -42,11 +42,17 @@ impl VideoProcessor {
             Ok(d) => d,
             Err(e) => {
                 let stderr = e.stderr().map(|s| s.to_string());
+                let error_message = match e {
+                    crate::ffmpeg::FFmpegError::CorruptedFile(_) => {
+                        format!("Skipping corrupted or incomplete video file: {}", e)
+                    }
+                    _ => format!("Failed to get video duration: {}", e)
+                };
                 return ProcessResult {
                     video_path,
                     output_path: PathBuf::new(),
                     success: false,
-                    error_message: Some(format!("Failed to get video duration: {}", e)),
+                    error_message: Some(error_message),
                     ffmpeg_stderr: stderr,
                 };
             }
