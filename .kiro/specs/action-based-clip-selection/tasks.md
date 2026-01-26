@@ -47,16 +47,16 @@ This implementation plan adds a new action-based clip selection strategy to the 
     - For videos > 300 seconds, verify FFmpeg command includes -t 300
     - _Requirements: 2.2_
 
-- [ ] 3. Checkpoint - Verify FFmpeg integration compiles
+- [x] 3. Checkpoint - Verify FFmpeg integration compiles
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. Implement ActionSelector in selector.rs
-  - [ ] 4.1 Define ActionSelector struct
+- [x] 4. Implement ActionSelector in selector.rs
+  - [x] 4.1 Define ActionSelector struct
     - Add ffmpeg_executor field
     - Implement new() constructor
     - Implement middle_segment() helper (reuse IntenseAudioSelector logic)
     - _Requirements: 6.1, 7.5_
-  - [ ] 4.2 Implement ClipSelector trait for ActionSelector
+  - [x] 4.2 Implement ClipSelector trait for ActionSelector
     - Implement select_segment method
     - Call analyze_motion_intensity on FFmpeg executor
     - Filter segments by exclusion zones
@@ -65,7 +65,7 @@ This implementation plan adds a new action-based clip selection strategy to the 
     - Fall back to middle segment on failure
     - Handle all error cases appropriately
     - _Requirements: 1.1, 1.3, 1.4, 1.5, 3.1, 3.4, 4.1, 4.2, 4.3, 4.4, 6.2, 6.3, 7.1, 7.2, 7.3_
-  - [ ] 4.3 Write unit tests for ActionSelector
+  - [x] 4.3 Write unit tests for ActionSelector
     - Test middle segment fallback calculation
     - Test exclusion zone filtering logic
     - Test duration adjustment (extend short, cap long)
@@ -73,55 +73,55 @@ This implementation plan adds a new action-based clip selection strategy to the 
     - Test fallback when all segments violate exclusion zones
     - Test error handling for FFmpeg failures
     - _Requirements: 1.5, 3.4, 3.5, 4.2, 4.3, 7.1, 7.2, 7.3, 9.1, 9.2, 9.4_
-  - [ ] 4.4 Write property test for highest motion score selection
+  - [x] 4.4 Write property test for highest motion score selection
     - **Property 1: Highest Motion Score Selection**
     - **Validates: Requirements 1.3**
     - Generate random motion segments, verify highest score is selected
     - _Requirements: 1.3_
-  - [ ] 4.5 Write property test for tie-breaking
+  - [x] 4.5 Write property test for tie-breaking
     - **Property 2: Tie-Breaking by First Occurrence**
     - **Validates: Requirements 1.4**
     - Generate segments with identical scores, verify first is selected
     - _Requirements: 1.4_
-  - [ ] 4.6 Write property test for exclusion zone compliance
+  - [x] 4.6 Write property test for exclusion zone compliance
     - **Property 4: Exclusion Zone Compliance**
     - **Validates: Requirements 3.1, 3.2, 3.3**
     - For any video and exclusion config, verify clip falls between boundaries
     - Use INTRO_EXCLUSION_PERCENT and OUTRO_EXCLUSION_PERCENT constants
     - _Requirements: 3.1, 3.2, 3.3_
-  - [ ] 4.7 Write property test for next best segment selection
+  - [x] 4.7 Write property test for next best segment selection
     - **Property 5: Next Best Segment Selection**
     - **Validates: Requirements 3.4**
     - When top segment violates zones, verify next valid segment is selected
     - _Requirements: 3.4_
-  - [ ] 4.8 Write property test for clip duration constraints
+  - [x] 4.8 Write property test for clip duration constraints
     - **Property 6: Clip Duration Constraints**
     - **Validates: Requirements 4.1, 4.2, 4.3, 4.4**
     - Verify duration is between MIN_CLIP_DURATION and MAX_CLIP_DURATION
     - Verify duration never exceeds video duration
     - Use MIN_CLIP_DURATION and MAX_CLIP_DURATION constants
     - _Requirements: 4.1, 4.2, 4.3, 4.4_
-  - [ ] 4.9 Write property test for clip within video boundaries
+  - [x] 4.9 Write property test for clip within video boundaries
     - **Property 7: Clip Within Video Boundaries**
     - **Validates: Requirements 4.4**
     - Verify start + duration <= video_duration for all cases
     - _Requirements: 4.4_
-  - [ ] 4.10 Write property test for valid TimeRange return
+  - [x] 4.10 Write property test for valid TimeRange return
     - **Property 8: Valid TimeRange Return**
     - **Validates: Requirements 6.2**
     - Verify start >= 0, duration > 0, end <= video_duration
     - _Requirements: 6.2_
-  - [ ] 4.11 Write property test for middle segment consistency
+  - [x] 4.11 Write property test for middle segment consistency
     - **Property 9: Middle Segment Consistency**
     - **Validates: Requirements 7.5**
     - Verify ActionSelector fallback matches IntenseAudioSelector fallback
     - _Requirements: 7.5_
-  - [ ] 4.12 Write property test for timestamp scaling
+  - [x] 4.12 Write property test for timestamp scaling
     - **Property 10: Timestamp Scaling Correctness**
     - **Validates: Requirements 8.2**
     - When analysis is limited, verify timestamps scale to full duration
     - _Requirements: 8.2_
-  - [ ] 4.13 Write property test for stateless processing
+  - [x] 4.13 Write property test for stateless processing
     - **Property 11: Stateless Processing**
     - **Validates: Requirements 8.4**
     - Process multiple videos, verify no state is cached between them
