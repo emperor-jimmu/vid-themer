@@ -2224,7 +2224,7 @@ mod tests {
             use std::path::PathBuf;
             
             // Create executor
-            let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+            let _executor = FFmpegExecutor::new(Resolution::Hd1080, true);
             
             // Create a test video path (doesn't need to exist for command building test)
             let video_path = PathBuf::from("/test/video.mp4");

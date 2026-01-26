@@ -288,6 +288,7 @@ pub enum SelectionError {
     AudioAnalysisFailed(String),
     
     #[error("Failed to analyze motion: {0}")]
+    #[allow(dead_code)]
     MotionAnalysisFailed(String),
 }
 
@@ -1123,11 +1124,8 @@ mod tests {
         fn test_action_timestamp_scaling_correctness(
             full_duration in 400.0..3600.0f64,
         ) {
-            use crate::ffmpeg::MotionSegment;
-            
             // Simulate the scaling logic from analyze_motion_intensity
             const MAX_ANALYSIS_DURATION: f64 = 300.0; // 5 minutes
-            const SEGMENT_DURATION: f64 = 12.5;
             
             let analysis_duration = full_duration.min(MAX_ANALYSIS_DURATION);
             let scale_factor = full_duration / analysis_duration;
