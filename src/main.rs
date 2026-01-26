@@ -12,7 +12,7 @@ mod logger;
 use clap::Parser;
 use cli::{CliArgs, SelectionStrategy};
 use scanner::VideoScanner;
-use selector::{ClipSelector, RandomSelector, IntenseAudioSelector};
+use selector::{ClipSelector, RandomSelector, IntenseAudioSelector, ActionSelector};
 use ffmpeg::FFmpegExecutor;
 use processor::VideoProcessor;
 use progress::ProgressReporter;
@@ -91,10 +91,7 @@ fn main() {
             Box::new(IntenseAudioSelector::new(ffmpeg_executor.clone()))
         }
         SelectionStrategy::Action => {
-            // TODO: Implement ActionSelector in task 4
-            // For now, fall back to random selection
-            eprintln!("Warning: Action strategy not yet implemented, using random selection");
-            Box::new(RandomSelector)
+            Box::new(ActionSelector::new(ffmpeg_executor.clone()))
         }
     };
     

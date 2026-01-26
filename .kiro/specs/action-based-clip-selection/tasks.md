@@ -127,16 +127,16 @@ This implementation plan adds a new action-based clip selection strategy to the 
     - Process multiple videos, verify no state is cached between them
     - _Requirements: 8.4_
 
-- [ ] 5. Checkpoint - Verify ActionSelector implementation
+- [x] 5. Checkpoint - Verify ActionSelector implementation
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 6. Wire ActionSelector into main application
-  - [ ] 6.1 Update main.rs to instantiate ActionSelector
+- [x] 6. Wire ActionSelector into main application
+  - [x] 6.1 Update main.rs to instantiate ActionSelector
     - Add match arm for SelectionStrategy::Action
     - Create ActionSelector with FFmpegExecutor
     - Pass to VideoProcessor
     - _Requirements: 1.1, 5.1, 5.2_
-  - [ ] 6.2 Update processor.rs if needed
+  - [x] 6.2 Update processor.rs if needed
     - Verify VideoProcessor handles ActionSelector correctly
     - Ensure error handling propagates properly
     - _Requirements: 6.1, 6.2, 6.3_
