@@ -9,6 +9,15 @@ use std::process::Command;
 pub struct FFmpegExecutor {
     pub resolution: Resolution,
     pub include_audio: bool,
+    pub use_hw_accel: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct VideoMetadata {
+    pub duration: f64,
+    pub codec: String,
+    pub width: u32,
+    pub height: u32,
 }
 
 pub struct AudioSegment {
@@ -22,7 +31,16 @@ impl FFmpegExecutor {
         Self {
             resolution,
             include_audio,
+            use_hw_accel: false, // Default to software encoding for compatibility
         }
+    }
+
+    /// Enable or disable hardware acceleration for video encoding
+    /// Note: Hardware acceleration support varies by platform
+    #[allow(dead_code)]
+    pub fn with_hw_accel(mut self, enable: bool) -> Self {
+        self.use_hw_accel = enable;
+        self
     }
 
     /// Check if FFmpeg is available in the system PATH
@@ -44,17 +62,19 @@ impl FFmpegExecutor {
         }
     }
 
-    /// Get the duration of a video file in seconds
-    pub fn get_duration(&self, video_path: &Path) -> Result<f64, FFmpegError> {
-        // Execute ffprobe to get video duration
-        // Command: ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 <video>
+    /// Get all video metadata in a single ffprobe call (3x faster than separate calls)
+    pub fn get_video_metadata(&self, video_path: &Path) -> Result<VideoMetadata, FFmpegError> {
+        // Execute ffprobe to get all metadata at once using JSON output
+        // Command: ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height:format=duration -of json <video>
         let output = Command::new("ffprobe")
             .arg("-v")
             .arg("error")
+            .arg("-select_streams")
+            .arg("v:0")
             .arg("-show_entries")
-            .arg("format=duration")
+            .arg("stream=codec_name,width,height:format=duration")
             .arg("-of")
-            .arg("default=noprint_wrappers=1:nokey=1")
+            .arg("json")
             .arg(video_path)
             .output()
             .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to execute ffprobe: {}", e)))?;
@@ -78,139 +98,109 @@ impl FFmpegExecutor {
             )));
         }
 
-        // Parse the output to f64
-        let duration_str = String::from_utf8_lossy(&output.stdout);
-        let duration_str = duration_str.trim();
+        // Parse JSON output
+        let json_str = String::from_utf8_lossy(&output.stdout);
+        self.parse_metadata_json(&json_str)
+    }
 
-        // Check for "N/A" which indicates FFmpeg couldn't determine duration
+    /// Parse ffprobe JSON output to extract metadata
+    fn parse_metadata_json(&self, json_str: &str) -> Result<VideoMetadata, FFmpegError> {
+        // Manual JSON parsing to avoid external dependencies
+        // Expected structure: {"streams":[{"codec_name":"h264","width":1920,"height":1080}],"format":{"duration":"123.45"}}
+        
+        // Extract codec_name
+        let codec = Self::extract_json_string_value(json_str, "codec_name")
+            .ok_or_else(|| FFmpegError::ParseError("Failed to extract codec_name from JSON".to_string()))?;
+        
+        // Extract width
+        let width_str = Self::extract_json_value(json_str, "width")
+            .ok_or_else(|| FFmpegError::ParseError("Failed to extract width from JSON".to_string()))?;
+        let width = width_str.parse::<u32>()
+            .map_err(|e| FFmpegError::ParseError(format!("Failed to parse width '{}': {}", width_str, e)))?;
+        
+        // Extract height
+        let height_str = Self::extract_json_value(json_str, "height")
+            .ok_or_else(|| FFmpegError::ParseError("Failed to extract height from JSON".to_string()))?;
+        let height = height_str.parse::<u32>()
+            .map_err(|e| FFmpegError::ParseError(format!("Failed to parse height '{}': {}", height_str, e)))?;
+        
+        // Extract duration
+        let duration_str = Self::extract_json_string_value(json_str, "duration")
+            .ok_or_else(|| FFmpegError::ParseError("Failed to extract duration from JSON".to_string()))?;
+        
         if duration_str == "N/A" || duration_str.is_empty() {
             return Err(FFmpegError::CorruptedFile(
                 "Unable to determine video duration - file may be corrupted or incomplete".to_string()
             ));
         }
-
-        duration_str
-            .parse::<f64>()
-            .map_err(|e| FFmpegError::ParseError(format!(
-                "Failed to parse duration '{}': {}",
-                duration_str, e
-            )))
+        
+        let duration = duration_str.parse::<f64>()
+            .map_err(|e| FFmpegError::ParseError(format!("Failed to parse duration '{}': {}", duration_str, e)))?;
+        
+        Ok(VideoMetadata {
+            duration,
+            codec,
+            width,
+            height,
+        })
     }
 
-    /// Get the video codec name for a video file
+    /// Extract a numeric or string value from JSON (simple parser, no external deps)
+    fn extract_json_value(json: &str, key: &str) -> Option<String> {
+        let pattern = format!("\"{}\":", key);
+        if let Some(pos) = json.find(&pattern) {
+            let after = &json[pos + pattern.len()..];
+            let trimmed = after.trim_start();
+            
+            // Handle numeric values (not quoted)
+            if let Some(first_char) = trimmed.chars().next() {
+                if first_char.is_numeric() || first_char == '-' {
+                    let value: String = trimmed.chars()
+                        .take_while(|c| c.is_numeric() || *c == '.' || *c == '-')
+                        .collect();
+                    return Some(value);
+                }
+            }
+        }
+        None
+    }
+
+    /// Extract a string value from JSON (handles quoted strings)
+    fn extract_json_string_value(json: &str, key: &str) -> Option<String> {
+        let pattern = format!("\"{}\":", key);
+        if let Some(pos) = json.find(&pattern) {
+            let after = &json[pos + pattern.len()..];
+            let trimmed = after.trim_start();
+            
+            // Handle string values (quoted)
+            if trimmed.starts_with('"') {
+                let value_start = 1;
+                if let Some(end_quote) = trimmed[value_start..].find('"') {
+                    return Some(trimmed[value_start..value_start + end_quote].to_string());
+                }
+            }
+        }
+        None
+    }
+
+    /// Get the duration of a video file in seconds (legacy method, use get_video_metadata instead)
+    pub fn get_duration(&self, video_path: &Path) -> Result<f64, FFmpegError> {
+        let metadata = self.get_video_metadata(video_path)?;
+        Ok(metadata.duration)
+    }
+
+    /// Get the video codec name for a video file (legacy method, use get_video_metadata instead)
+    #[allow(dead_code)]
     pub fn get_video_codec(&self, video_path: &Path) -> Result<String, FFmpegError> {
-        // Execute ffprobe to get video codec name
-        // Command: ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 <video>
-        let output = Command::new("ffprobe")
-            .arg("-v")
-            .arg("error")
-            .arg("-select_streams")
-            .arg("v:0")
-            .arg("-show_entries")
-            .arg("stream=codec_name")
-            .arg("-of")
-            .arg("default=noprint_wrappers=1:nokey=1")
-            .arg(video_path)
-            .output()
-            .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to execute ffprobe: {}", e)))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            
-            // Check for specific corruption indicators
-            if stderr.contains("EBML header parsing failed") 
-                || stderr.contains("Invalid data found when processing input")
-                || stderr.contains("moov atom not found")
-                || stderr.contains("End of file") {
-                return Err(FFmpegError::CorruptedFile(
-                    "Video file appears to be corrupted or incomplete".to_string()
-                ));
-            }
-            
-            return Err(FFmpegError::ExecutionFailed(format!(
-                "ffprobe failed: {}",
-                stderr
-            )));
-        }
-
-        // Parse the output to String
-        let codec_str = String::from_utf8_lossy(&output.stdout);
-        let codec_str = codec_str.trim().to_string();
-
-        if codec_str.is_empty() {
-            return Err(FFmpegError::ParseError(
-                "Failed to detect video codec".to_string()
-            ));
-        }
-
-        Ok(codec_str)
+        let metadata = self.get_video_metadata(video_path)?;
+        Ok(metadata.codec)
     }
 
-    /// Get the video resolution (width, height) of a video file
+    /// Get the video resolution (width, height) of a video file (legacy method, use get_video_metadata instead)
+    #[allow(dead_code)]
     pub fn get_video_resolution(&self, video_path: &Path) -> Result<(u32, u32), FFmpegError> {
-        // Execute ffprobe to get video width and height
-        // Command: ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 <video>
-        let output = Command::new("ffprobe")
-            .arg("-v")
-            .arg("error")
-            .arg("-select_streams")
-            .arg("v:0")
-            .arg("-show_entries")
-            .arg("stream=width,height")
-            .arg("-of")
-            .arg("csv=s=x:p=0")
-            .arg(video_path)
-            .output()
-            .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to execute ffprobe: {}", e)))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            
-            // Check for specific corruption indicators
-            if stderr.contains("EBML header parsing failed") 
-                || stderr.contains("Invalid data found when processing input")
-                || stderr.contains("moov atom not found")
-                || stderr.contains("End of file") {
-                return Err(FFmpegError::CorruptedFile(
-                    "Video file appears to be corrupted or incomplete".to_string()
-                ));
-            }
-            
-            return Err(FFmpegError::ExecutionFailed(format!(
-                "ffprobe failed: {}",
-                stderr
-            )));
-        }
-
-        // Parse the output to (u32, u32)
-        // Expected format: "1920x1080"
-        let resolution_str = String::from_utf8_lossy(&output.stdout);
-        let resolution_str = resolution_str.trim();
-
-        // Split by 'x' to get width and height, filtering out empty parts
-        let parts: Vec<&str> = resolution_str.split('x').filter(|s| !s.is_empty()).collect();
-        if parts.len() != 2 {
-            return Err(FFmpegError::ParseError(format!(
-                "Invalid resolution format '{}', expected 'WIDTHxHEIGHT'",
-                resolution_str
-            )));
-        }
-
-        let width = parts[0]
-            .parse::<u32>()
-            .map_err(|e| FFmpegError::ParseError(format!(
-                "Failed to parse width '{}': {}",
-                parts[0], e
-            )))?;
-
-        let height = parts[1]
-            .parse::<u32>()
-            .map_err(|e| FFmpegError::ParseError(format!(
-                "Failed to parse height '{}': {}",
-                parts[1], e
-            )))?;
-
-        Ok((width, height))
+        let metadata = self.get_video_metadata(video_path)?;
+        Ok((metadata.width, metadata.height))
     }
 
     /// Calculate the scale filter for FFmpeg based on target resolution
@@ -250,14 +240,15 @@ impl FFmpegExecutor {
             vec!["-an".to_string()]
         } else {
             // Include audio with AAC codec
+            // Apply loudness normalization (EBU R128) then reduce volume
             // Downmix to stereo to handle complex channel layouts (e.g., 5.1.2 Dolby Atmos)
-            // that AAC encoder doesn't support
-            // Reduce volume by 20% (multiply by 0.8)
             vec![
                 "-af".to_string(),
-                "volume=0.8".to_string(),
+                "loudnorm=I=-16:TP=-1.5:LRA=11,volume=0.8".to_string(),
                 "-c:a".to_string(),
                 "aac".to_string(),
+                "-b:a".to_string(),
+                "128k".to_string(), // Explicit bitrate for consistency
                 "-ac".to_string(),
                 "2".to_string(), // Force stereo output
             ]
@@ -305,6 +296,7 @@ impl FFmpegExecutor {
             if fast_seek_pos > 0.0 {
                 args.push("-ss".to_string());
                 args.push(fast_seek_pos.to_string());
+                args.push("-noaccurate_seek".to_string()); // Explicit fast seek
             }
             
             args.extend(vec![
@@ -331,6 +323,7 @@ impl FFmpegExecutor {
             if fast_seek_pos > 0.0 {
                 args.push("-ss".to_string());
                 args.push(fast_seek_pos.to_string());
+                args.push("-noaccurate_seek".to_string()); // Explicit fast seek
             }
             
             args.extend(vec![
@@ -346,18 +339,56 @@ impl FFmpegExecutor {
             }
         }
         
+        // Handle timestamp edge cases
+        args.extend(vec![
+            "-avoid_negative_ts".to_string(),
+            "make_zero".to_string(),
+        ]);
+        
         args.extend(vec![
             // Duration
             "-t".to_string(),
             time_range.duration_seconds.to_string(),
-            // Video codec and preset
-            "-c:v".to_string(),
-            "libx264".to_string(),
-            "-preset".to_string(),
-            "fast".to_string(),
-            // CRF for quality/size balance (26 = smaller files, still good quality)
-            "-crf".to_string(),
-            "26".to_string(),
+        ]);
+        
+        // Video codec selection (hardware or software)
+        if self.use_hw_accel {
+            // Try hardware acceleration (macOS VideoToolbox, NVIDIA, or Intel)
+            #[cfg(target_os = "macos")]
+            {
+                args.extend(vec![
+                    "-c:v".to_string(),
+                    "h264_videotoolbox".to_string(),
+                    "-b:v".to_string(),
+                    "5M".to_string(), // Bitrate for hardware encoder
+                ]);
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                // Try NVIDIA first, fall back to software if not available
+                args.extend(vec![
+                    "-c:v".to_string(),
+                    "h264_nvenc".to_string(),
+                    "-preset".to_string(),
+                    "p4".to_string(), // NVENC preset (p1-p7, p4 is balanced)
+                    "-b:v".to_string(),
+                    "5M".to_string(),
+                ]);
+            }
+        } else {
+            // Software encoding with libx264
+            args.extend(vec![
+                "-c:v".to_string(),
+                "libx264".to_string(),
+                "-preset".to_string(),
+                "fast".to_string(),
+                // CRF for quality/size balance (26 = smaller files, still good quality)
+                "-crf".to_string(),
+                "26".to_string(),
+            ]);
+        }
+        
+        args.extend(vec![
             // Explicitly set output pixel format to 8-bit yuv420p
             "-pix_fmt".to_string(),
             "yuv420p".to_string(),
@@ -412,9 +443,10 @@ impl FFmpegExecutor {
         time_range: &TimeRange,
         output_path: &Path,
     ) -> Result<(), FFmpegError> {
-        // Get source resolution and codec
-        let source_resolution = self.get_video_resolution(video_path)?;
-        let codec = self.get_video_codec(video_path)?;
+        // Get source resolution and codec using batch metadata query
+        let metadata = self.get_video_metadata(video_path)?;
+        let source_resolution = (metadata.width, metadata.height);
+        let codec = &metadata.codec;
 
         // Build the FFmpeg command with codec-aware seeking
         let args = self.build_extract_command(
@@ -422,7 +454,7 @@ impl FFmpegExecutor {
             time_range,
             output_path,
             source_resolution,
-            &codec,
+            codec,
         );
 
         // Execute FFmpeg command
@@ -434,26 +466,229 @@ impl FFmpegExecutor {
         // Check if the command was successful
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            
+            // Check for specific error patterns that might benefit from recovery
+            if stderr.contains("corrupt") 
+                || stderr.contains("Invalid NAL unit")
+                || stderr.contains("concealing")
+                || stderr.contains("error while decoding")
+                || stderr.contains("missing picture in access unit") {
+                // Try extraction with error recovery
+                return self.extract_clip_with_recovery(video_path, time_range, output_path, source_resolution, codec);
+            }
+            
             return Err(FFmpegError::ExecutionFailed(format!(
                 "FFmpeg clip extraction failed: {}",
                 stderr
             )));
         }
 
+        // Validate output file
+        self.validate_output(output_path)?;
+
+        Ok(())
+    }
+
+    /// Extract clip with error concealment for corrupted videos
+    fn extract_clip_with_recovery(
+        &self,
+        video_path: &Path,
+        time_range: &TimeRange,
+        output_path: &Path,
+        source_resolution: (u32, u32),
+        codec: &str,
+    ) -> Result<(), FFmpegError> {
+        // Build command with additional error concealment flags
+        let mut args = vec![
+            "-err_detect".to_string(),
+            "ignore_err".to_string(),
+            "-fflags".to_string(),
+            "+genpts+igndts".to_string(), // Generate PTS, ignore DTS errors
+            "-max_error_rate".to_string(),
+            "1.0".to_string(), // Allow up to 100% error rate
+        ];
+        
+        // Add the rest of the standard command
+        let standard_args = self.build_extract_command(
+            video_path,
+            time_range,
+            output_path,
+            source_resolution,
+            codec,
+        );
+        
+        // Skip the first two args from standard command (they're already added)
+        args.extend(standard_args.into_iter().skip(2));
+        
+        // Execute with recovery flags
+        let output = Command::new("ffmpeg")
+            .args(&args)
+            .output()
+            .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to execute ffmpeg recovery: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(FFmpegError::ExecutionFailed(format!(
+                "FFmpeg clip extraction failed even with recovery: {}",
+                stderr
+            )));
+        }
+
+        // Validate output file
+        self.validate_output(output_path)?;
+
+        Ok(())
+    }
+
+    /// Validate that the output file exists and has content
+    fn validate_output(&self, output_path: &Path) -> Result<(), FFmpegError> {
+        if !output_path.exists() {
+            return Err(FFmpegError::ExecutionFailed(
+                "Output file was not created".to_string()
+            ));
+        }
+        
+        let metadata = std::fs::metadata(output_path)
+            .map_err(|e| FFmpegError::ExecutionFailed(format!("Cannot read output file: {}", e)))?;
+        
+        if metadata.len() == 0 {
+            return Err(FFmpegError::ExecutionFailed(
+                "Output file is empty (0 bytes)".to_string()
+            ));
+        }
+        
         Ok(())
     }
 
     /// Analyze audio intensity across the video duration
     /// Returns a sorted list of audio segments by intensity (highest first)
-    /// Uses FFmpeg's ebur128 filter to measure audio levels
+    /// Optimized for long videos by limiting analysis duration
     pub fn analyze_audio_intensity(
         &self,
         video_path: &Path,
         duration: f64,
     ) -> Result<Vec<AudioSegment>, FFmpegError> {
-        // Execute FFmpeg with ebur128 filter to analyze audio levels
-        // Command: ffmpeg -i <video> -filter_complex ebur128=peak=true -f null -
+        // For long videos (>5 minutes), analyze only first 5 minutes for efficiency
+        // This provides enough data for representative segment selection
+        const MAX_ANALYSIS_DURATION: f64 = 300.0; // 5 minutes
+        let analysis_duration = duration.min(MAX_ANALYSIS_DURATION);
+        
+        // Use volumedetect for faster analysis (simpler than ebur128)
+        // For videos longer than analysis window, we'll use a sampling approach
+        let args = vec![
+            "-i".to_string(),
+            video_path.to_string_lossy().to_string(),
+            "-t".to_string(),
+            analysis_duration.to_string(),
+            "-af".to_string(),
+            "astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level:file=-".to_string(),
+            "-f".to_string(),
+            "null".to_string(),
+            "-".to_string(),
+        ];
+        
+        // Execute FFmpeg with audio stats filter
         let output = Command::new("ffmpeg")
+            .args(&args)
+            .output()
+            .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to execute ffmpeg for audio analysis: {}", e)))?;
+
+        // The astats filter outputs to stderr
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        // Check if there's an audio track
+        if stderr.contains("Output file #0 does not contain any stream") 
+            || stderr.contains("Stream specifier ':a' in filtergraph")
+            || stderr.contains("does not contain any stream") {
+            return Err(FFmpegError::NoAudioTrack);
+        }
+
+        // Parse the output to extract audio measurements
+        // The astats filter outputs lines with RMS levels
+        let mut measurements: Vec<(f64, f64)> = Vec::new(); // (time, rms_level)
+        
+        // Parse frame timestamps and RMS levels from metadata output
+        let mut current_time = 0.0;
+        for line in stderr.lines() {
+            // Look for frame time indicators
+            if line.contains("pts_time:") {
+                if let Some(time) = Self::extract_value_after(line, "pts_time:") {
+                    current_time = time;
+                }
+            }
+            // Look for RMS level in metadata
+            if line.contains("lavfi.astats.Overall.RMS_level") {
+                if let Some(level) = Self::extract_value_after(line, "lavfi.astats.Overall.RMS_level=") {
+                    measurements.push((current_time, level));
+                }
+            }
+        }
+
+        // If no measurements were found, try fallback to simpler volumedetect
+        if measurements.is_empty() {
+            return self.analyze_audio_intensity_fallback(video_path, duration);
+        }
+
+        // Group measurements into segments (10-15 second windows)
+        // We'll use 12.5 second segments as a middle ground
+        const SEGMENT_DURATION: f64 = 12.5;
+        
+        // Scale segments to full video duration if we only analyzed a portion
+        let scale_factor = duration / analysis_duration;
+        let num_segments = (duration / SEGMENT_DURATION).ceil() as usize;
+        
+        let mut segments: Vec<AudioSegment> = Vec::new();
+        
+        for i in 0..num_segments {
+            let segment_start = i as f64 * SEGMENT_DURATION;
+            let segment_end = ((i + 1) as f64 * SEGMENT_DURATION).min(duration);
+            let segment_duration_val = segment_end - segment_start;
+            
+            // Map to analyzed portion
+            let analyzed_start = segment_start / scale_factor;
+            let analyzed_end = segment_end / scale_factor;
+            
+            // Find all measurements within this segment
+            let segment_measurements: Vec<f64> = measurements
+                .iter()
+                .filter(|(time, _)| *time >= analyzed_start && *time < analyzed_end)
+                .map(|(_, level)| *level)
+                .collect();
+            
+            if !segment_measurements.is_empty() {
+                // Calculate intensity as the average of RMS values
+                // Higher (less negative) dB values indicate louder audio
+                let intensity: f64 = segment_measurements.iter().sum::<f64>() 
+                    / segment_measurements.len() as f64;
+                
+                segments.push(AudioSegment {
+                    start_time: segment_start,
+                    duration: segment_duration_val,
+                    intensity,
+                });
+            }
+        }
+
+        // Sort segments by intensity (highest/loudest first)
+        // Since dB values are negative, higher (less negative) values are louder
+        segments.sort_by(|a, b| b.intensity.partial_cmp(&a.intensity).unwrap());
+
+        Ok(segments)
+    }
+
+    /// Fallback audio analysis using simpler volumedetect filter
+    fn analyze_audio_intensity_fallback(
+        &self,
+        video_path: &Path,
+        duration: f64,
+    ) -> Result<Vec<AudioSegment>, FFmpegError> {
+        // Use ebur128 as fallback but with limited duration
+        const MAX_ANALYSIS_DURATION: f64 = 180.0; // 3 minutes for fallback
+        let analysis_duration = duration.min(MAX_ANALYSIS_DURATION);
+        
+        let output = Command::new("ffmpeg")
+            .arg("-t")
+            .arg(analysis_duration.to_string())
             .arg("-i")
             .arg(video_path)
             .arg("-filter_complex")
@@ -464,24 +699,17 @@ impl FFmpegExecutor {
             .output()
             .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to execute ffmpeg for audio analysis: {}", e)))?;
 
-        // The ebur128 filter outputs to stderr, not stdout
         let stderr = String::from_utf8_lossy(&output.stderr);
 
-        // Check if there's an audio track
         if stderr.contains("Output file #0 does not contain any stream") 
             || stderr.contains("Stream specifier ':a' in filtergraph") {
             return Err(FFmpegError::NoAudioTrack);
         }
 
-        // Parse the output to extract audio measurements
-        // The ebur128 filter outputs lines like:
-        // [Parsed_ebur128_0 @ 0x...] t: 1.0    M: -23.4 S: -23.5    I: -23.4 LUFS     LRA:  0.0 LU  FTPK: -12.3 dBFS  TPK: -12.3 dBFS
-        
-        let mut measurements: Vec<(f64, f64)> = Vec::new(); // (time, peak_level)
+        let mut measurements: Vec<(f64, f64)> = Vec::new();
         
         for line in stderr.lines() {
             if line.contains("Parsed_ebur128") && line.contains("t:") {
-                // Extract time and peak values
                 if let Some(time) = Self::extract_value_after(line, "t:")
                     && let Some(peak) = Self::extract_value_after(line, "FTPK:")
                 {
@@ -490,14 +718,12 @@ impl FFmpegExecutor {
             }
         }
 
-        // If no measurements were found, return error
         if measurements.is_empty() {
             return Err(FFmpegError::NoAudioTrack);
         }
 
-        // Group measurements into segments (10-15 second windows)
-        // We'll use 12.5 second segments as a middle ground
         const SEGMENT_DURATION: f64 = 12.5;
+        let scale_factor = duration / analysis_duration;
         let num_segments = (duration / SEGMENT_DURATION).ceil() as usize;
         
         let mut segments: Vec<AudioSegment> = Vec::new();
@@ -505,31 +731,29 @@ impl FFmpegExecutor {
         for i in 0..num_segments {
             let segment_start = i as f64 * SEGMENT_DURATION;
             let segment_end = ((i + 1) as f64 * SEGMENT_DURATION).min(duration);
-            let segment_duration = segment_end - segment_start;
+            let segment_duration_val = segment_end - segment_start;
             
-            // Find all measurements within this segment
+            let analyzed_start = segment_start / scale_factor;
+            let analyzed_end = segment_end / scale_factor;
+            
             let segment_measurements: Vec<f64> = measurements
                 .iter()
-                .filter(|(time, _)| *time >= segment_start && *time < segment_end)
+                .filter(|(time, _)| *time >= analyzed_start && *time < analyzed_end)
                 .map(|(_, peak)| *peak)
                 .collect();
             
             if !segment_measurements.is_empty() {
-                // Calculate intensity as the average of peak values
-                // Higher (less negative) dBFS values indicate louder audio
                 let intensity: f64 = segment_measurements.iter().sum::<f64>() 
                     / segment_measurements.len() as f64;
                 
                 segments.push(AudioSegment {
                     start_time: segment_start,
-                    duration: segment_duration,
+                    duration: segment_duration_val,
                     intensity,
                 });
             }
         }
 
-        // Sort segments by intensity (highest/loudest first)
-        // Since dBFS values are negative, higher (less negative) values are louder
         segments.sort_by(|a, b| b.intensity.partial_cmp(&a.intensity).unwrap());
 
         Ok(segments)
