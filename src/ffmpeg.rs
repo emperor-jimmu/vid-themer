@@ -678,7 +678,7 @@ impl FFmpegExecutor {
 
         // Sort segments by intensity (highest/loudest first)
         // Since dB values are negative, higher (less negative) values are louder
-        segments.sort_by(|a, b| b.intensity.partial_cmp(&a.intensity).unwrap());
+        segments.sort_by(|a, b| b.intensity.total_cmp(&a.intensity));
 
         Ok(segments)
     }
@@ -761,7 +761,7 @@ impl FFmpegExecutor {
             }
         }
 
-        segments.sort_by(|a, b| b.intensity.partial_cmp(&a.intensity).unwrap());
+        segments.sort_by(|a, b| b.intensity.total_cmp(&a.intensity));
 
         Ok(segments)
     }
@@ -880,7 +880,7 @@ impl FFmpegExecutor {
         }
 
         // Sort segments by motion score (highest first)
-        segments.sort_by(|a, b| b.motion_score.partial_cmp(&a.motion_score).unwrap());
+        segments.sort_by(|a, b| b.motion_score.total_cmp(&a.motion_score));
 
         Ok(segments)
     }
@@ -2272,6 +2272,264 @@ mod tests {
                 prop_assert!(
                     (duration_value - video_duration).abs() < 0.001,
                     "Analysis duration should match video duration for videos <= 300s"
+                );
+            }
+        }
+    }
+
+    // Feature: ffmpeg-code-quality-improvements, Property 1: NaN-Safe Segment Sorting
+    // **Validates: Requirements 1.1, 1.2**
+    
+    #[test]
+    fn test_audio_segment_sorting_with_single_nan() {
+        // Test sorting with a single NaN value
+        let mut segments = vec![
+            AudioSegment { start_time: 0.0, duration: 12.5, intensity: -15.0 },
+            AudioSegment { start_time: 12.5, duration: 12.5, intensity: f64::NAN },
+            AudioSegment { start_time: 25.0, duration: 12.5, intensity: -20.0 },
+            AudioSegment { start_time: 37.5, duration: 12.5, intensity: -10.0 },
+        ];
+        
+        // Should not panic
+        segments.sort_by(|a, b| b.intensity.total_cmp(&a.intensity));
+        
+        // With total_cmp, NaN is treated as less than all other values
+        // When sorting descending (b.cmp(a)), NaN will be at the beginning
+        assert!(segments[0].intensity.is_nan());
+        assert!(!segments[1].intensity.is_nan());
+        assert!(!segments[2].intensity.is_nan());
+        assert!(!segments[3].intensity.is_nan());
+        
+        // Verify non-NaN values are sorted correctly (highest first)
+        assert_eq!(segments[1].intensity, -10.0);
+        assert_eq!(segments[2].intensity, -15.0);
+        assert_eq!(segments[3].intensity, -20.0);
+    }
+    
+    #[test]
+    fn test_audio_segment_sorting_with_all_nan() {
+        // Test sorting with all NaN values
+        let mut segments = vec![
+            AudioSegment { start_time: 0.0, duration: 12.5, intensity: f64::NAN },
+            AudioSegment { start_time: 12.5, duration: 12.5, intensity: f64::NAN },
+            AudioSegment { start_time: 25.0, duration: 12.5, intensity: f64::NAN },
+        ];
+        
+        // Should not panic
+        segments.sort_by(|a, b| b.intensity.total_cmp(&a.intensity));
+        
+        // All should still be NaN
+        assert!(segments[0].intensity.is_nan());
+        assert!(segments[1].intensity.is_nan());
+        assert!(segments[2].intensity.is_nan());
+    }
+    
+    #[test]
+    fn test_audio_segment_sorting_with_nan_and_infinity() {
+        // Test sorting with NaN and infinity values
+        let mut segments = vec![
+            AudioSegment { start_time: 0.0, duration: 12.5, intensity: -15.0 },
+            AudioSegment { start_time: 12.5, duration: 12.5, intensity: f64::NAN },
+            AudioSegment { start_time: 25.0, duration: 12.5, intensity: f64::INFINITY },
+            AudioSegment { start_time: 37.5, duration: 12.5, intensity: f64::NEG_INFINITY },
+            AudioSegment { start_time: 50.0, duration: 12.5, intensity: -10.0 },
+        ];
+        
+        // Should not panic
+        segments.sort_by(|a, b| b.intensity.total_cmp(&a.intensity));
+        
+        // Verify ordering with descending sort (b.cmp(a))
+        // total_cmp ordering: NaN < -infinity < normal values < infinity
+        // With descending sort (b.total_cmp(a)): NaN, infinity, normal values (descending), -infinity
+        assert!(segments[0].intensity.is_nan());
+        assert_eq!(segments[1].intensity, f64::INFINITY);
+        assert_eq!(segments[2].intensity, -10.0);
+        assert_eq!(segments[3].intensity, -15.0);
+        assert_eq!(segments[4].intensity, f64::NEG_INFINITY);
+    }
+    
+    #[test]
+    fn test_motion_segment_sorting_with_single_nan() {
+        // Test sorting with a single NaN value
+        let mut segments = vec![
+            MotionSegment { start_time: 0.0, duration: 12.5, motion_score: 5.0 },
+            MotionSegment { start_time: 12.5, duration: 12.5, motion_score: f64::NAN },
+            MotionSegment { start_time: 25.0, duration: 12.5, motion_score: 3.0 },
+            MotionSegment { start_time: 37.5, duration: 12.5, motion_score: 8.0 },
+        ];
+        
+        // Should not panic
+        segments.sort_by(|a, b| b.motion_score.total_cmp(&a.motion_score));
+        
+        // With total_cmp, NaN is treated as less than all other values
+        // When sorting descending (b.cmp(a)), NaN will be at the beginning
+        assert!(segments[0].motion_score.is_nan());
+        assert!(!segments[1].motion_score.is_nan());
+        assert!(!segments[2].motion_score.is_nan());
+        assert!(!segments[3].motion_score.is_nan());
+        
+        // Verify non-NaN values are sorted correctly (highest first)
+        assert_eq!(segments[1].motion_score, 8.0);
+        assert_eq!(segments[2].motion_score, 5.0);
+        assert_eq!(segments[3].motion_score, 3.0);
+    }
+    
+    #[test]
+    fn test_motion_segment_sorting_with_all_nan() {
+        // Test sorting with all NaN values
+        let mut segments = vec![
+            MotionSegment { start_time: 0.0, duration: 12.5, motion_score: f64::NAN },
+            MotionSegment { start_time: 12.5, duration: 12.5, motion_score: f64::NAN },
+            MotionSegment { start_time: 25.0, duration: 12.5, motion_score: f64::NAN },
+        ];
+        
+        // Should not panic
+        segments.sort_by(|a, b| b.motion_score.total_cmp(&a.motion_score));
+        
+        // All should still be NaN
+        assert!(segments[0].motion_score.is_nan());
+        assert!(segments[1].motion_score.is_nan());
+        assert!(segments[2].motion_score.is_nan());
+    }
+    
+    #[test]
+    fn test_motion_segment_sorting_with_nan_and_infinity() {
+        // Test sorting with NaN and infinity values
+        let mut segments = vec![
+            MotionSegment { start_time: 0.0, duration: 12.5, motion_score: 5.0 },
+            MotionSegment { start_time: 12.5, duration: 12.5, motion_score: f64::NAN },
+            MotionSegment { start_time: 25.0, duration: 12.5, motion_score: f64::INFINITY },
+            MotionSegment { start_time: 37.5, duration: 12.5, motion_score: f64::NEG_INFINITY },
+            MotionSegment { start_time: 50.0, duration: 12.5, motion_score: 3.0 },
+        ];
+        
+        // Should not panic
+        segments.sort_by(|a, b| b.motion_score.total_cmp(&a.motion_score));
+        
+        // Verify ordering with descending sort (b.cmp(a))
+        // total_cmp ordering: NaN < -infinity < normal values < infinity
+        // With descending sort (b.total_cmp(a)): NaN, infinity, normal values (descending), -infinity
+        assert!(segments[0].motion_score.is_nan());
+        assert_eq!(segments[1].motion_score, f64::INFINITY);
+        assert_eq!(segments[2].motion_score, 5.0);
+        assert_eq!(segments[3].motion_score, 3.0);
+        assert_eq!(segments[4].motion_score, f64::NEG_INFINITY);
+    }
+
+    proptest! {
+        #[test]
+        fn test_nan_safe_audio_segment_sorting(
+            // Generate a vector of audio segments with some NaN values
+            num_segments in 1usize..=20,
+            nan_positions in prop::collection::vec(prop::bool::ANY, 1..=20),
+            intensities in prop::collection::vec(-100.0f64..=0.0, 1..=20),
+        ) {
+            // Ensure vectors have the same length
+            let len = num_segments.min(nan_positions.len()).min(intensities.len());
+            
+            // Create audio segments with some NaN values
+            let mut segments: Vec<AudioSegment> = (0..len)
+                .map(|i| {
+                    let intensity = if nan_positions[i] {
+                        f64::NAN
+                    } else {
+                        intensities[i]
+                    };
+                    
+                    AudioSegment {
+                        start_time: i as f64 * 12.5,
+                        duration: 12.5,
+                        intensity,
+                    }
+                })
+                .collect();
+            
+            // Property 1: Sorting should not panic
+            segments.sort_by(|a, b| b.intensity.total_cmp(&a.intensity));
+            
+            // Property 2: All NaN values should be grouped together at the beginning
+            // (total_cmp treats NaN as less than all other values, so with descending sort b.cmp(a), NaN comes first)
+            let nan_count = segments.iter().filter(|s| s.intensity.is_nan()).count();
+            let non_nan_count = segments.len() - nan_count;
+            
+            // All NaN values should be at the beginning
+            for i in 0..nan_count {
+                prop_assert!(
+                    segments[i].intensity.is_nan(),
+                    "NaN values should be grouped at the beginning"
+                );
+            }
+            
+            for i in nan_count..segments.len() {
+                prop_assert!(
+                    !segments[i].intensity.is_nan(),
+                    "Non-NaN values should come after NaN values"
+                );
+            }
+            
+            // Property 3: Non-NaN values should be sorted in descending order
+            for i in nan_count..segments.len().saturating_sub(1) {
+                prop_assert!(
+                    segments[i].intensity >= segments[i + 1].intensity,
+                    "Non-NaN values should be sorted in descending order"
+                );
+            }
+        }
+        
+        #[test]
+        fn test_nan_safe_motion_segment_sorting(
+            // Generate a vector of motion segments with some NaN values
+            num_segments in 1usize..=20,
+            nan_positions in prop::collection::vec(prop::bool::ANY, 1..=20),
+            motion_scores in prop::collection::vec(0.0f64..=10.0, 1..=20),
+        ) {
+            // Ensure vectors have the same length
+            let len = num_segments.min(nan_positions.len()).min(motion_scores.len());
+            
+            // Create motion segments with some NaN values
+            let mut segments: Vec<MotionSegment> = (0..len)
+                .map(|i| {
+                    let motion_score = if nan_positions[i] {
+                        f64::NAN
+                    } else {
+                        motion_scores[i]
+                    };
+                    
+                    MotionSegment {
+                        start_time: i as f64 * 12.5,
+                        duration: 12.5,
+                        motion_score,
+                    }
+                })
+                .collect();
+            
+            // Property 1: Sorting should not panic
+            segments.sort_by(|a, b| b.motion_score.total_cmp(&a.motion_score));
+            
+            // Property 2: All NaN values should be grouped together at the beginning
+            let nan_count = segments.iter().filter(|s| s.motion_score.is_nan()).count();
+            let non_nan_count = segments.len() - nan_count;
+            
+            // All NaN values should be at the beginning
+            for i in 0..nan_count {
+                prop_assert!(
+                    segments[i].motion_score.is_nan(),
+                    "NaN values should be grouped at the beginning"
+                );
+            }
+            
+            for i in nan_count..segments.len() {
+                prop_assert!(
+                    !segments[i].motion_score.is_nan(),
+                    "Non-NaN values should come after NaN values"
+                );
+            }
+            
+            // Property 3: Non-NaN values should be sorted in descending order
+            for i in nan_count..segments.len().saturating_sub(1) {
+                prop_assert!(
+                    segments[i].motion_score >= segments[i + 1].motion_score,
+                    "Non-NaN values should be sorted in descending order"
                 );
             }
         }
