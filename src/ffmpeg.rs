@@ -2,8 +2,30 @@
 
 use crate::cli::Resolution;
 use crate::selector::TimeRange;
+use serde::Deserialize;
 use std::path::Path;
 use std::process::Command;
+
+/// FFprobe JSON output structure
+#[derive(Debug, Deserialize)]
+struct FFprobeOutput {
+    streams: Vec<FFprobeStream>,
+    format: FFprobeFormat,
+}
+
+/// FFprobe stream information
+#[derive(Debug, Deserialize)]
+struct FFprobeStream {
+    codec_name: String,
+    width: u32,
+    height: u32,
+}
+
+/// FFprobe format information
+#[derive(Debug, Deserialize)]
+struct FFprobeFormat {
+    duration: String,
+}
 
 #[derive(Clone)]
 pub struct FFmpegExecutor {
@@ -112,82 +134,33 @@ impl FFmpegExecutor {
 
     /// Parse ffprobe JSON output to extract metadata
     fn parse_metadata_json(&self, json_str: &str) -> Result<VideoMetadata, FFmpegError> {
-        // Manual JSON parsing to avoid external dependencies
-        // Expected structure: {"streams":[{"codec_name":"h264","width":1920,"height":1080}],"format":{"duration":"123.45"}}
+        // Use serde_json for robust JSON parsing
+        let output: FFprobeOutput = serde_json::from_str(json_str)
+            .map_err(|e| FFmpegError::ParseError(format!("Failed to parse JSON: {}", e)))?;
         
-        // Extract codec_name
-        let codec = Self::extract_json_string_value(json_str, "codec_name")
-            .ok_or_else(|| FFmpegError::ParseError("Failed to extract codec_name from JSON".to_string()))?;
+        // Get the first video stream
+        let stream = output.streams.first()
+            .ok_or_else(|| FFmpegError::ParseError("No video stream found in JSON".to_string()))?;
         
-        // Extract width
-        let width_str = Self::extract_json_value(json_str, "width")
-            .ok_or_else(|| FFmpegError::ParseError("Failed to extract width from JSON".to_string()))?;
-        let width = width_str.parse::<u32>()
-            .map_err(|e| FFmpegError::ParseError(format!("Failed to parse width '{}': {}", width_str, e)))?;
-        
-        // Extract height
-        let height_str = Self::extract_json_value(json_str, "height")
-            .ok_or_else(|| FFmpegError::ParseError("Failed to extract height from JSON".to_string()))?;
-        let height = height_str.parse::<u32>()
-            .map_err(|e| FFmpegError::ParseError(format!("Failed to parse height '{}': {}", height_str, e)))?;
-        
-        // Extract duration
-        let duration_str = Self::extract_json_string_value(json_str, "duration")
-            .ok_or_else(|| FFmpegError::ParseError("Failed to extract duration from JSON".to_string()))?;
-        
-        if duration_str == "N/A" || duration_str.is_empty() {
+        // Validate duration (check for "N/A" or empty)
+        if output.format.duration == "N/A" || output.format.duration.is_empty() {
             return Err(FFmpegError::CorruptedFile(
                 "Unable to determine video duration - file may be corrupted or incomplete".to_string()
             ));
         }
         
-        let duration = duration_str.parse::<f64>()
-            .map_err(|e| FFmpegError::ParseError(format!("Failed to parse duration '{}': {}", duration_str, e)))?;
+        // Parse duration string to f64
+        let duration = output.format.duration.parse::<f64>()
+            .map_err(|e| FFmpegError::ParseError(
+                format!("Failed to parse duration '{}': {}", output.format.duration, e)
+            ))?;
         
         Ok(VideoMetadata {
             duration,
-            codec,
-            width,
-            height,
+            codec: stream.codec_name.clone(),
+            width: stream.width,
+            height: stream.height,
         })
-    }
-
-    /// Extract a numeric or string value from JSON (simple parser, no external deps)
-    fn extract_json_value(json: &str, key: &str) -> Option<String> {
-        let pattern = format!("\"{}\":", key);
-        if let Some(pos) = json.find(&pattern) {
-            let after = &json[pos + pattern.len()..];
-            let trimmed = after.trim_start();
-            
-            // Handle numeric values (not quoted)
-            if let Some(first_char) = trimmed.chars().next() {
-                if first_char.is_numeric() || first_char == '-' {
-                    let value: String = trimmed.chars()
-                        .take_while(|c| c.is_numeric() || *c == '.' || *c == '-')
-                        .collect();
-                    return Some(value);
-                }
-            }
-        }
-        None
-    }
-
-    /// Extract a string value from JSON (handles quoted strings)
-    fn extract_json_string_value(json: &str, key: &str) -> Option<String> {
-        let pattern = format!("\"{}\":", key);
-        if let Some(pos) = json.find(&pattern) {
-            let after = &json[pos + pattern.len()..];
-            let trimmed = after.trim_start();
-            
-            // Handle string values (quoted)
-            if trimmed.starts_with('"') {
-                let value_start = 1;
-                if let Some(end_quote) = trimmed[value_start..].find('"') {
-                    return Some(trimmed[value_start..value_start + end_quote].to_string());
-                }
-            }
-        }
-        None
     }
 
     /// Get the duration of a video file in seconds (legacy method, use get_video_metadata instead)
@@ -1040,6 +1013,128 @@ mod tests {
         
         let no_audio_error = FFmpegError::NoAudioTrack;
         assert_eq!(no_audio_error.to_string(), "Video has no audio track");
+    }
+
+    // JSON Parsing Tests with serde_json
+
+    #[test]
+    fn test_parse_metadata_json_valid() {
+        // Test valid JSON parsing
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let json = r#"{"streams":[{"codec_name":"h264","width":1920,"height":1080}],"format":{"duration":"123.45"}}"#;
+        
+        let result = executor.parse_metadata_json(json);
+        assert!(result.is_ok());
+        
+        let metadata = result.unwrap();
+        assert_eq!(metadata.codec, "h264");
+        assert_eq!(metadata.width, 1920);
+        assert_eq!(metadata.height, 1080);
+        assert!((metadata.duration - 123.45).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_metadata_json_missing_codec_name() {
+        // Test missing codec_name field
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let json = r#"{"streams":[{"width":1920,"height":1080}],"format":{"duration":"123.45"}}"#;
+        
+        let result = executor.parse_metadata_json(json);
+        assert!(result.is_err());
+        
+        match result {
+            Err(FFmpegError::ParseError(msg)) => {
+                assert!(msg.contains("Failed to parse JSON") || msg.contains("codec_name"));
+            }
+            _ => panic!("Expected ParseError for missing codec_name"),
+        }
+    }
+
+    #[test]
+    fn test_parse_metadata_json_invalid_width() {
+        // Test invalid width (non-numeric)
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let json = r#"{"streams":[{"codec_name":"h264","width":"invalid","height":1080}],"format":{"duration":"123.45"}}"#;
+        
+        let result = executor.parse_metadata_json(json);
+        assert!(result.is_err());
+        
+        match result {
+            Err(FFmpegError::ParseError(msg)) => {
+                assert!(msg.contains("Failed to parse JSON") || msg.contains("width"));
+            }
+            _ => panic!("Expected ParseError for invalid width"),
+        }
+    }
+
+    #[test]
+    fn test_parse_metadata_json_na_duration() {
+        // Test "N/A" duration handling
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let json = r#"{"streams":[{"codec_name":"h264","width":1920,"height":1080}],"format":{"duration":"N/A"}}"#;
+        
+        let result = executor.parse_metadata_json(json);
+        assert!(result.is_err());
+        
+        match result {
+            Err(FFmpegError::CorruptedFile(msg)) => {
+                assert!(msg.contains("Unable to determine video duration"));
+            }
+            _ => panic!("Expected CorruptedFile error for N/A duration"),
+        }
+    }
+
+    #[test]
+    fn test_parse_metadata_json_empty_duration() {
+        // Test empty duration handling
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let json = r#"{"streams":[{"codec_name":"h264","width":1920,"height":1080}],"format":{"duration":""}}"#;
+        
+        let result = executor.parse_metadata_json(json);
+        assert!(result.is_err());
+        
+        match result {
+            Err(FFmpegError::CorruptedFile(msg)) => {
+                assert!(msg.contains("Unable to determine video duration"));
+            }
+            _ => panic!("Expected CorruptedFile error for empty duration"),
+        }
+    }
+
+    #[test]
+    fn test_parse_metadata_json_no_streams() {
+        // Test JSON with no streams
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let json = r#"{"streams":[],"format":{"duration":"123.45"}}"#;
+        
+        let result = executor.parse_metadata_json(json);
+        assert!(result.is_err());
+        
+        match result {
+            Err(FFmpegError::ParseError(msg)) => {
+                assert!(msg.contains("No video stream found"));
+            }
+            _ => panic!("Expected ParseError for no streams"),
+        }
+    }
+
+    #[test]
+    fn test_parse_metadata_json_error_messages_include_field_names() {
+        // Verify error messages include field names for better debugging
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        
+        // Test with invalid duration value
+        let json = r#"{"streams":[{"codec_name":"h264","width":1920,"height":1080}],"format":{"duration":"not_a_number"}}"#;
+        let result = executor.parse_metadata_json(json);
+        
+        assert!(result.is_err());
+        match result {
+            Err(FFmpegError::ParseError(msg)) => {
+                // Error message should include the field value that failed to parse
+                assert!(msg.contains("duration") || msg.contains("not_a_number"));
+            }
+            _ => panic!("Expected ParseError with field context"),
+        }
     }
 
     #[test]

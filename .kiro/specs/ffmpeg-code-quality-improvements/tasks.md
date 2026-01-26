@@ -30,32 +30,32 @@ This plan implements code quality improvements to `src/ffmpeg.rs` in four increm
     - Test sorting with NaN and infinity values
     - _Requirements: 1.1, 1.2_
 
-- [ ] 2. Phase 2: Robustness - Replace Manual JSON Parsing with serde_json
-  - [ ] 2.1 Add serde_json dependency to Cargo.toml
+- [x] 2. Phase 2: Robustness - Replace Manual JSON Parsing with serde_json
+  - [x] 2.1 Add serde_json dependency to Cargo.toml
     - Add `serde = { version = "1.0", features = ["derive"] }`
     - Add `serde_json = "1.0"`
     - Run `cargo check` to verify dependencies resolve
     - _Requirements: 2.1_
   
-  - [ ] 2.2 Define structured types for JSON deserialization
+  - [x] 2.2 Define structured types for JSON deserialization
     - Create `FFprobeOutput`, `FFprobeStream`, and `FFprobeFormat` structs
     - Add `#[derive(Debug, Deserialize)]` to each struct
     - Add appropriate field names matching ffprobe JSON output
     - _Requirements: 2.1, 2.3_
   
-  - [ ] 2.3 Replace parse_metadata_json implementation with serde_json
+  - [x] 2.3 Replace parse_metadata_json implementation with serde_json
     - Rewrite `parse_metadata_json` to use `serde_json::from_str`
     - Add proper error handling with field-specific context
     - Maintain existing validation for "N/A" duration
     - _Requirements: 2.1, 2.2_
   
-  - [ ] 2.4 Remove obsolete manual JSON parsing helper methods
+  - [x] 2.4 Remove obsolete manual JSON parsing helper methods
     - Delete `extract_json_value` method
     - Delete `extract_json_string_value` method
     - Verify no other code references these methods
     - _Requirements: 2.4_
   
-  - [ ] 2.5 Write unit tests for JSON parsing with serde_json
+  - [x] 2.5 Write unit tests for JSON parsing with serde_json
     - Test valid JSON parsing
     - Test missing codec_name field
     - Test invalid width (non-numeric)
