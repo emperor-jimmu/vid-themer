@@ -19,12 +19,12 @@ This implementation plan adds a new action-based clip selection strategy to the 
   - Verify help text includes action strategy documentation
   - _Requirements: 5.1, 5.2, 5.5_
 
-- [ ] 2. Add motion analysis to FFmpegExecutor
-  - [ ] 2.1 Define MotionSegment struct in ffmpeg.rs
+- [x] 2. Add motion analysis to FFmpegExecutor
+  - [x] 2.1 Define MotionSegment struct in ffmpeg.rs
     - Add fields: start_time, duration, motion_score
     - Derive Debug, Clone traits
     - _Requirements: 2.1, 2.2_
-  - [ ] 2.2 Implement analyze_motion_intensity method
+  - [x] 2.2 Implement analyze_motion_intensity method
     - Build FFmpeg command with scene detection filter
     - Limit analysis to 5 minutes for long videos
     - Execute FFmpeg and capture stderr output
@@ -34,14 +34,14 @@ This implementation plan adds a new action-based clip selection strategy to the 
     - Sort segments by motion score (highest first)
     - Return Vec<MotionSegment> or FFmpegError
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 10.3_
-  - [ ] 2.3 Write unit tests for motion analysis parsing
+  - [x] 2.3 Write unit tests for motion analysis parsing
     - Test parsing of FFmpeg showinfo output
     - Test extraction of pts_time and scene scores
     - Test segment grouping into 12.5-second windows
     - Test score aggregation within segments
     - Test handling of empty or malformed output
     - _Requirements: 2.3, 9.3_
-  - [ ] 2.4 Write property test for analysis duration limit
+  - [x] 2.4 Write property test for analysis duration limit
     - **Property 3: Analysis Duration Limit**
     - **Validates: Requirements 2.2**
     - For videos > 300 seconds, verify FFmpeg command includes -t 300

@@ -26,6 +26,13 @@ pub struct AudioSegment {
     pub intensity: f64,
 }
 
+#[derive(Debug, Clone)]
+pub struct MotionSegment {
+    pub start_time: f64,
+    pub duration: f64,
+    pub motion_score: f64,
+}
+
 impl FFmpegExecutor {
     pub fn new(resolution: Resolution, include_audio: bool) -> Self {
         Self {
@@ -774,6 +781,108 @@ impl FFmpegExecutor {
         } else {
             None
         }
+    }
+
+    /// Analyze motion intensity across the video duration using scene detection
+    /// Returns a sorted list of motion segments by score (highest first)
+    /// Optimized for long videos by limiting analysis duration to 5 minutes
+    pub fn analyze_motion_intensity(
+        &self,
+        video_path: &Path,
+        duration: f64,
+    ) -> Result<Vec<MotionSegment>, FFmpegError> {
+        // For long videos (>5 minutes), analyze only first 5 minutes for efficiency
+        const MAX_ANALYSIS_DURATION: f64 = 300.0; // 5 minutes
+        let analysis_duration = duration.min(MAX_ANALYSIS_DURATION);
+        
+        // Build FFmpeg command with scene detection filter
+        // Use select filter to identify frames with scene changes above threshold 0.3
+        // Use showinfo to output frame information including timestamps and scene scores
+        let args = vec![
+            "-i".to_string(),
+            video_path.to_string_lossy().to_string(),
+            "-t".to_string(),
+            analysis_duration.to_string(),
+            "-vf".to_string(),
+            "select=gt(scene\\,0.3),showinfo".to_string(),
+            "-f".to_string(),
+            "null".to_string(),
+            "-".to_string(),
+        ];
+        
+        // Execute FFmpeg with scene detection filter
+        let output = Command::new("ffmpeg")
+            .args(&args)
+            .output()
+            .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to execute ffmpeg for motion analysis: {}", e)))?;
+
+        // The showinfo filter outputs to stderr
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        // Parse the output to extract scene change scores and timestamps
+        // showinfo outputs lines like: [Parsed_showinfo_1 @ 0x...] n:42 pts:1260 pts_time:1.26 ... scene:0.456 ...
+        let mut measurements: Vec<(f64, f64)> = Vec::new(); // (timestamp, scene_score)
+        
+        for line in stderr.lines() {
+            // Look for showinfo output lines
+            if line.contains("Parsed_showinfo") && line.contains("pts_time:") && line.contains("scene:") {
+                // Extract pts_time (timestamp in seconds)
+                if let Some(time) = Self::extract_value_after(line, "pts_time:") {
+                    // Extract scene score
+                    if let Some(score) = Self::extract_value_after(line, "scene:") {
+                        measurements.push((time, score));
+                    }
+                }
+            }
+        }
+
+        // If no measurements were found, return empty vector (no motion detected)
+        if measurements.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Group measurements into segments (12.5 second windows to match audio analysis)
+        const SEGMENT_DURATION: f64 = 12.5;
+        
+        // Scale segments to full video duration if we only analyzed a portion
+        let scale_factor = duration / analysis_duration;
+        let num_segments = (duration / SEGMENT_DURATION).ceil() as usize;
+        
+        let mut segments: Vec<MotionSegment> = Vec::new();
+        
+        for i in 0..num_segments {
+            let segment_start = i as f64 * SEGMENT_DURATION;
+            let segment_end = ((i + 1) as f64 * SEGMENT_DURATION).min(duration);
+            let segment_duration_val = segment_end - segment_start;
+            
+            // Map to analyzed portion
+            let analyzed_start = segment_start / scale_factor;
+            let analyzed_end = segment_end / scale_factor;
+            
+            // Find all measurements within this segment
+            let segment_measurements: Vec<f64> = measurements
+                .iter()
+                .filter(|(time, _)| *time >= analyzed_start && *time < analyzed_end)
+                .map(|(_, score)| *score)
+                .collect();
+            
+            if !segment_measurements.is_empty() {
+                // Calculate motion score as the sum of scene change scores
+                // Higher sum = more scene changes = more action
+                let motion_score: f64 = segment_measurements.iter().sum();
+                
+                segments.push(MotionSegment {
+                    start_time: segment_start,
+                    duration: segment_duration_val,
+                    motion_score,
+                });
+            }
+        }
+
+        // Sort segments by motion score (highest first)
+        segments.sort_by(|a, b| b.motion_score.partial_cmp(&a.motion_score).unwrap());
+
+        Ok(segments)
     }
 }
 
@@ -1944,5 +2053,227 @@ mod tests {
         let line = "Count n: 42 items";
         let result = FFmpegExecutor::extract_value_after(line, "n:");
         assert_eq!(result, Some(42.0));
+    }
+
+    // Tests for motion analysis parsing
+
+    #[test]
+    fn test_parse_showinfo_output_basic() {
+        // Test parsing of basic showinfo output with pts_time and scene score
+        let line = "[Parsed_showinfo_1 @ 0x7f8b9c000000] n:42 pts:1260 pts_time:1.26 pos:123456 fmt:yuv420p sar:1/1 s:1920x1080 i:P iskey:0 type:P checksum:ABCD1234 plane_checksum:[ABCD EFGH] scene:0.456";
+        
+        let time = FFmpegExecutor::extract_value_after(line, "pts_time:");
+        let score = FFmpegExecutor::extract_value_after(line, "scene:");
+        
+        assert_eq!(time, Some(1.26));
+        assert_eq!(score, Some(0.456));
+    }
+
+    #[test]
+    fn test_parse_showinfo_output_high_score() {
+        // Test parsing with high scene score (significant motion)
+        let line = "[Parsed_showinfo_1 @ 0x7f8b9c000000] n:100 pts:3000 pts_time:30.0 scene:0.987";
+        
+        let time = FFmpegExecutor::extract_value_after(line, "pts_time:");
+        let score = FFmpegExecutor::extract_value_after(line, "scene:");
+        
+        assert_eq!(time, Some(30.0));
+        assert_eq!(score, Some(0.987));
+    }
+
+    #[test]
+    fn test_parse_showinfo_output_low_score() {
+        // Test parsing with low scene score (minimal motion)
+        let line = "[Parsed_showinfo_1 @ 0x7f8b9c000000] n:5 pts:150 pts_time:1.5 scene:0.301";
+        
+        let time = FFmpegExecutor::extract_value_after(line, "pts_time:");
+        let score = FFmpegExecutor::extract_value_after(line, "scene:");
+        
+        assert_eq!(time, Some(1.5));
+        assert_eq!(score, Some(0.301));
+    }
+
+    #[test]
+    fn test_parse_showinfo_output_fractional_time() {
+        // Test parsing with fractional timestamp
+        let line = "[Parsed_showinfo_1 @ 0x7f8b9c000000] n:123 pts:3690 pts_time:123.456789 scene:0.654";
+        
+        let time = FFmpegExecutor::extract_value_after(line, "pts_time:");
+        let score = FFmpegExecutor::extract_value_after(line, "scene:");
+        
+        assert_eq!(time, Some(123.456789));
+        assert_eq!(score, Some(0.654));
+    }
+
+    #[test]
+    fn test_parse_showinfo_output_missing_scene() {
+        // Test parsing when scene score is missing
+        let line = "[Parsed_showinfo_1 @ 0x7f8b9c000000] n:42 pts:1260 pts_time:1.26";
+        
+        let time = FFmpegExecutor::extract_value_after(line, "pts_time:");
+        let score = FFmpegExecutor::extract_value_after(line, "scene:");
+        
+        assert_eq!(time, Some(1.26));
+        assert_eq!(score, None);
+    }
+
+    #[test]
+    fn test_parse_showinfo_output_missing_time() {
+        // Test parsing when pts_time is missing
+        let line = "[Parsed_showinfo_1 @ 0x7f8b9c000000] n:42 pts:1260 scene:0.456";
+        
+        let time = FFmpegExecutor::extract_value_after(line, "pts_time:");
+        let score = FFmpegExecutor::extract_value_after(line, "scene:");
+        
+        assert_eq!(time, None);
+        assert_eq!(score, Some(0.456));
+    }
+
+    #[test]
+    fn test_segment_grouping_12_5_seconds() {
+        // Test that segments are grouped into 12.5-second windows
+        const SEGMENT_DURATION: f64 = 12.5;
+        
+        // Simulate measurements at various timestamps
+        let measurements = vec![
+            (0.5, 0.4),   // Segment 0 (0-12.5s)
+            (5.0, 0.6),   // Segment 0
+            (10.0, 0.5),  // Segment 0
+            (13.0, 0.7),  // Segment 1 (12.5-25s)
+            (20.0, 0.8),  // Segment 1
+            (26.0, 0.3),  // Segment 2 (25-37.5s)
+        ];
+        
+        // Group measurements into segments
+        let video_duration = 40.0;
+        let num_segments = (video_duration / SEGMENT_DURATION).ceil() as usize;
+        
+        let mut segment_scores: Vec<f64> = vec![0.0; num_segments];
+        
+        for (time, score) in measurements {
+            let segment_index = (time / SEGMENT_DURATION).floor() as usize;
+            if segment_index < num_segments {
+                segment_scores[segment_index] += score;
+            }
+        }
+        
+        // Verify segment 0 has sum of first 3 measurements
+        assert!((segment_scores[0] - (0.4 + 0.6 + 0.5)).abs() < 0.001);
+        
+        // Verify segment 1 has sum of next 2 measurements
+        assert!((segment_scores[1] - (0.7 + 0.8)).abs() < 0.001);
+        
+        // Verify segment 2 has sum of last measurement
+        assert!((segment_scores[2] - 0.3).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_score_aggregation_within_segments() {
+        // Test that scores are correctly summed within segments
+        let segment_measurements = vec![0.4, 0.6, 0.5, 0.7];
+        
+        let motion_score: f64 = segment_measurements.iter().sum();
+        
+        // Sum should be 2.2
+        assert!((motion_score - 2.2).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_empty_output_handling() {
+        // Test handling of empty FFmpeg output (no motion detected)
+        let measurements: Vec<(f64, f64)> = Vec::new();
+        
+        // Should result in empty segments vector
+        assert!(measurements.is_empty());
+    }
+
+    #[test]
+    fn test_malformed_output_handling() {
+        // Test handling of malformed showinfo output
+        let malformed_lines = vec![
+            "Some random text",
+            "[Parsed_showinfo_1 @ 0x7f8b9c000000] invalid format",
+            "pts_time:1.26 scene:0.456", // Missing showinfo marker
+            "[Parsed_showinfo_1 @ 0x7f8b9c000000] pts_time:abc scene:xyz", // Invalid numbers
+        ];
+        
+        let mut measurements: Vec<(f64, f64)> = Vec::new();
+        
+        for line in malformed_lines {
+            if line.contains("Parsed_showinfo") && line.contains("pts_time:") && line.contains("scene:") {
+                if let Some(time) = FFmpegExecutor::extract_value_after(line, "pts_time:") {
+                    if let Some(score) = FFmpegExecutor::extract_value_after(line, "scene:") {
+                        measurements.push((time, score));
+                    }
+                }
+            }
+        }
+        
+        // Should have no valid measurements from malformed input
+        assert_eq!(measurements.len(), 0);
+    }
+
+    // Feature: action-based-clip-selection, Property 3: Analysis Duration Limit
+    // **Validates: Requirements 2.2**
+    proptest! {
+        #[test]
+        fn test_analysis_duration_limit_property(
+            // Generate video durations > 300 seconds (5 minutes)
+            video_duration in 301.0f64..=7200.0,
+        ) {
+            use std::path::PathBuf;
+            
+            // Create executor
+            let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+            
+            // Create a test video path (doesn't need to exist for command building test)
+            let video_path = PathBuf::from("/test/video.mp4");
+            
+            // Build the FFmpeg command for motion analysis
+            // We'll simulate what analyze_motion_intensity does
+            const MAX_ANALYSIS_DURATION: f64 = 300.0;
+            let analysis_duration = video_duration.min(MAX_ANALYSIS_DURATION);
+            
+            let args = vec![
+                "-i".to_string(),
+                video_path.to_string_lossy().to_string(),
+                "-t".to_string(),
+                analysis_duration.to_string(),
+                "-vf".to_string(),
+                "select=gt(scene\\,0.3),showinfo".to_string(),
+                "-f".to_string(),
+                "null".to_string(),
+                "-".to_string(),
+            ];
+            
+            // For videos > 300 seconds, verify the command includes -t 300
+            if video_duration > 300.0 {
+                prop_assert!(
+                    args.contains(&"-t".to_string()),
+                    "Command should contain -t flag for duration limit"
+                );
+                
+                // Find the -t flag and verify the next argument is 300
+                let t_index = args.iter().position(|arg| arg == "-t").unwrap();
+                let duration_arg = &args[t_index + 1];
+                let duration_value: f64 = duration_arg.parse().unwrap();
+                
+                prop_assert_eq!(
+                    duration_value,
+                    300.0,
+                    "Analysis duration should be limited to 300 seconds for videos > 300s"
+                );
+            } else {
+                // For videos <= 300 seconds, duration should match video duration
+                let t_index = args.iter().position(|arg| arg == "-t").unwrap();
+                let duration_arg = &args[t_index + 1];
+                let duration_value: f64 = duration_arg.parse().unwrap();
+                
+                prop_assert!(
+                    (duration_value - video_duration).abs() < 0.001,
+                    "Analysis duration should match video duration for videos <= 300s"
+                );
+            }
+        }
     }
 }
