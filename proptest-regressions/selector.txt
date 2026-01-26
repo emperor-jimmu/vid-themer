@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc 4da9567fdcea342ffe9eaee5853ee1c9e68089027c9b873ebe6c4bdd6af52f65 # shrinks to duration = 315.0
 cc 94493b94a0c35d5751fc7112d003ba86069b70072f38e7627e5bf73e4878f121 # shrinks to duration = 320.0
+cc 709366cd1cff089813d3ab78f26addefa9e8cd184020234eeb0d5d16b4a4b6bb # shrinks to duration = 1758.8780659396714
