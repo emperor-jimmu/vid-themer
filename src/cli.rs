@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(name = "video-clip-extractor")]
-#[command(version = "1.00")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Extract thematic clips from video files", long_about = None)]
 pub struct CliArgs {
     /// Directory path to scan for videos
