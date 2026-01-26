@@ -12,7 +12,7 @@ pub struct CliArgs {
     #[arg(value_name = "PATH")]
     pub directory: PathBuf,
 
-    /// Clip selection strategy
+    /// Clip selection strategy (random, intense-audio, action/intense-action)
     #[arg(short = 's', long = "strategy", value_enum, default_value = "random")]
     pub strategy: SelectionStrategy,
 
@@ -45,6 +45,8 @@ fn validate_percentage(s: &str) -> Result<f64, String> {
 pub enum SelectionStrategy {
     Random,
     IntenseAudio,
+    #[value(name = "action", alias = "intense-action")]
+    Action,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -108,6 +110,67 @@ mod tests {
         ]);
         
         assert!(matches!(args.strategy, SelectionStrategy::IntenseAudio));
+    }
+
+    #[test]
+    fn test_strategy_action() {
+        // Test action strategy flag
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--strategy",
+            "action"
+        ]);
+        
+        assert!(matches!(args.strategy, SelectionStrategy::Action));
+    }
+
+    #[test]
+    fn test_strategy_action_short_flag() {
+        // Test short flag for action strategy
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "-s",
+            "action"
+        ]);
+        
+        assert!(matches!(args.strategy, SelectionStrategy::Action));
+    }
+
+    #[test]
+    fn test_strategy_intense_action_alias() {
+        // Test intense-action alias for action strategy
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--strategy",
+            "intense-action"
+        ]);
+        
+        assert!(matches!(args.strategy, SelectionStrategy::Action));
+    }
+
+    #[test]
+    fn test_strategy_intense_action_alias_short_flag() {
+        // Test short flag with intense-action alias
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "-s",
+            "intense-action"
+        ]);
+        
+        assert!(matches!(args.strategy, SelectionStrategy::Action));
+    }
+
+    #[test]
+    fn test_help_contains_action_strategy() {
+        // Test that help output includes action strategy documentation
+        let mut cmd = CliArgs::command();
+        let help = cmd.render_help().to_string();
+        
+        assert!(help.contains("action"));
     }
 
     #[test]

@@ -90,6 +90,12 @@ fn main() {
         SelectionStrategy::IntenseAudio => {
             Box::new(IntenseAudioSelector::new(ffmpeg_executor.clone()))
         }
+        SelectionStrategy::Action => {
+            // TODO: Implement ActionSelector in task 4
+            // For now, fall back to random selection
+            eprintln!("Warning: Action strategy not yet implemented, using random selection");
+            Box::new(RandomSelector)
+        }
     };
     
     // Create VideoProcessor with selector and executor
