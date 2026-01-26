@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc a86bfb034caf778219ccf062b3bec730c08ebba62240e57171e7979285113577 # shrinks to whole_seconds = 0, fractional_part = 100
+cc 69a99aaa910b24a6f4783b55d8aacefa08df4d78e6e0837496f9c8763ee7c09b # shrinks to num_measurements = 1, measurement_times = [0.0], measurement_values = [0.0], video_duration = 131.96421387669636, segment_duration = 5.0

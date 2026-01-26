@@ -64,11 +64,11 @@ This plan implements code quality improvements to `src/ffmpeg.rs` in four increm
     - Verify error messages include field names
     - _Requirements: 2.2, 5.3_
 
-- [ ] 3. Checkpoint - Verify high-priority improvements
+- [x] 3. Checkpoint - Verify high-priority improvements
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. Phase 3: Maintainability - Extract Magic Numbers and Eliminate Duplication
-  - [ ] 4.1 Create constants module with named constants
+- [x] 4. Phase 3: Maintainability - Extract Magic Numbers and Eliminate Duplication
+  - [x] 4.1 Create constants module with named constants
     - Add `mod constants` at top of file
     - Define constants for: HW_ACCEL_BITRATE, SOFTWARE_CRF, KEYFRAME_INTERVAL
     - Define constants for: H264_FAST_SEEK_OFFSET, HEVC_FAST_SEEK_OFFSET
@@ -76,7 +76,7 @@ This plan implements code quality improvements to `src/ffmpeg.rs` in four increm
     - Add documentation comments explaining each constant's purpose
     - _Requirements: 3.1, 3.2, 3.4_
   
-  - [ ] 4.2 Replace magic numbers with named constants throughout the file
+  - [x] 4.2 Replace magic numbers with named constants throughout the file
     - Replace hardcoded "5M" with `constants::HW_ACCEL_BITRATE`
     - Replace hardcoded "26" with `constants::SOFTWARE_CRF`
     - Replace hardcoded "30" with `constants::KEYFRAME_INTERVAL`
@@ -86,26 +86,26 @@ This plan implements code quality improvements to `src/ffmpeg.rs` in four increm
     - Replace hardcoded "100M" with `constants::HEVC_BUFFER_SIZE`
     - _Requirements: 3.4_
   
-  - [ ] 4.3 Implement shared segment grouping helper function
+  - [x] 4.3 Implement shared segment grouping helper function
     - Create `group_measurements_into_segments` function with generic aggregation
     - Accept measurements, video_duration, analysis_duration, segment_duration, and aggregate_fn
     - Return vector of (start_time, duration, score) tuples
     - Add comprehensive documentation
     - _Requirements: 4.1, 4.2, 4.3_
   
-  - [ ] 4.4 Refactor analyze_audio_intensity to use shared helper
+  - [x] 4.4 Refactor analyze_audio_intensity to use shared helper
     - Replace duplicated segment grouping code with call to helper
     - Use average aggregation function for audio intensity
     - Map results to AudioSegment structs
     - _Requirements: 4.4_
   
-  - [ ] 4.5 Refactor analyze_motion_intensity to use shared helper
+  - [x] 4.5 Refactor analyze_motion_intensity to use shared helper
     - Replace duplicated segment grouping code with call to helper
     - Use sum aggregation function for motion scores
     - Map results to MotionSegment structs
     - _Requirements: 4.5_
   
-  - [ ] 4.6 Write property test for segment grouping correctness
+  - [x] 4.6 Write property test for segment grouping correctness
     - **Property 3: Segment Grouping Correctness**
     - **Validates: Requirements 4.3**
     - Generate random measurements, video durations, and segment durations
@@ -114,7 +114,7 @@ This plan implements code quality improvements to `src/ffmpeg.rs` in four increm
     - Verify no measurements are lost or duplicated
     - Verify aggregation is applied correctly
   
-  - [ ] 4.7 Write unit tests for segment grouping edge cases
+  - [x] 4.7 Write unit tests for segment grouping edge cases
     - Test with empty measurements
     - Test with single measurement
     - Test with measurements at segment boundaries

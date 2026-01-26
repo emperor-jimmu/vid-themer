@@ -6,6 +6,43 @@ use serde::Deserialize;
 use std::path::Path;
 use std::process::Command;
 
+/// FFmpeg encoding and processing constants
+mod constants {
+    // Video encoding settings
+    /// Target bitrate for hardware-accelerated encoding (5 Mbps)
+    pub const HW_ACCEL_BITRATE: &str = "5M";
+    
+    /// Constant Rate Factor for software encoding (26 = good quality, smaller files)
+    /// Range: 0-51, where lower = better quality, 18-28 is typical
+    pub const SOFTWARE_CRF: &str = "26";
+    
+    /// Keyframe interval in frames (30 frames ≈ 1 second at 30fps)
+    /// Ensures good seeking and streaming compatibility
+    pub const KEYFRAME_INTERVAL: &str = "30";
+    
+    // Seeking optimization settings
+    /// Fast seek offset for H.264 videos (seconds before target)
+    /// Larger offset = faster seeking but more decoding needed
+    pub const H264_FAST_SEEK_OFFSET: f64 = 5.0;
+    
+    /// Fast seek offset for HEVC videos (seconds before target)
+    /// Smaller offset for HEVC due to more complex decoding
+    pub const HEVC_FAST_SEEK_OFFSET: f64 = 2.0;
+    
+    // Analysis settings
+    /// Maximum duration to analyze for long videos (5 minutes)
+    /// Limits processing time while providing representative samples
+    pub const MAX_ANALYSIS_DURATION: f64 = 300.0;
+    
+    /// Duration of each analysis segment (12.5 seconds)
+    /// Balances granularity with statistical significance
+    pub const SEGMENT_DURATION: f64 = 12.5;
+    
+    /// HEVC buffer size for analyzeduration and probesize (100 MB)
+    /// Larger buffers help with HEVC's more complex structure
+    pub const HEVC_BUFFER_SIZE: &str = "100M";
+}
+
 /// FFprobe JSON output structure
 #[derive(Debug, Deserialize)]
 struct FFprobeOutput {
@@ -259,13 +296,13 @@ impl FFmpegExecutor {
             // Increase buffer sizes to handle HEVC better
             args.extend(vec![
                 "-analyzeduration".to_string(),
-                "100M".to_string(),
+                constants::HEVC_BUFFER_SIZE.to_string(),
                 "-probesize".to_string(),
-                "100M".to_string(),
+                constants::HEVC_BUFFER_SIZE.to_string(),
             ]);
             
             // Calculate moderate fast seek position (2 seconds before target for HEVC)
-            let fast_seek_offset = 2.0;
+            let fast_seek_offset = constants::HEVC_FAST_SEEK_OFFSET;
             let fast_seek_pos = if time_range.start_seconds > fast_seek_offset {
                 time_range.start_seconds - fast_seek_offset
             } else {
@@ -292,7 +329,7 @@ impl FFmpegExecutor {
             }
         } else {
             // For non-HEVC (H.264, etc.): Use aggressive fast seek for best performance
-            let fast_seek_offset = 5.0;
+            let fast_seek_offset = constants::H264_FAST_SEEK_OFFSET;
             let fast_seek_pos = if time_range.start_seconds > fast_seek_offset {
                 time_range.start_seconds - fast_seek_offset
             } else {
@@ -340,7 +377,7 @@ impl FFmpegExecutor {
                     "-c:v".to_string(),
                     "h264_videotoolbox".to_string(),
                     "-b:v".to_string(),
-                    "5M".to_string(), // Bitrate for hardware encoder
+                    constants::HW_ACCEL_BITRATE.to_string(),
                 ]);
             }
             #[cfg(not(target_os = "macos"))]
@@ -352,7 +389,7 @@ impl FFmpegExecutor {
                     "-preset".to_string(),
                     "p4".to_string(), // NVENC preset (p1-p7, p4 is balanced)
                     "-b:v".to_string(),
-                    "5M".to_string(),
+                    constants::HW_ACCEL_BITRATE.to_string(),
                 ]);
             }
         } else {
@@ -364,7 +401,7 @@ impl FFmpegExecutor {
                 "fast".to_string(),
                 // CRF for quality/size balance (26 = smaller files, still good quality)
                 "-crf".to_string(),
-                "26".to_string(),
+                constants::SOFTWARE_CRF.to_string(),
             ]);
         }
         
@@ -374,9 +411,9 @@ impl FFmpegExecutor {
             "yuv420p".to_string(),
             // Keyframe interval for better seeking and streaming compatibility
             "-g".to_string(),
-            "30".to_string(), // Keyframe every 30 frames (~1 second at 30fps)
+            constants::KEYFRAME_INTERVAL.to_string(),
             "-keyint_min".to_string(),
-            "30".to_string(),
+            constants::KEYFRAME_INTERVAL.to_string(),
             // Set color metadata for proper playback compatibility
             "-colorspace".to_string(),
             "bt709".to_string(),
@@ -550,8 +587,7 @@ impl FFmpegExecutor {
     ) -> Result<Vec<AudioSegment>, FFmpegError> {
         // For long videos (>5 minutes), analyze only first 5 minutes for efficiency
         // This provides enough data for representative segment selection
-        const MAX_ANALYSIS_DURATION: f64 = 300.0; // 5 minutes
-        let analysis_duration = duration.min(MAX_ANALYSIS_DURATION);
+        let analysis_duration = duration.min(constants::MAX_ANALYSIS_DURATION);
         
         // Use volumedetect for faster analysis (simpler than ebur128)
         // For videos longer than analysis window, we'll use a sampling approach
@@ -609,45 +645,23 @@ impl FFmpegExecutor {
             return self.analyze_audio_intensity_fallback(video_path, duration);
         }
 
-        // Group measurements into segments (10-15 second windows)
-        // We'll use 12.5 second segments as a middle ground
-        const SEGMENT_DURATION: f64 = 12.5;
-        
-        // Scale segments to full video duration if we only analyzed a portion
-        let scale_factor = duration / analysis_duration;
-        let num_segments = (duration / SEGMENT_DURATION).ceil() as usize;
-        
-        let mut segments: Vec<AudioSegment> = Vec::new();
-        
-        for i in 0..num_segments {
-            let segment_start = i as f64 * SEGMENT_DURATION;
-            let segment_end = ((i + 1) as f64 * SEGMENT_DURATION).min(duration);
-            let segment_duration_val = segment_end - segment_start;
-            
-            // Map to analyzed portion
-            let analyzed_start = segment_start / scale_factor;
-            let analyzed_end = segment_end / scale_factor;
-            
-            // Find all measurements within this segment
-            let segment_measurements: Vec<f64> = measurements
-                .iter()
-                .filter(|(time, _)| *time >= analyzed_start && *time < analyzed_end)
-                .map(|(_, level)| *level)
-                .collect();
-            
-            if !segment_measurements.is_empty() {
-                // Calculate intensity as the average of RMS values
-                // Higher (less negative) dB values indicate louder audio
-                let intensity: f64 = segment_measurements.iter().sum::<f64>() 
-                    / segment_measurements.len() as f64;
-                
-                segments.push(AudioSegment {
-                    start_time: segment_start,
-                    duration: segment_duration_val,
-                    intensity,
-                });
-            }
-        }
+        // Group measurements into segments using shared helper
+        let segments_data = Self::group_measurements_into_segments(
+            &measurements,
+            duration,
+            analysis_duration,
+            constants::SEGMENT_DURATION,
+            |values| values.iter().sum::<f64>() / values.len() as f64, // Average
+        );
+
+        let mut segments: Vec<AudioSegment> = segments_data
+            .into_iter()
+            .map(|(start, dur, intensity)| AudioSegment {
+                start_time: start,
+                duration: dur,
+                intensity,
+            })
+            .collect();
 
         // Sort segments by intensity (highest/loudest first)
         // Since dB values are negative, higher (less negative) values are louder
@@ -702,37 +716,23 @@ impl FFmpegExecutor {
             return Err(FFmpegError::NoAudioTrack);
         }
 
-        const SEGMENT_DURATION: f64 = 12.5;
-        let scale_factor = duration / analysis_duration;
-        let num_segments = (duration / SEGMENT_DURATION).ceil() as usize;
-        
-        let mut segments: Vec<AudioSegment> = Vec::new();
-        
-        for i in 0..num_segments {
-            let segment_start = i as f64 * SEGMENT_DURATION;
-            let segment_end = ((i + 1) as f64 * SEGMENT_DURATION).min(duration);
-            let segment_duration_val = segment_end - segment_start;
-            
-            let analyzed_start = segment_start / scale_factor;
-            let analyzed_end = segment_end / scale_factor;
-            
-            let segment_measurements: Vec<f64> = measurements
-                .iter()
-                .filter(|(time, _)| *time >= analyzed_start && *time < analyzed_end)
-                .map(|(_, peak)| *peak)
-                .collect();
-            
-            if !segment_measurements.is_empty() {
-                let intensity: f64 = segment_measurements.iter().sum::<f64>() 
-                    / segment_measurements.len() as f64;
-                
-                segments.push(AudioSegment {
-                    start_time: segment_start,
-                    duration: segment_duration_val,
-                    intensity,
-                });
-            }
-        }
+        // Group measurements into segments using shared helper
+        let segments_data = Self::group_measurements_into_segments(
+            &measurements,
+            duration,
+            analysis_duration,
+            constants::SEGMENT_DURATION,
+            |values| values.iter().sum::<f64>() / values.len() as f64, // Average
+        );
+
+        let mut segments: Vec<AudioSegment> = segments_data
+            .into_iter()
+            .map(|(start, dur, intensity)| AudioSegment {
+                start_time: start,
+                duration: dur,
+                intensity,
+            })
+            .collect();
 
         segments.sort_by(|a, b| b.intensity.total_cmp(&a.intensity));
 
@@ -756,6 +756,57 @@ impl FFmpegExecutor {
         }
     }
 
+    /// Groups time-series measurements into fixed-duration segments and calculates aggregate scores
+    /// 
+    /// # Parameters
+    /// - `measurements`: Vector of (timestamp, value) pairs
+    /// - `video_duration`: Total duration of the video in seconds
+    /// - `analysis_duration`: Duration that was actually analyzed (may be less than video_duration)
+    /// - `segment_duration`: Duration of each segment in seconds
+    /// - `aggregate_fn`: Function to aggregate values within a segment (e.g., sum or average)
+    /// 
+    /// # Returns
+    /// Vector of (start_time, duration, score) tuples for each segment
+    fn group_measurements_into_segments<F>(
+        measurements: &[(f64, f64)],
+        video_duration: f64,
+        analysis_duration: f64,
+        segment_duration: f64,
+        aggregate_fn: F,
+    ) -> Vec<(f64, f64, f64)>
+    where
+        F: Fn(&[f64]) -> f64,
+    {
+        let scale_factor = video_duration / analysis_duration;
+        let num_segments = (video_duration / segment_duration).ceil() as usize;
+        
+        let mut segments = Vec::new();
+        
+        for i in 0..num_segments {
+            let segment_start = i as f64 * segment_duration;
+            let segment_end = ((i + 1) as f64 * segment_duration).min(video_duration);
+            let segment_duration_val = segment_end - segment_start;
+            
+            // Map to analyzed portion
+            let analyzed_start = segment_start / scale_factor;
+            let analyzed_end = segment_end / scale_factor;
+            
+            // Find all measurements within this segment
+            let segment_measurements: Vec<f64> = measurements
+                .iter()
+                .filter(|(time, _)| *time >= analyzed_start && *time < analyzed_end)
+                .map(|(_, value)| *value)
+                .collect();
+            
+            if !segment_measurements.is_empty() {
+                let score = aggregate_fn(&segment_measurements);
+                segments.push((segment_start, segment_duration_val, score));
+            }
+        }
+        
+        segments
+    }
+
     /// Analyze motion intensity across the video duration using scene detection
     /// Returns a sorted list of motion segments by score (highest first)
     /// Optimized for long videos by limiting analysis duration to 5 minutes
@@ -765,8 +816,7 @@ impl FFmpegExecutor {
         duration: f64,
     ) -> Result<Vec<MotionSegment>, FFmpegError> {
         // For long videos (>5 minutes), analyze only first 5 minutes for efficiency
-        const MAX_ANALYSIS_DURATION: f64 = 300.0; // 5 minutes
-        let analysis_duration = duration.min(MAX_ANALYSIS_DURATION);
+        let analysis_duration = duration.min(constants::MAX_ANALYSIS_DURATION);
         
         // Build FFmpeg command with scene detection filter
         // Use select filter to identify frames with scene changes above threshold 0.3
@@ -814,43 +864,23 @@ impl FFmpegExecutor {
             return Ok(Vec::new());
         }
 
-        // Group measurements into segments (12.5 second windows to match audio analysis)
-        const SEGMENT_DURATION: f64 = 12.5;
-        
-        // Scale segments to full video duration if we only analyzed a portion
-        let scale_factor = duration / analysis_duration;
-        let num_segments = (duration / SEGMENT_DURATION).ceil() as usize;
-        
-        let mut segments: Vec<MotionSegment> = Vec::new();
-        
-        for i in 0..num_segments {
-            let segment_start = i as f64 * SEGMENT_DURATION;
-            let segment_end = ((i + 1) as f64 * SEGMENT_DURATION).min(duration);
-            let segment_duration_val = segment_end - segment_start;
-            
-            // Map to analyzed portion
-            let analyzed_start = segment_start / scale_factor;
-            let analyzed_end = segment_end / scale_factor;
-            
-            // Find all measurements within this segment
-            let segment_measurements: Vec<f64> = measurements
-                .iter()
-                .filter(|(time, _)| *time >= analyzed_start && *time < analyzed_end)
-                .map(|(_, score)| *score)
-                .collect();
-            
-            if !segment_measurements.is_empty() {
-                // Calculate motion score as the sum of scene change scores
-                // Higher sum = more scene changes = more action
-                let motion_score: f64 = segment_measurements.iter().sum();
-                
-                segments.push(MotionSegment {
-                    start_time: segment_start,
-                    duration: segment_duration_val,
-                    motion_score,
-                });
-            }
-        }
+        // Group measurements into segments using shared helper
+        let segments_data = Self::group_measurements_into_segments(
+            &measurements,
+            duration,
+            analysis_duration,
+            constants::SEGMENT_DURATION,
+            |values| values.iter().sum::<f64>(), // Sum
+        );
+
+        let mut segments: Vec<MotionSegment> = segments_data
+            .into_iter()
+            .map(|(start, dur, score)| MotionSegment {
+                start_time: start,
+                duration: dur,
+                motion_score: score,
+            })
+            .collect();
 
         // Sort segments by motion score (highest first)
         segments.sort_by(|a, b| b.motion_score.total_cmp(&a.motion_score));
@@ -2545,7 +2575,6 @@ mod tests {
             // Property 2: All NaN values should be grouped together at the beginning
             // (total_cmp treats NaN as less than all other values, so with descending sort b.cmp(a), NaN comes first)
             let nan_count = segments.iter().filter(|s| s.intensity.is_nan()).count();
-            let non_nan_count = segments.len() - nan_count;
             
             // All NaN values should be at the beginning
             for i in 0..nan_count {
@@ -2603,7 +2632,6 @@ mod tests {
             
             // Property 2: All NaN values should be grouped together at the beginning
             let nan_count = segments.iter().filter(|s| s.motion_score.is_nan()).count();
-            let non_nan_count = segments.len() - nan_count;
             
             // All NaN values should be at the beginning
             for i in 0..nan_count {
@@ -2625,6 +2653,270 @@ mod tests {
                 prop_assert!(
                     segments[i].motion_score >= segments[i + 1].motion_score,
                     "Non-NaN values should be sorted in descending order"
+                );
+            }
+        }
+    }
+
+    // Unit tests for segment grouping edge cases
+
+    #[test]
+    fn test_segment_grouping_with_empty_measurements() {
+        // Test with empty measurements
+        let measurements: Vec<(f64, f64)> = Vec::new();
+        let video_duration = 100.0;
+        let analysis_duration = 100.0;
+        let segment_duration = 12.5;
+        
+        let segments = FFmpegExecutor::group_measurements_into_segments(
+            &measurements,
+            video_duration,
+            analysis_duration,
+            segment_duration,
+            |values| values.iter().sum::<f64>(),
+        );
+        
+        // Should return empty vector
+        assert_eq!(segments.len(), 0);
+    }
+
+    #[test]
+    fn test_segment_grouping_with_single_measurement() {
+        // Test with single measurement
+        let measurements = vec![(5.0, 10.0)];
+        let video_duration = 100.0;
+        let analysis_duration = 100.0;
+        let segment_duration = 12.5;
+        
+        let segments = FFmpegExecutor::group_measurements_into_segments(
+            &measurements,
+            video_duration,
+            analysis_duration,
+            segment_duration,
+            |values| values.iter().sum::<f64>(),
+        );
+        
+        // Should have exactly one segment containing the measurement
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].0, 0.0); // Segment starts at 0
+        assert_eq!(segments[0].1, 12.5); // Segment duration is 12.5
+        assert_eq!(segments[0].2, 10.0); // Score is the value
+    }
+
+    #[test]
+    fn test_segment_grouping_at_segment_boundaries() {
+        // Test with measurements at segment boundaries
+        let measurements = vec![
+            (0.0, 1.0),    // At start of segment 0
+            (12.5, 2.0),   // At start of segment 1 (boundary)
+            (25.0, 3.0),   // At start of segment 2 (boundary)
+        ];
+        let video_duration = 50.0;
+        let analysis_duration = 50.0;
+        let segment_duration = 12.5;
+        
+        let segments = FFmpegExecutor::group_measurements_into_segments(
+            &measurements,
+            video_duration,
+            analysis_duration,
+            segment_duration,
+            |values| values.iter().sum::<f64>(),
+        );
+        
+        // Should have 3 segments
+        assert_eq!(segments.len(), 3);
+        
+        // Verify each segment has the correct measurement
+        assert_eq!(segments[0].2, 1.0); // First segment has first measurement
+        assert_eq!(segments[1].2, 2.0); // Second segment has second measurement
+        assert_eq!(segments[2].2, 3.0); // Third segment has third measurement
+    }
+
+    #[test]
+    fn test_segment_grouping_with_video_duration_less_than_segment_duration() {
+        // Test with video_duration < segment_duration
+        let measurements = vec![
+            (1.0, 5.0),
+            (2.0, 10.0),
+            (3.0, 15.0),
+        ];
+        let video_duration = 5.0;
+        let analysis_duration = 5.0;
+        let segment_duration = 12.5;
+        
+        let segments = FFmpegExecutor::group_measurements_into_segments(
+            &measurements,
+            video_duration,
+            analysis_duration,
+            segment_duration,
+            |values| values.iter().sum::<f64>(),
+        );
+        
+        // Should have exactly one segment
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].0, 0.0); // Segment starts at 0
+        assert_eq!(segments[0].1, 5.0); // Segment duration is video_duration
+        assert_eq!(segments[0].2, 30.0); // Score is sum of all values (5 + 10 + 15)
+    }
+
+    #[test]
+    fn test_segment_grouping_with_average_aggregation() {
+        // Test with average aggregation function
+        let measurements = vec![
+            (1.0, 10.0),
+            (2.0, 20.0),
+            (3.0, 30.0),
+        ];
+        let video_duration = 12.5;
+        let analysis_duration = 12.5;
+        let segment_duration = 12.5;
+        
+        let segments = FFmpegExecutor::group_measurements_into_segments(
+            &measurements,
+            video_duration,
+            analysis_duration,
+            segment_duration,
+            |values| values.iter().sum::<f64>() / values.len() as f64, // Average
+        );
+        
+        // Should have one segment with average value
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].2, 20.0); // Average of 10, 20, 30
+    }
+
+    #[test]
+    fn test_segment_grouping_with_scaling() {
+        // Test with analysis_duration < video_duration (scaling)
+        let measurements = vec![
+            (5.0, 10.0),   // In first half of analyzed portion
+            (15.0, 20.0),  // In second half of analyzed portion
+        ];
+        let video_duration = 100.0;
+        let analysis_duration = 50.0; // Only analyzed first 50 seconds
+        let segment_duration = 25.0;
+        
+        let segments = FFmpegExecutor::group_measurements_into_segments(
+            &measurements,
+            video_duration,
+            analysis_duration,
+            segment_duration,
+            |values| values.iter().sum::<f64>(),
+        );
+        
+        // Should have 2 segments (scaled to full video duration)
+        // Segment 0: 0-25s (maps to 0-12.5s in analyzed portion)
+        // Segment 1: 25-50s (maps to 12.5-25s in analyzed portion)
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].2, 10.0); // First measurement
+        assert_eq!(segments[1].2, 20.0); // Second measurement
+    }
+
+    // Feature: ffmpeg-code-quality-improvements, Property 3: Segment Grouping Correctness
+    // **Validates: Requirements 4.3**
+    proptest! {
+        #[test]
+        fn test_segment_grouping_correctness(
+            // Generate random measurements (timestamp, value pairs)
+            num_measurements in 0usize..=100,
+            measurement_times in prop::collection::vec(0.0f64..=300.0, 0..=100),
+            measurement_values in prop::collection::vec(-100.0f64..=100.0, 0..=100),
+            // Generate video duration (must be > 0)
+            video_duration in 10.0f64..=600.0,
+            // Generate segment duration (must be > 0 and <= video_duration)
+            segment_duration in 5.0f64..=30.0,
+        ) {
+            // Ensure vectors have the same length
+            let len = num_measurements.min(measurement_times.len()).min(measurement_values.len());
+            
+            // Create measurements vector
+            let measurements: Vec<(f64, f64)> = (0..len)
+                .map(|i| (measurement_times[i], measurement_values[i]))
+                .collect();
+            
+            // Analysis duration equals video duration for this test
+            let analysis_duration = video_duration;
+            
+            // Group measurements using the helper function with sum aggregation
+            let segments = FFmpegExecutor::group_measurements_into_segments(
+                &measurements,
+                video_duration,
+                analysis_duration,
+                segment_duration,
+                |values| values.iter().sum::<f64>(),
+            );
+            
+            // Property 1: All measurements within video duration should be assigned to exactly one segment
+            let measurements_in_range: Vec<_> = measurements.iter()
+                .filter(|(time, _)| *time >= 0.0 && *time < video_duration)
+                .collect();
+            
+            for (meas_time, meas_value) in &measurements_in_range {
+                // Find which segment this measurement belongs to
+                let mut found = false;
+                for (segment_start, segment_dur, _) in &segments {
+                    let segment_end = segment_start + segment_dur;
+                    if *meas_time >= *segment_start && *meas_time < segment_end {
+                        found = true;
+                        break;
+                    }
+                }
+                
+                prop_assert!(
+                    found,
+                    "Measurement at time {} with value {} should be assigned to a segment",
+                    meas_time, meas_value
+                );
+            }
+            
+            // Property 2: Segments should not overlap
+            for i in 0..segments.len() {
+                for j in (i + 1)..segments.len() {
+                    let (start1, dur1, _) = segments[i];
+                    let (start2, dur2, _) = segments[j];
+                    let end1 = start1 + dur1;
+                    let end2 = start2 + dur2;
+                    
+                    // Check for overlap
+                    let overlaps = (start1 < end2) && (start2 < end1);
+                    prop_assert!(
+                        !overlaps,
+                        "Segments should not overlap: segment {} ({}-{}) and segment {} ({}-{})",
+                        i, start1, end1, j, start2, end2
+                    );
+                }
+            }
+            
+            // Property 3: Aggregation should be applied correctly
+            for (segment_start, segment_dur, score) in &segments {
+                let segment_end = segment_start + segment_dur;
+                
+                // Find all measurements in this segment
+                let segment_values: Vec<f64> = measurements.iter()
+                    .filter(|(time, _)| *time >= *segment_start && *time < segment_end)
+                    .map(|(_, value)| *value)
+                    .collect();
+                
+                if !segment_values.is_empty() {
+                    // Verify the score is the sum of values
+                    let expected_score: f64 = segment_values.iter().sum();
+                    prop_assert!(
+                        (*score - expected_score).abs() < 0.001,
+                        "Segment score should be sum of values: expected {}, got {}",
+                        expected_score, score
+                    );
+                }
+            }
+            
+            // Property 4: Segments should not extend beyond video duration
+            for (segment_start, segment_dur, _) in &segments {
+                prop_assert!(
+                    segment_start + segment_dur <= video_duration + 0.001,
+                    "Segment should not extend beyond video duration"
+                );
+                
+                prop_assert!(
+                    *segment_start >= 0.0,
+                    "Segment should not start before 0"
                 );
             }
         }
