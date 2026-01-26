@@ -252,7 +252,10 @@ impl FFmpegExecutor {
             // Include audio with AAC codec
             // Downmix to stereo to handle complex channel layouts (e.g., 5.1.2 Dolby Atmos)
             // that AAC encoder doesn't support
+            // Reduce volume by 20% (multiply by 0.8)
             vec![
+                "-af".to_string(),
+                "volume=0.8".to_string(),
                 "-c:a".to_string(),
                 "aac".to_string(),
                 "-ac".to_string(),
