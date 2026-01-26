@@ -143,7 +143,10 @@ impl FFmpegExecutor {
             .arg("json")
             .arg(video_path)
             .output()
-            .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to execute ffprobe: {}", e)))?;
+            .map_err(|e| FFmpegError::ExecutionFailed(format!(
+                "Failed to execute ffprobe on '{}': {}", 
+                video_path.display(), e
+            )))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -154,42 +157,49 @@ impl FFmpegExecutor {
                 || stderr.contains("moov atom not found")
                 || stderr.contains("End of file") {
                 return Err(FFmpegError::CorruptedFile(
-                    "Video file appears to be corrupted or incomplete".to_string()
+                    format!("Video file '{}' appears to be corrupted or incomplete: {}", 
+                        video_path.display(), stderr)
                 ));
             }
             
             return Err(FFmpegError::ExecutionFailed(format!(
-                "ffprobe failed: {}",
-                stderr
+                "ffprobe failed on '{}': {}",
+                video_path.display(), stderr
             )));
         }
 
         // Parse JSON output
         let json_str = String::from_utf8_lossy(&output.stdout);
-        self.parse_metadata_json(&json_str)
+        self.parse_metadata_json(&json_str, video_path)
     }
 
     /// Parse ffprobe JSON output to extract metadata
-    fn parse_metadata_json(&self, json_str: &str) -> Result<VideoMetadata, FFmpegError> {
+    fn parse_metadata_json(&self, json_str: &str, video_path: &Path) -> Result<VideoMetadata, FFmpegError> {
         // Use serde_json for robust JSON parsing
         let output: FFprobeOutput = serde_json::from_str(json_str)
-            .map_err(|e| FFmpegError::ParseError(format!("Failed to parse JSON: {}", e)))?;
+            .map_err(|e| FFmpegError::ParseError(
+                format!("Failed to parse JSON for '{}': {}", video_path.display(), e)
+            ))?;
         
         // Get the first video stream
         let stream = output.streams.first()
-            .ok_or_else(|| FFmpegError::ParseError("No video stream found in JSON".to_string()))?;
+            .ok_or_else(|| FFmpegError::ParseError(
+                format!("No video stream found in JSON for '{}'", video_path.display())
+            ))?;
         
         // Validate duration (check for "N/A" or empty)
         if output.format.duration == "N/A" || output.format.duration.is_empty() {
             return Err(FFmpegError::CorruptedFile(
-                "Unable to determine video duration - file may be corrupted or incomplete".to_string()
+                format!("Unable to determine video duration for '{}' - file may be corrupted or incomplete", 
+                    video_path.display())
             ));
         }
         
         // Parse duration string to f64
         let duration = output.format.duration.parse::<f64>()
             .map_err(|e| FFmpegError::ParseError(
-                format!("Failed to parse duration '{}': {}", output.format.duration, e)
+                format!("Failed to parse duration '{}' for '{}': {}", 
+                    output.format.duration, video_path.display(), e)
             ))?;
         
         Ok(VideoMetadata {
@@ -370,8 +380,18 @@ impl FFmpegExecutor {
         
         // Video codec selection (hardware or software)
         if self.use_hw_accel {
-            // Try hardware acceleration (macOS VideoToolbox, NVIDIA, or Intel)
-            #[cfg(target_os = "macos")]
+            // Hardware acceleration uses platform-specific encoders:
+            // - macOS: VideoToolbox (h264_videotoolbox) - Apple's native hardware encoder
+            //   Available on all Macs with hardware encoding support (most Macs since 2011)
+            //   Provides efficient encoding using the built-in media engine
+            // - Other platforms: NVENC (h264_nvenc) - NVIDIA GPU encoder
+            //   Requires NVIDIA GPU with NVENC support (GeForce GTX 600 series or newer)
+            //   Falls back to software encoding if NVENC is unavailable
+            //
+            // Hardware acceleration significantly improves encoding speed (5-10x faster)
+            // but may produce slightly larger files compared to software encoding
+            
+            #[cfg(target_os = "macos")]  // macOS-specific: Use Apple VideoToolbox
             {
                 args.extend(vec![
                     "-c:v".to_string(),
@@ -380,14 +400,14 @@ impl FFmpegExecutor {
                     constants::HW_ACCEL_BITRATE.to_string(),
                 ]);
             }
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(target_os = "macos"))]  // Non-macOS: Use NVIDIA NVENC
             {
                 // Try NVIDIA first, fall back to software if not available
                 args.extend(vec![
                     "-c:v".to_string(),
                     "h264_nvenc".to_string(),
                     "-preset".to_string(),
-                    "p4".to_string(), // NVENC preset (p1-p7, p4 is balanced)
+                    "p4".to_string(), // NVENC preset p4 = balanced quality/speed
                     "-b:v".to_string(),
                     constants::HW_ACCEL_BITRATE.to_string(),
                 ]);
@@ -478,7 +498,9 @@ impl FFmpegExecutor {
         let output = Command::new("ffmpeg")
             .args(&args)
             .output()
-            .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to execute ffmpeg: {}", e)))?;
+            .map_err(|e| FFmpegError::ExecutionFailed(
+                format!("Failed to execute ffmpeg for '{}': {}", video_path.display(), e)
+            ))?;
 
         // Check if the command was successful
         if !output.status.success() {
@@ -495,7 +517,10 @@ impl FFmpegExecutor {
             }
             
             return Err(FFmpegError::ExecutionFailed(format!(
-                "FFmpeg clip extraction failed: {}",
+                "FFmpeg clip extraction failed for '{}' at {:.2}s-{:.2}s: {}",
+                video_path.display(),
+                time_range.start_seconds,
+                time_range.start_seconds + time_range.duration_seconds,
                 stderr
             )));
         }
@@ -541,12 +566,17 @@ impl FFmpegExecutor {
         let output = Command::new("ffmpeg")
             .args(&args)
             .output()
-            .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to execute ffmpeg recovery: {}", e)))?;
+            .map_err(|e| FFmpegError::ExecutionFailed(
+                format!("Failed to execute ffmpeg recovery for '{}': {}", video_path.display(), e)
+            ))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(FFmpegError::ExecutionFailed(format!(
-                "FFmpeg clip extraction failed even with recovery: {}",
+                "FFmpeg clip extraction failed even with recovery for '{}' at {:.2}s-{:.2}s: {}",
+                video_path.display(),
+                time_range.start_seconds,
+                time_range.start_seconds + time_range.duration_seconds,
                 stderr
             )));
         }
@@ -627,12 +657,15 @@ impl FFmpegExecutor {
         let mut current_time = 0.0;
         for line in stderr.lines() {
             // Look for frame time indicators
+            // Note: Nested if-let used instead of let...if chains for stable Rust compatibility
+            #[allow(clippy::collapsible_if)]
             if line.contains("pts_time:") {
                 if let Some(time) = Self::extract_value_after(line, "pts_time:") {
                     current_time = time;
                 }
             }
             // Look for RMS level in metadata
+            #[allow(clippy::collapsible_if)]
             if line.contains("lavfi.astats.Overall.RMS_level") {
                 if let Some(level) = Self::extract_value_after(line, "lavfi.astats.Overall.RMS_level=") {
                     measurements.push((current_time, level));
@@ -703,11 +736,14 @@ impl FFmpegExecutor {
         let mut measurements: Vec<(f64, f64)> = Vec::new();
         
         for line in stderr.lines() {
+            // Note: Nested if-let used instead of let...if chains for stable Rust compatibility
+            #[allow(clippy::collapsible_if)]
             if line.contains("Parsed_ebur128") && line.contains("t:") {
-                if let Some(time) = Self::extract_value_after(line, "t:")
-                    && let Some(peak) = Self::extract_value_after(line, "FTPK:")
-                {
-                    measurements.push((time, peak));
+                #[allow(clippy::collapsible_if)]
+                if let Some(time) = Self::extract_value_after(line, "t:") {
+                    if let Some(peak) = Self::extract_value_after(line, "FTPK:") {
+                        measurements.push((time, peak));
+                    }
                 }
             }
         }
@@ -908,18 +944,39 @@ pub enum FFmpegError {
 }
 
 impl FFmpegError {
-    /// Extract stderr output from the error message if available
+    /// Extracts stderr output from execution errors
+    /// 
+    /// Returns the stderr content if this is an ExecutionFailed error.
+    /// For other error types, returns None.
+    /// 
+    /// # Behavior
+    /// - For ExecutionFailed errors, attempts to strip known prefixes to extract raw stderr
+    /// - If no known prefix is found, returns the entire error message
+    /// - For all other error variants, returns None
     pub fn stderr(&self) -> Option<&str> {
         match self {
             FFmpegError::ExecutionFailed(msg) => {
-                // Try to extract stderr from the error message
-                if msg.contains("FFmpeg clip extraction failed:") {
-                    msg.strip_prefix("FFmpeg clip extraction failed: ")
-                } else if msg.contains("ffprobe failed:") {
-                    msg.strip_prefix("ffprobe failed: ")
-                } else {
-                    Some(msg.as_str())
-                }
+                // Try to extract stderr by stripping known prefixes
+                // Format: "FFmpeg clip extraction failed for '<path>' at <start>s-<end>s: <stderr>"
+                msg.strip_prefix("FFmpeg clip extraction failed for ")
+                    .and_then(|s| s.split_once(": ").map(|(_, stderr)| stderr))
+                    // Format: "FFmpeg clip extraction failed even with recovery for '<path>' at <start>s-<end>s: <stderr>"
+                    .or_else(|| msg.strip_prefix("FFmpeg clip extraction failed even with recovery for ")
+                        .and_then(|s| s.split_once(": ").map(|(_, stderr)| stderr)))
+                    // Format: "ffprobe failed on '<path>': <stderr>"
+                    .or_else(|| msg.strip_prefix("ffprobe failed on ")
+                        .and_then(|s| s.split_once(": ").map(|(_, stderr)| stderr)))
+                    // Format: "Failed to execute ffprobe on '<path>': <stderr>"
+                    .or_else(|| msg.strip_prefix("Failed to execute ffprobe on ")
+                        .and_then(|s| s.split_once(": ").map(|(_, stderr)| stderr)))
+                    // Format: "Failed to execute ffmpeg for '<path>': <stderr>"
+                    .or_else(|| msg.strip_prefix("Failed to execute ffmpeg for ")
+                        .and_then(|s| s.split_once(": ").map(|(_, stderr)| stderr)))
+                    // Format: "Failed to execute ffmpeg recovery for '<path>': <stderr>"
+                    .or_else(|| msg.strip_prefix("Failed to execute ffmpeg recovery for ")
+                        .and_then(|s| s.split_once(": ").map(|(_, stderr)| stderr)))
+                    // Fallback: return entire message if no known prefix matches
+                    .or(Some(msg.as_str()))
             }
             _ => None,
         }
@@ -1052,8 +1109,9 @@ mod tests {
         // Test valid JSON parsing
         let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
         let json = r#"{"streams":[{"codec_name":"h264","width":1920,"height":1080}],"format":{"duration":"123.45"}}"#;
+        let video_path = PathBuf::from("/test/video.mp4");
         
-        let result = executor.parse_metadata_json(json);
+        let result = executor.parse_metadata_json(json, &video_path);
         assert!(result.is_ok());
         
         let metadata = result.unwrap();
@@ -1068,8 +1126,9 @@ mod tests {
         // Test missing codec_name field
         let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
         let json = r#"{"streams":[{"width":1920,"height":1080}],"format":{"duration":"123.45"}}"#;
+        let video_path = PathBuf::from("/test/video.mp4");
         
-        let result = executor.parse_metadata_json(json);
+        let result = executor.parse_metadata_json(json, &video_path);
         assert!(result.is_err());
         
         match result {
@@ -1085,8 +1144,9 @@ mod tests {
         // Test invalid width (non-numeric)
         let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
         let json = r#"{"streams":[{"codec_name":"h264","width":"invalid","height":1080}],"format":{"duration":"123.45"}}"#;
+        let video_path = PathBuf::from("/test/video.mp4");
         
-        let result = executor.parse_metadata_json(json);
+        let result = executor.parse_metadata_json(json, &video_path);
         assert!(result.is_err());
         
         match result {
@@ -1102,8 +1162,9 @@ mod tests {
         // Test "N/A" duration handling
         let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
         let json = r#"{"streams":[{"codec_name":"h264","width":1920,"height":1080}],"format":{"duration":"N/A"}}"#;
+        let video_path = PathBuf::from("/test/video.mp4");
         
-        let result = executor.parse_metadata_json(json);
+        let result = executor.parse_metadata_json(json, &video_path);
         assert!(result.is_err());
         
         match result {
@@ -1119,8 +1180,9 @@ mod tests {
         // Test empty duration handling
         let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
         let json = r#"{"streams":[{"codec_name":"h264","width":1920,"height":1080}],"format":{"duration":""}}"#;
+        let video_path = PathBuf::from("/test/video.mp4");
         
-        let result = executor.parse_metadata_json(json);
+        let result = executor.parse_metadata_json(json, &video_path);
         assert!(result.is_err());
         
         match result {
@@ -1136,8 +1198,9 @@ mod tests {
         // Test JSON with no streams
         let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
         let json = r#"{"streams":[],"format":{"duration":"123.45"}}"#;
+        let video_path = PathBuf::from("/test/video.mp4");
         
-        let result = executor.parse_metadata_json(json);
+        let result = executor.parse_metadata_json(json, &video_path);
         assert!(result.is_err());
         
         match result {
@@ -1152,10 +1215,11 @@ mod tests {
     fn test_parse_metadata_json_error_messages_include_field_names() {
         // Verify error messages include field names for better debugging
         let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let video_path = PathBuf::from("/test/video.mp4");
         
         // Test with invalid duration value
         let json = r#"{"streams":[{"codec_name":"h264","width":1920,"height":1080}],"format":{"duration":"not_a_number"}}"#;
-        let result = executor.parse_metadata_json(json);
+        let result = executor.parse_metadata_json(json, &video_path);
         
         assert!(result.is_err());
         match result {
@@ -2920,5 +2984,197 @@ mod tests {
                 );
             }
         }
+    }
+
+    // Tests for enhanced error messages (Phase 4)
+
+    #[test]
+    fn test_ffprobe_failure_includes_file_path() {
+        // Test that ffprobe failure includes the file path
+        let error = FFmpegError::ExecutionFailed(
+            "ffprobe failed on '/path/to/video.mp4': Invalid data found".to_string()
+        );
+        
+        let error_msg = error.to_string();
+        assert!(error_msg.contains("/path/to/video.mp4"), 
+            "Error message should include file path");
+        assert!(error_msg.contains("Invalid data found"), 
+            "Error message should include stderr content");
+    }
+
+    #[test]
+    fn test_extraction_failure_includes_file_path_and_time_range() {
+        // Test that extraction failure includes file path and time range
+        let error = FFmpegError::ExecutionFailed(
+            "FFmpeg clip extraction failed for '/path/to/video.mp4' at 120.50s-130.50s: Codec error".to_string()
+        );
+        
+        let error_msg = error.to_string();
+        assert!(error_msg.contains("/path/to/video.mp4"), 
+            "Error message should include file path");
+        assert!(error_msg.contains("120.50s-130.50s"), 
+            "Error message should include time range");
+        assert!(error_msg.contains("Codec error"), 
+            "Error message should include stderr content");
+    }
+
+    #[test]
+    fn test_json_parse_failure_includes_field_context() {
+        // Test that JSON parse failure includes field context
+        let error = FFmpegError::ParseError(
+            "Failed to parse duration 'not_a_number' for '/path/to/video.mp4': invalid float literal".to_string()
+        );
+        
+        let error_msg = error.to_string();
+        assert!(error_msg.contains("duration"), 
+            "Error message should include field name");
+        assert!(error_msg.contains("not_a_number"), 
+            "Error message should include invalid value");
+        assert!(error_msg.contains("/path/to/video.mp4"), 
+            "Error message should include file path");
+    }
+
+    #[test]
+    fn test_corrupted_file_error_includes_file_path() {
+        // Test that corrupted file error includes file path
+        let error = FFmpegError::CorruptedFile(
+            "Video file '/path/to/video.mp4' appears to be corrupted or incomplete: moov atom not found".to_string()
+        );
+        
+        let error_msg = error.to_string();
+        assert!(error_msg.contains("/path/to/video.mp4"), 
+            "Error message should include file path");
+        assert!(error_msg.contains("moov atom not found"), 
+            "Error message should include corruption details");
+    }
+
+    #[test]
+    fn test_stderr_extraction_from_ffprobe_error() {
+        // Test stderr extraction from ffprobe error
+        let error = FFmpegError::ExecutionFailed(
+            "ffprobe failed on '/path/to/video.mp4': Invalid data found when processing input".to_string()
+        );
+        
+        let stderr = error.stderr();
+        assert!(stderr.is_some(), "stderr() should return Some for ExecutionFailed");
+        assert_eq!(stderr.unwrap(), "Invalid data found when processing input",
+            "stderr() should extract the stderr content");
+    }
+
+    #[test]
+    fn test_stderr_extraction_from_extraction_error() {
+        // Test stderr extraction from extraction error
+        let error = FFmpegError::ExecutionFailed(
+            "FFmpeg clip extraction failed for '/path/to/video.mp4' at 120.00s-130.00s: Codec not supported".to_string()
+        );
+        
+        let stderr = error.stderr();
+        assert!(stderr.is_some(), "stderr() should return Some for ExecutionFailed");
+        assert_eq!(stderr.unwrap(), "Codec not supported",
+            "stderr() should extract the stderr content");
+    }
+
+    #[test]
+    fn test_stderr_extraction_from_recovery_error() {
+        // Test stderr extraction from recovery error
+        let error = FFmpegError::ExecutionFailed(
+            "FFmpeg clip extraction failed even with recovery for '/path/to/video.mp4' at 120.00s-130.00s: Unrecoverable error".to_string()
+        );
+        
+        let stderr = error.stderr();
+        assert!(stderr.is_some(), "stderr() should return Some for ExecutionFailed");
+        assert_eq!(stderr.unwrap(), "Unrecoverable error",
+            "stderr() should extract the stderr content");
+    }
+
+    #[test]
+    fn test_stderr_extraction_fallback_for_unknown_prefix() {
+        // Test stderr extraction fallback for unknown prefix
+        let error = FFmpegError::ExecutionFailed(
+            "Some unknown error format: stderr content".to_string()
+        );
+        
+        let stderr = error.stderr();
+        assert!(stderr.is_some(), "stderr() should return Some for ExecutionFailed");
+        assert_eq!(stderr.unwrap(), "Some unknown error format: stderr content",
+            "stderr() should return full message for unknown prefix");
+    }
+
+    // Feature: ffmpeg-code-quality-improvements, Property 5: Stderr Extraction Consistency
+    // **Validates: Requirements 7.3**
+    proptest! {
+        #[test]
+        fn test_stderr_extraction_consistency(
+            // Generate various error message prefixes
+            prefix_type in 0usize..=6,
+            file_path in "[a-z/]{5,20}\\.mp4",
+            start_time in 0.0f64..=3600.0,
+            end_time in 0.0f64..=3600.0,
+            stderr_content in "[a-zA-Z ]{10,50}",
+        ) {
+            // Ensure end_time > start_time
+            let (start, end) = if end_time > start_time {
+                (start_time, end_time)
+            } else {
+                (end_time, start_time)
+            };
+            
+            // Create error message with different prefixes
+            let msg = match prefix_type {
+                0 => format!("FFmpeg clip extraction failed for '{}' at {:.2}s-{:.2}s: {}", 
+                    file_path, start, end, stderr_content),
+                1 => format!("FFmpeg clip extraction failed even with recovery for '{}' at {:.2}s-{:.2}s: {}", 
+                    file_path, start, end, stderr_content),
+                2 => format!("ffprobe failed on '{}': {}", file_path, stderr_content),
+                3 => format!("Failed to execute ffprobe on '{}': {}", file_path, stderr_content),
+                4 => format!("Failed to execute ffmpeg for '{}': {}", file_path, stderr_content),
+                5 => format!("Failed to execute ffmpeg recovery for '{}': {}", file_path, stderr_content),
+                _ => format!("Unknown prefix: {}", stderr_content),
+            };
+            
+            let error = FFmpegError::ExecutionFailed(msg.clone());
+            let extracted = error.stderr();
+            
+            // Property 1: stderr() should always return Some for ExecutionFailed
+            prop_assert!(extracted.is_some(), 
+                "stderr() should return Some for ExecutionFailed errors");
+            
+            let extracted_str = extracted.unwrap();
+            
+            // Property 2: For known prefixes, should extract stderr content
+            if prefix_type <= 5 {
+                prop_assert_eq!(extracted_str, stderr_content.as_str(),
+                    "stderr() should extract the stderr content for known prefixes");
+            } else {
+                // Property 3: For unknown prefixes, should return full message
+                prop_assert_eq!(extracted_str, msg.as_str(),
+                    "stderr() should return full message for unknown prefixes");
+            }
+        }
+    }
+
+    // Feature: ffmpeg-code-quality-improvements, Property 6: Non-Execution Errors Return None for Stderr
+    // **Validates: Requirements 7.4**
+    #[test]
+    fn test_stderr_returns_none_for_non_execution_errors() {
+        // Test NotFound error
+        let not_found = FFmpegError::NotFound;
+        assert_eq!(not_found.stderr(), None, 
+            "stderr() should return None for NotFound error");
+        
+        // Test ParseError
+        let parse_error = FFmpegError::ParseError("Invalid JSON".to_string());
+        assert_eq!(parse_error.stderr(), None, 
+            "stderr() should return None for ParseError");
+        
+        // Test NoAudioTrack error
+        let no_audio = FFmpegError::NoAudioTrack;
+        assert_eq!(no_audio.stderr(), None, 
+            "stderr() should return None for NoAudioTrack error");
+        
+        // Test CorruptedFile error
+        let corrupted = FFmpegError::CorruptedFile("File is corrupted".to_string());
+        assert_eq!(corrupted.stderr(), None, 
+            "stderr() should return None for CorruptedFile error");
     }
 }

@@ -121,65 +121,65 @@ This plan implements code quality improvements to `src/ffmpeg.rs` in four increm
     - Test with video_duration < segment_duration
     - _Requirements: 4.3_
 
-- [ ] 5. Phase 4: Polish - Enhanced Error Context and Documentation
-  - [ ] 5.1 Enhance error messages in get_video_metadata
+- [x] 5. Phase 4: Polish - Enhanced Error Context and Documentation
+  - [x] 5.1 Enhance error messages in get_video_metadata
     - Add video file path to ffprobe execution errors
     - Add video file path to corrupted file errors
     - Add video file path to parse errors
     - _Requirements: 5.1_
   
-  - [ ] 5.2 Enhance error messages in extract_clip
+  - [x] 5.2 Enhance error messages in extract_clip
     - Add video file path and time range to extraction errors
     - Format time range as "start-end" for clarity
     - _Requirements: 5.2_
   
-  - [ ] 5.3 Update stderr() method for enhanced error messages
+  - [x] 5.3 Update stderr() method for enhanced error messages
     - Rewrite to handle new error message formats with file paths
     - Use chain of strip_prefix attempts with split_once
     - Add comprehensive documentation explaining behavior
     - Maintain fallback to full message if no prefix matches
     - _Requirements: 7.1, 7.2, 7.3_
   
-  - [ ] 5.4 Write unit tests for enhanced error messages
+  - [x] 5.4 Write unit tests for enhanced error messages
     - Test ffprobe failure includes file path
     - Test extraction failure includes file path and time range
     - Test JSON parse failure includes field context
     - _Requirements: 5.1, 5.2, 5.3_
   
-  - [ ] 5.5 Write property test for stderr extraction consistency
+  - [x] 5.5 Write property test for stderr extraction consistency
     - **Property 5: Stderr Extraction Consistency**
     - **Validates: Requirements 7.3**
     - Generate ExecutionFailed errors with various prefixes
     - Verify stderr() correctly extracts stderr content
     - Verify fallback behavior for unknown prefixes
   
-  - [ ] 5.6 Write unit test for stderr() returning None for non-execution errors
+  - [x] 5.6 Write unit test for stderr() returning None for non-execution errors
     - **Property 6: Non-Execution Errors Return None for Stderr**
     - **Validates: Requirements 7.4**
     - Create NotFound, ParseError, NoAudioTrack, CorruptedFile errors
     - Verify stderr() returns None for each
   
-  - [ ] 5.7 Fix unstable Rust syntax in property tests
+  - [x] 5.7 Fix unstable Rust syntax in property tests
     - Locate `let...if` chains in test code (around line 1700 in analyze_audio_intensity_fallback)
     - Replace with nested if-let or tuple pattern matching
     - Verify tests still pass
     - _Requirements: 6.1, 6.2, 6.3_
   
-  - [ ] 5.8 Add documentation to platform-specific hardware acceleration code
+  - [x] 5.8 Add documentation to platform-specific hardware acceleration code
     - Add comment block explaining VideoToolbox vs NVENC choice
     - Document hardware requirements for each platform
     - Document fallback behavior when hardware unavailable
     - Add inline comments for each #[cfg] directive
     - _Requirements: 8.1, 8.2, 8.3, 8.4_
   
-  - [ ] 5.9 Verify stable Rust compilation
+  - [x] 5.9 Verify stable Rust compilation
     - **Property 7: Stable Rust Compilation**
     - **Validates: Requirements 6.4**
     - Run `cargo build` with stable Rust toolchain
     - Verify no warnings about unstable features
     - Verify successful compilation
 
-- [ ] 6. Final checkpoint - Verify all improvements complete
+- [x] 6. Final checkpoint - Verify all improvements complete
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
