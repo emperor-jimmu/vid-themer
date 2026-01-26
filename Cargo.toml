@@ -12,6 +12,10 @@ walkdir = "2.5"
 [dev-dependencies]
 proptest = "1.5"
 
+[features]
+# Feature flag for expensive integration tests that require FFmpeg
+integration-ffmpeg = []
+
 [profile.release]
 opt-level = "z"
 strip = true

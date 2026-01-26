@@ -1,4 +1,5 @@
 // Test for 0-byte backdrop file regeneration
+// Verifies that directories with 0-byte backdrop files are reprocessed
 
 use std::fs;
 use std::io::Write;
