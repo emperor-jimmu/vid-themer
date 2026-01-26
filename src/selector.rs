@@ -32,11 +32,49 @@ impl ClipConfig {
         let mut rng = rand::thread_rng();
         rng.gen_range(self.min_duration..=self.max_duration)
     }
+
+    /// Calculate middle segment as fallback when analysis fails
+    pub fn middle_segment(&self, duration: f64) -> Result<TimeRange, SelectionError> {
+        let clip_duration = self.max_duration.min(duration);
+        let actual_duration = clip_duration.max(self.min_duration).min(duration);
+        let start = ((duration - actual_duration) / 2.0).max(0.0);
+        
+        Ok(TimeRange {
+            start_seconds: start,
+            duration_seconds: actual_duration,
+        })
+    }
 }
 
+/// Represents a time segment within a video.
+/// 
+/// Used to specify which portion of a video should be extracted as a clip.
 pub struct TimeRange {
+    /// Start position in seconds from the beginning of the video
     pub start_seconds: f64,
+    /// Duration of the clip in seconds
     pub duration_seconds: f64,
+}
+
+/// Helper struct for calculating and validating exclusion zone boundaries
+struct ExclusionZones {
+    intro_boundary: f64,
+    outro_boundary: f64,
+}
+
+impl ExclusionZones {
+    /// Create new exclusion zones based on video duration and percentages
+    fn new(duration: f64, intro_percent: f64, outro_percent: f64) -> Self {
+        Self {
+            intro_boundary: duration * (intro_percent / 100.0),
+            outro_boundary: duration - (duration * (outro_percent / 100.0)),
+        }
+    }
+    
+    /// Check if a segment (defined by start and end times) falls within valid zones
+    fn contains_segment(&self, start: f64, end: f64) -> bool {
+        start >= self.intro_boundary && end <= self.outro_boundary
+    }
 }
 
 pub trait ClipSelector {
@@ -122,23 +160,16 @@ impl ClipSelector for IntenseAudioSelector {
         match self.ffmpeg_executor.analyze_audio_intensity(video_path, duration) {
             Ok(segments) => {
                 // Calculate exclusion zone boundaries
-                let intro_boundary = duration * (intro_exclusion_percent / 100.0);
-                let outro_boundary = duration - (duration * (outro_exclusion_percent / 100.0));
+                let zones = ExclusionZones::new(duration, intro_exclusion_percent, outro_exclusion_percent);
                 
-                // Filter segments by exclusion zones
-                // Only consider segments where the entire clip falls between boundaries
-                let filtered_segments: Vec<_> = segments.into_iter()
-                    .filter(|seg| {
-                        let segment_start = seg.start_time;
+                // Find the first segment that falls within valid zones
+                // Segments are already sorted by intensity (highest first)
+                if let Some(loudest_segment) = segments.into_iter()
+                    .find(|seg| {
                         let segment_end = seg.start_time + seg.duration;
-                        
-                        // Entire segment must be between boundaries
-                        segment_start >= intro_boundary && segment_end <= outro_boundary
+                        zones.contains_segment(seg.start_time, segment_end)
                     })
-                    .collect();
-                
-                // Select the segment with highest audio intensity (first in sorted list)
-                if let Some(loudest_segment) = filtered_segments.first() {
+                {
                     // Use the segment's duration, but cap it between min-max seconds
                     let clip_duration = loudest_segment.duration
                         .max(config.min_duration)
@@ -165,36 +196,17 @@ impl ClipSelector for IntenseAudioSelector {
                 }
                 
                 // No valid segments found, fall back to middle segment
-                Self::middle_segment(duration)
+                config.middle_segment(duration)
             }
             Err(crate::ffmpeg::FFmpegError::NoAudioTrack) => {
                 // No audio track, fall back to middle segment
-                Self::middle_segment(duration)
+                config.middle_segment(duration)
             }
             Err(e) => {
                 // Other errors, return as SelectionError
                 Err(SelectionError::AudioAnalysisFailed(e.to_string()))
             }
         }
-    }
-}
-
-impl IntenseAudioSelector {
-    /// Calculate middle segment as fallback when audio analysis fails or no audio track exists
-    fn middle_segment(duration: f64) -> Result<TimeRange, SelectionError> {
-        let config = ClipConfig::default();
-        
-        // Use max duration as default clip duration
-        let clip_duration = config.max_duration.min(duration);
-        let actual_duration = clip_duration.max(config.min_duration).min(duration);
-        
-        // Calculate start time to center the clip
-        let start = ((duration - actual_duration) / 2.0).max(0.0);
-        
-        Ok(TimeRange {
-            start_seconds: start,
-            duration_seconds: actual_duration,
-        })
     }
 }
 
@@ -205,23 +217,6 @@ pub struct ActionSelector {
 impl ActionSelector {
     pub fn new(ffmpeg_executor: crate::ffmpeg::FFmpegExecutor) -> Self {
         Self { ffmpeg_executor }
-    }
-
-    /// Calculate middle segment as fallback when motion analysis fails
-    fn middle_segment(duration: f64) -> Result<TimeRange, SelectionError> {
-        let config = ClipConfig::default();
-        
-        // Use max duration as default clip duration
-        let clip_duration = config.max_duration.min(duration);
-        let actual_duration = clip_duration.max(config.min_duration).min(duration);
-        
-        // Calculate start time to center the clip
-        let start = ((duration - actual_duration) / 2.0).max(0.0);
-        
-        Ok(TimeRange {
-            start_seconds: start,
-            duration_seconds: actual_duration,
-        })
     }
 }
 
@@ -239,23 +234,16 @@ impl ClipSelector for ActionSelector {
         match self.ffmpeg_executor.analyze_motion_intensity(video_path, duration) {
             Ok(segments) => {
                 // Calculate exclusion zone boundaries
-                let intro_boundary = duration * (intro_exclusion_percent / 100.0);
-                let outro_boundary = duration - (duration * (outro_exclusion_percent / 100.0));
+                let zones = ExclusionZones::new(duration, intro_exclusion_percent, outro_exclusion_percent);
                 
-                // Filter segments by exclusion zones
-                // Only consider segments where the entire clip falls between boundaries
-                let filtered_segments: Vec<_> = segments.into_iter()
-                    .filter(|seg| {
-                        let segment_start = seg.start_time;
+                // Find the first segment that falls within valid zones
+                // Segments are already sorted by motion score (highest first)
+                if let Some(best_segment) = segments.into_iter()
+                    .find(|seg| {
                         let segment_end = seg.start_time + seg.duration;
-                        
-                        // Entire segment must be between boundaries
-                        segment_start >= intro_boundary && segment_end <= outro_boundary
+                        zones.contains_segment(seg.start_time, segment_end)
                     })
-                    .collect();
-                
-                // Select the highest-scoring valid segment
-                if let Some(best_segment) = filtered_segments.first() {
+                {
                     // Adjust clip duration to fit 12-18 second range
                     let clip_duration = best_segment.duration
                         .max(config.min_duration)
@@ -282,13 +270,11 @@ impl ClipSelector for ActionSelector {
                 }
                 
                 // No valid segments found, fall back to middle segment
-                Self::middle_segment(duration)
+                config.middle_segment(duration)
             }
-            Err(e) => {
+            Err(_e) => {
                 // Motion analysis failed, fall back to middle segment
-                // Log the error but don't fail the entire operation
-                eprintln!("Motion analysis failed: {}, falling back to middle segment", e);
-                Self::middle_segment(duration)
+                config.middle_segment(duration)
             }
         }
     }
@@ -314,10 +300,14 @@ mod tests {
     use std::path::PathBuf;
     use proptest::prelude::*;
 
+    // Test constants
+    const MIN_TEST_DURATION: f64 = 415.0; // Minimum duration for exclusion zone tests
+    const FLOAT_EPSILON: f64 = 0.1; // Tolerance for floating-point comparisons
+
     // Feature: video-clip-extractor, Property 10: Random Selection Valid Bounds
     proptest! {
         #[test]
-        fn test_random_selection_valid_bounds(duration in 415.0..3600.0f64) {
+        fn test_random_selection_valid_bounds(duration in MIN_TEST_DURATION..3600.0f64) {
             // Test that for videos long enough to accommodate exclusions,
             // the selected segment respects the intro and outro exclusion zones
             
@@ -402,7 +392,7 @@ mod tests {
         
         // Verify it uses middle segment (start should be roughly in the middle)
         let expected_middle = (duration - time_range.duration_seconds) / 2.0;
-        assert!((time_range.start_seconds - expected_middle).abs() < 0.1);
+        assert!((time_range.start_seconds - expected_middle).abs() < FLOAT_EPSILON);
     }
 
     #[test]
@@ -437,14 +427,14 @@ mod tests {
         
         // Verify that not all start times are identical (variety check)
         let first = start_times[0];
-        let all_same = start_times.iter().all(|&x| (x - first).abs() < 0.1);
+        let all_same = start_times.iter().all(|&x| (x - first).abs() < FLOAT_EPSILON);
         assert!(!all_same, "Random selector should produce variety in start times");
     }
 
     // Feature: video-clip-extractor, Property 11: Random Selection Variety
     proptest! {
         #[test]
-        fn test_random_selection_variety_property(duration in 415.0..3600.0f64) {
+        fn test_random_selection_variety_property(duration in MIN_TEST_DURATION..3600.0f64) {
             // Test that for any video long enough to accommodate exclusions,
             // multiple selections produce different start times (variety)
             
@@ -462,7 +452,7 @@ mod tests {
             // Property: Not all start times should be identical
             // This verifies that the random selector uses different random seeds
             let first = start_times[0];
-            let all_same = start_times.iter().all(|&x| (x - first).abs() < 0.1);
+            let all_same = start_times.iter().all(|&x| (x - first).abs() < FLOAT_EPSILON);
             
             prop_assert!(!all_same, 
                 "Random selector should produce variety in start times across multiple runs. \
@@ -474,16 +464,17 @@ mod tests {
     // Tests for IntenseAudioSelector
 
     #[test]
-    fn test_intense_audio_selector_middle_segment_fallback() {
+    fn test_clip_config_middle_segment_fallback() {
         // Test that middle_segment helper calculates correct fallback
+        let config = ClipConfig::default();
         let duration = 600.0; // 10 minutes
         
-        let result = IntenseAudioSelector::middle_segment(duration);
+        let result = config.middle_segment(duration);
         assert!(result.is_ok());
         
         let time_range = result.unwrap();
         
-        // Should use 15 seconds (max clip duration)
+        // Should use 18 seconds (max clip duration)
         assert_eq!(time_range.duration_seconds, 18.0);
         
         // Should be centered: (600 - 18) / 2 = 291.0
@@ -491,11 +482,12 @@ mod tests {
     }
 
     #[test]
-    fn test_intense_audio_selector_middle_segment_short_video() {
+    fn test_clip_config_middle_segment_short_video() {
         // Test middle_segment with a short video
+        let config = ClipConfig::default();
         let duration = 12.0; // 12 seconds
         
-        let result = IntenseAudioSelector::middle_segment(duration);
+        let result = config.middle_segment(duration);
         assert!(result.is_ok());
         
         let time_range = result.unwrap();
@@ -508,11 +500,12 @@ mod tests {
     }
 
     #[test]
-    fn test_intense_audio_selector_middle_segment_very_short_video() {
+    fn test_clip_config_middle_segment_very_short_video() {
         // Test middle_segment with a very short video (< 5 seconds)
+        let config = ClipConfig::default();
         let duration = 3.0; // 3 seconds
         
-        let result = IntenseAudioSelector::middle_segment(duration);
+        let result = config.middle_segment(duration);
         assert!(result.is_ok());
         
         let time_range = result.unwrap();
@@ -674,15 +667,14 @@ mod tests {
     proptest! {
         #[test]
         fn test_intense_audio_exclusion_zone_compliance(
-            duration in 415.0..3600.0f64,
+            duration in MIN_TEST_DURATION..3600.0f64,
             intro_percent in 0.0..=10.0f64,
             outro_percent in 0.0..=50.0f64,
         ) {
             use crate::ffmpeg::AudioSegment;
             
             // Calculate exclusion zone boundaries
-            let intro_boundary = duration * (intro_percent / 100.0);
-            let outro_boundary = duration - (duration * (outro_percent / 100.0));
+            let zones = ExclusionZones::new(duration, intro_percent, outro_percent);
             
             // Create mock audio segments across the video duration
             let num_segments = (duration / 7.5).ceil() as usize;
@@ -701,82 +693,25 @@ mod tests {
             // Filter segments by exclusion zones (mimics IntenseAudioSelector logic)
             let filtered_segments: Vec<_> = segments.into_iter()
                 .filter(|seg| {
-                    let segment_start = seg.start_time;
                     let segment_end = seg.start_time + seg.duration;
-                    
-                    // Entire segment must be between boundaries
-                    segment_start >= intro_boundary && segment_end <= outro_boundary
+                    zones.contains_segment(seg.start_time, segment_end)
                 })
                 .collect();
             
             // Property: All filtered segments must respect exclusion zones
             for segment in filtered_segments.iter() {
-                let segment_start = segment.start_time;
                 let segment_end = segment.start_time + segment.duration;
                 
-                prop_assert!(segment_start >= intro_boundary,
-                    "Segment start {} should be >= intro boundary {}",
-                    segment_start, intro_boundary);
-                
-                prop_assert!(segment_end <= outro_boundary,
-                    "Segment end {} should be <= outro boundary {}",
-                    segment_end, outro_boundary);
+                prop_assert!(zones.contains_segment(segment.start_time, segment_end),
+                    "Segment [{}, {}) should be within exclusion zones [{}, {})",
+                    segment.start_time, segment_end, zones.intro_boundary, zones.outro_boundary);
             }
         }
     }
 
     // Tests for ActionSelector
 
-    #[test]
-    fn test_action_selector_middle_segment_fallback() {
-        // Test that middle_segment helper calculates correct fallback
-        let duration = 600.0; // 10 minutes
-        
-        let result = ActionSelector::middle_segment(duration);
-        assert!(result.is_ok());
-        
-        let time_range = result.unwrap();
-        
-        // Should use 18 seconds (max clip duration)
-        assert_eq!(time_range.duration_seconds, 18.0);
-        
-        // Should be centered: (600 - 18) / 2 = 291.0
-        assert_eq!(time_range.start_seconds, 291.0);
-    }
 
-    #[test]
-    fn test_action_selector_middle_segment_short_video() {
-        // Test middle_segment with a short video
-        let duration = 12.0; // 12 seconds
-        
-        let result = ActionSelector::middle_segment(duration);
-        assert!(result.is_ok());
-        
-        let time_range = result.unwrap();
-        
-        // Should use full video duration (12 seconds)
-        assert_eq!(time_range.duration_seconds, 12.0);
-        
-        // Should start at 0 (centered)
-        assert_eq!(time_range.start_seconds, 0.0);
-    }
-
-    #[test]
-    fn test_action_selector_middle_segment_very_short_video() {
-        // Test middle_segment with a very short video (< 5 seconds)
-        let duration = 3.0; // 3 seconds
-        
-        let result = ActionSelector::middle_segment(duration);
-        assert!(result.is_ok());
-        
-        let time_range = result.unwrap();
-        
-        // Should use full video duration
-        assert_eq!(time_range.duration_seconds, 3.0);
-        
-        // Should start at 0
-        assert_eq!(time_range.start_seconds, 0.0);
-    }
 
     #[test]
     fn test_action_selector_no_motion_fallback() {
@@ -936,8 +871,7 @@ mod tests {
             use crate::ffmpeg::MotionSegment;
             
             // Calculate exclusion zone boundaries
-            let intro_boundary = duration * (intro_percent / 100.0);
-            let outro_boundary = duration - (duration * (outro_percent / 100.0));
+            let zones = ExclusionZones::new(duration, intro_percent, outro_percent);
             
             // Create mock motion segments across the video duration
             let num_segments = (duration / 12.5).ceil() as usize;
@@ -956,26 +890,18 @@ mod tests {
             // Filter segments by exclusion zones (mimics ActionSelector logic)
             let filtered_segments: Vec<_> = segments.into_iter()
                 .filter(|seg| {
-                    let segment_start = seg.start_time;
                     let segment_end = seg.start_time + seg.duration;
-                    
-                    // Entire segment must be between boundaries
-                    segment_start >= intro_boundary && segment_end <= outro_boundary
+                    zones.contains_segment(seg.start_time, segment_end)
                 })
                 .collect();
             
             // Property: All filtered segments must respect exclusion zones
             for segment in filtered_segments.iter() {
-                let segment_start = segment.start_time;
                 let segment_end = segment.start_time + segment.duration;
                 
-                prop_assert!(segment_start >= intro_boundary,
-                    "Segment start {} should be >= intro boundary {}",
-                    segment_start, intro_boundary);
-                
-                prop_assert!(segment_end <= outro_boundary,
-                    "Segment end {} should be <= outro boundary {}",
-                    segment_end, outro_boundary);
+                prop_assert!(zones.contains_segment(segment.start_time, segment_end),
+                    "Segment [{}, {}) should be within exclusion zones [{}, {})",
+                    segment.start_time, segment_end, zones.intro_boundary, zones.outro_boundary);
             }
         }
     }
@@ -992,8 +918,7 @@ mod tests {
             // Set intro exclusion to 10% and outro exclusion to 40%
             let intro_percent = 10.0;
             let outro_percent = 40.0;
-            let intro_boundary = duration * (intro_percent / 100.0);
-            let outro_boundary = duration - (duration * (outro_percent / 100.0));
+            let zones = ExclusionZones::new(duration, intro_percent, outro_percent);
             
             // Create segments where the highest score is in the intro zone
             let mut segments = vec![
@@ -1005,13 +930,13 @@ mod tests {
                 },
                 // Second highest score in valid zone (should be selected)
                 MotionSegment {
-                    start_time: intro_boundary + 10.0,
+                    start_time: zones.intro_boundary + 10.0,
                     duration: 12.5,
                     motion_score: 80.0,
                 },
                 // Third highest score in valid zone
                 MotionSegment {
-                    start_time: intro_boundary + 30.0,
+                    start_time: zones.intro_boundary + 30.0,
                     duration: 12.5,
                     motion_score: 60.0,
                 },
@@ -1023,9 +948,8 @@ mod tests {
             // Filter by exclusion zones
             let filtered_segments: Vec<_> = segments.into_iter()
                 .filter(|seg| {
-                    let segment_start = seg.start_time;
                     let segment_end = seg.start_time + seg.duration;
-                    segment_start >= intro_boundary && segment_end <= outro_boundary
+                    zones.contains_segment(seg.start_time, segment_end)
                 })
                 .collect();
             
@@ -1036,10 +960,9 @@ mod tests {
             
             // Property: The selected segment should respect exclusion zones
             let selected = &filtered_segments[0];
-            prop_assert!(selected.start_time >= intro_boundary,
-                "Selected segment should be after intro boundary");
-            prop_assert!(selected.start_time + selected.duration <= outro_boundary,
-                "Selected segment should be before outro boundary");
+            let selected_end = selected.start_time + selected.duration;
+            prop_assert!(zones.contains_segment(selected.start_time, selected_end),
+                "Selected segment should be within exclusion zones");
         }
     }
 
@@ -1170,22 +1093,20 @@ mod tests {
         fn test_action_middle_segment_consistency(
             duration in 12.0..3600.0f64,
         ) {
-            // Test that ActionSelector::middle_segment matches IntenseAudioSelector::middle_segment
+            // Test that middle_segment produces consistent results regardless of selector
+            let config = ClipConfig::default();
             
-            let action_result = ActionSelector::middle_segment(duration);
-            let audio_result = IntenseAudioSelector::middle_segment(duration);
+            let result = config.middle_segment(duration);
             
-            prop_assert!(action_result.is_ok(), "ActionSelector middle_segment should succeed");
-            prop_assert!(audio_result.is_ok(), "IntenseAudioSelector middle_segment should succeed");
+            prop_assert!(result.is_ok(), "middle_segment should succeed");
             
-            let action_range = action_result.unwrap();
-            let audio_range = audio_result.unwrap();
+            let time_range = result.unwrap();
             
-            // Property: Both should return the same TimeRange
-            prop_assert_eq!(action_range.start_seconds, audio_range.start_seconds,
-                "ActionSelector and IntenseAudioSelector should have same start_seconds");
-            prop_assert_eq!(action_range.duration_seconds, audio_range.duration_seconds,
-                "ActionSelector and IntenseAudioSelector should have same duration_seconds");
+            // Property: Result should be valid
+            prop_assert!(time_range.start_seconds >= 0.0, "start_seconds should be >= 0");
+            prop_assert!(time_range.duration_seconds > 0.0, "duration_seconds should be > 0");
+            prop_assert!(time_range.start_seconds + time_range.duration_seconds <= duration,
+                "end time should not exceed video duration");
         }
     }
 
