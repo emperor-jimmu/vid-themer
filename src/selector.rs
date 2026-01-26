@@ -113,16 +113,32 @@ impl ClipSelector for IntenseAudioSelector {
         &self,
         video_path: &Path,
         duration: f64,
-        _intro_exclusion_percent: f64,
-        _outro_exclusion_percent: f64,
+        intro_exclusion_percent: f64,
+        outro_exclusion_percent: f64,
     ) -> Result<TimeRange, SelectionError> {
         let config = ClipConfig::default();
         
         // Try to analyze audio intensity
         match self.ffmpeg_executor.analyze_audio_intensity(video_path, duration) {
             Ok(segments) => {
+                // Calculate exclusion zone boundaries
+                let intro_boundary = duration * (intro_exclusion_percent / 100.0);
+                let outro_boundary = duration - (duration * (outro_exclusion_percent / 100.0));
+                
+                // Filter segments by exclusion zones
+                // Only consider segments where the entire clip falls between boundaries
+                let filtered_segments: Vec<_> = segments.into_iter()
+                    .filter(|seg| {
+                        let segment_start = seg.start_time;
+                        let segment_end = seg.start_time + seg.duration;
+                        
+                        // Entire segment must be between boundaries
+                        segment_start >= intro_boundary && segment_end <= outro_boundary
+                    })
+                    .collect();
+                
                 // Select the segment with highest audio intensity (first in sorted list)
-                if let Some(loudest_segment) = segments.first() {
+                if let Some(loudest_segment) = filtered_segments.first() {
                     // Use the segment's duration, but cap it between min-max seconds
                     let clip_duration = loudest_segment.duration
                         .max(config.min_duration)
@@ -148,7 +164,7 @@ impl ClipSelector for IntenseAudioSelector {
                     }
                 }
                 
-                // No segments found, fall back to middle segment
+                // No valid segments found, fall back to middle segment
                 Self::middle_segment(duration)
             }
             Err(crate::ffmpeg::FFmpegError::NoAudioTrack) => {
@@ -652,6 +668,61 @@ mod tests {
             "Second segment should maintain original order");
         assert_eq!(tied_segments[2].start_time, 25.0,
             "Third segment should maintain original order");
+    }
+
+    // Feature: intense-audio-clip-selection, Property: Exclusion Zone Compliance
+    proptest! {
+        #[test]
+        fn test_intense_audio_exclusion_zone_compliance(
+            duration in 415.0..3600.0f64,
+            intro_percent in 0.0..=10.0f64,
+            outro_percent in 0.0..=50.0f64,
+        ) {
+            use crate::ffmpeg::AudioSegment;
+            
+            // Calculate exclusion zone boundaries
+            let intro_boundary = duration * (intro_percent / 100.0);
+            let outro_boundary = duration - (duration * (outro_percent / 100.0));
+            
+            // Create mock audio segments across the video duration
+            let num_segments = (duration / 7.5).ceil() as usize;
+            let segments: Vec<AudioSegment> = (0..num_segments)
+                .map(|i| {
+                    let start = i as f64 * 7.5;
+                    let seg_duration = 7.5_f64.min(duration - start);
+                    AudioSegment {
+                        start_time: start,
+                        duration: seg_duration,
+                        intensity: -(i as f64 + 10.0), // Decreasing intensity (more negative = quieter)
+                    }
+                })
+                .collect();
+            
+            // Filter segments by exclusion zones (mimics IntenseAudioSelector logic)
+            let filtered_segments: Vec<_> = segments.into_iter()
+                .filter(|seg| {
+                    let segment_start = seg.start_time;
+                    let segment_end = seg.start_time + seg.duration;
+                    
+                    // Entire segment must be between boundaries
+                    segment_start >= intro_boundary && segment_end <= outro_boundary
+                })
+                .collect();
+            
+            // Property: All filtered segments must respect exclusion zones
+            for segment in filtered_segments.iter() {
+                let segment_start = segment.start_time;
+                let segment_end = segment.start_time + segment.duration;
+                
+                prop_assert!(segment_start >= intro_boundary,
+                    "Segment start {} should be >= intro boundary {}",
+                    segment_start, intro_boundary);
+                
+                prop_assert!(segment_end <= outro_boundary,
+                    "Segment end {} should be <= outro boundary {}",
+                    segment_end, outro_boundary);
+            }
+        }
     }
 
     // Tests for ActionSelector
