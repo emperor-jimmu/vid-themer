@@ -163,6 +163,9 @@ mod tests {
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
 
+        // Sleep briefly to ensure unique timestamp
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
         let logger = FailureLogger::new(&temp_dir).unwrap();
 
         // Use a realistic path that will work on all platforms
@@ -170,7 +173,7 @@ mod tests {
         let output_path = temp_dir.join("test").join("backdrops").join("backdrop.mp4");
 
         let result = ProcessResult {
-            video_path,
+            video_path: video_path.clone(),
             output_path,
             success: false,
             error_message: Some("Test error".to_string()),
@@ -182,10 +185,13 @@ mod tests {
 
         // Verify log file contains the failure
         let log_content = fs::read_to_string(logger.log_path()).unwrap();
-        // Check for the video filename (platform-agnostic - path separators may vary)
+        // Check for the full video path (platform-agnostic)
+        let video_path_str = video_path.display().to_string();
         assert!(
-            log_content.contains("video.mp4"),
-            "Log should contain video filename"
+            log_content.contains(&video_path_str) || log_content.contains("video.mp4"),
+            "Log should contain video path or filename. Expected path: {}, Got log content:\n{}",
+            video_path_str,
+            log_content
         );
         assert!(log_content.contains("FAILURE:"));
         assert!(log_content.contains("Test error"));
@@ -194,16 +200,19 @@ mod tests {
 
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
+        // Clean up the log file created in current directory
+        let _ = fs::remove_file(logger.log_path());
     }
 
     #[test]
     fn test_log_failure_with_multiple_clips() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "logger_multi_clip_test_{}",
-            std::process::id()
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("logger_multi_clip_test_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
+
+        // Sleep briefly to ensure unique timestamp
+        std::thread::sleep(std::time::Duration::from_millis(20));
 
         let logger = FailureLogger::new(&temp_dir).unwrap();
 
@@ -212,7 +221,7 @@ mod tests {
         let output_path = temp_dir.join("test").join("backdrops").join("vid2.mp4");
 
         let result = ProcessResult {
-            video_path,
+            video_path: video_path.clone(),
             output_path,
             success: false,
             error_message: Some("Failed to extract clip 2 of 3".to_string()),
@@ -224,12 +233,32 @@ mod tests {
 
         // Verify log file contains the multi-clip failure information
         let log_content = fs::read_to_string(logger.log_path()).unwrap();
-        assert!(log_content.contains("video.mp4"));
-        assert!(log_content.contains("FAILURE:"));
-        assert!(log_content.contains("Failed to extract clip 2 of 3"));
-        assert!(log_content.contains("Clips Generated: 1"));
+        let video_path_str = video_path.display().to_string();
+        assert!(
+            log_content.contains(&video_path_str) || log_content.contains("video.mp4"),
+            "Log should contain video path or filename. Expected path: {}, Got log content:\n{}",
+            video_path_str,
+            log_content
+        );
+        assert!(
+            log_content.contains("FAILURE:"),
+            "Log content:\n{}",
+            log_content
+        );
+        assert!(
+            log_content.contains("Failed to extract clip 2 of 3"),
+            "Log content:\n{}",
+            log_content
+        );
+        assert!(
+            log_content.contains("Clips Generated: 1"),
+            "Log content:\n{}",
+            log_content
+        );
 
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
+        // Clean up the log file created in current directory
+        let _ = fs::remove_file(logger.log_path());
     }
 }

@@ -20,7 +20,8 @@ This implementation plan breaks down the multiple-clips-per-video feature into d
   - Test default value behavior
   - _Requirements: 1.2, 1.3, 1.4_
 
-- [ ]* 1.2 Write property test for CLI input validation
+- [ ] 1.2 Write property test for CLI input validation
+
   - **Property 1: CLI Input Validation**
   - **Validates: Requirements 1.2, 1.4**
 
@@ -197,7 +198,7 @@ This implementation plan breaks down the multiple-clips-per-video feature into d
   - Update failure logger to capture multi-clip failures
   - _Requirements: 9.2, 9.3_
 
-- [ ] 12. Final checkpoint - Comprehensive testing and validation
+- [x] 12. Final checkpoint - Comprehensive testing and validation
   - Run full test suite: `cargo test`
   - Run property tests with verbose output: `cargo test -- --nocapture`
   - Test with real video files manually (clip_count=1, 2, 3, 4)

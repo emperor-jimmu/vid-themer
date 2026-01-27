@@ -142,7 +142,10 @@ impl VideoProcessor {
                     success: false,
                     error_message: Some(format!(
                         "Failed to extract clip {} of {} (vid{}.mp4): {}",
-                        clip_num, time_ranges.len(), clip_num, e
+                        clip_num,
+                        time_ranges.len(),
+                        clip_num,
+                        e
                     )),
                     ffmpeg_stderr: stderr,
                     clips_generated: index,
@@ -1678,7 +1681,7 @@ mod tests {
             // Property 3: For ALL clips (1 to N), each clip should be in the backdrops directory
             for i in 1..=clip_count {
                 let clip_path = backdrops_dir.join(format!("vid{}.mp4", i));
-                
+
                 // Verify the clip's parent directory is the backdrops directory
                 prop_assert_eq!(
                     clip_path.parent().unwrap(),
@@ -1710,7 +1713,7 @@ mod tests {
             for i in 1..=clip_count {
                 let clip_path = backdrops_dir.join(format!("vid{}.mp4", i));
                 let relative_path = clip_path.strip_prefix(&video_file.parent_dir).unwrap();
-                
+
                 let expected_relative = std::path::Path::new("backdrops").join(format!("vid{}.mp4", i));
                 prop_assert_eq!(
                     relative_path,
@@ -1737,7 +1740,7 @@ mod tests {
             // This is implicitly tested by the properties above, but we verify explicitly
             let another_video = create_test_video_structure(&parent_dir, "different_video.mp4");
             let another_backdrops_dir = processor.create_backdrops_directory(&another_video).unwrap();
-            
+
             prop_assert_eq!(
                 &backdrops_dir,
                 &another_backdrops_dir,
@@ -1750,7 +1753,7 @@ mod tests {
                 let test_selector = Box::new(MultiClipMockSelector { clip_count: test_clip_count });
                 let test_processor = VideoProcessor::new(test_selector, FFmpegExecutor::new(Resolution::Hd1080, true), 1.0, 40.0, test_clip_count);
                 let test_backdrops_dir = test_processor.create_backdrops_directory(&video_file).unwrap();
-                
+
                 prop_assert_eq!(
                     &backdrops_dir,
                     &test_backdrops_dir,
@@ -1762,7 +1765,7 @@ mod tests {
             // (only on the parent directory)
             let video_with_different_name = create_test_video_structure(&parent_dir, "yet_another_video.mkv");
             let backdrops_for_different_video = processor.create_backdrops_directory(&video_with_different_name).unwrap();
-            
+
             prop_assert_eq!(
                 &backdrops_dir,
                 &backdrops_for_different_video,

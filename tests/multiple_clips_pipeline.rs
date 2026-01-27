@@ -101,11 +101,7 @@ fn test_full_pipeline_with_multiple_clips() {
     // Verify each clip is a valid video file with content
     for (i, clip_path) in [&clip1, &clip2].iter().enumerate() {
         let metadata = fs::metadata(clip_path).unwrap();
-        assert!(
-            metadata.len() > 0,
-            "Clip {} should not be empty",
-            i + 1
-        );
+        assert!(metadata.len() > 0, "Clip {} should not be empty", i + 1);
 
         // Verify clip duration is within constraints (12-18 seconds) (Requirement 5.1)
         if let Some(duration) = get_video_duration(clip_path) {
@@ -129,10 +125,7 @@ fn test_full_pipeline_with_multiple_clips() {
 
     // Clips should have different sizes (indicating different content)
     // This is a weak check but helps verify they're not identical
-    println!(
-        "  Clip sizes: {} bytes, {} bytes",
-        clip1_size, clip2_size
-    );
+    println!("  Clip sizes: {} bytes, {} bytes", clip1_size, clip2_size);
 
     // Verify clips respect exclusion zones (Requirement 4.1)
     // With intro_exclusion=2% and outro_exclusion=40%, valid zone is 2.4s to 72s
@@ -370,11 +363,7 @@ fn test_strategy_specific_random() {
     // Verify clips are valid
     for (i, clip_path) in [&clip1, &clip2].iter().enumerate() {
         let metadata = fs::metadata(clip_path).unwrap();
-        assert!(
-            metadata.len() > 0,
-            "Clip {} should not be empty",
-            i + 1
-        );
+        assert!(metadata.len() > 0, "Clip {} should not be empty", i + 1);
     }
 
     println!("\n✓ Random strategy test passed:");
@@ -453,15 +442,14 @@ fn test_strategy_specific_intense_audio() {
     for i in 1..=clips_created {
         let clip_path = backdrops_dir.join(format!("vid{}.mp4", i));
         let metadata = fs::metadata(&clip_path).unwrap();
-        assert!(
-            metadata.len() > 0,
-            "Clip {} should not be empty",
-            i
-        );
+        assert!(metadata.len() > 0, "Clip {} should not be empty", i);
     }
 
     println!("\n✓ Intense-audio strategy test passed:");
-    println!("  - {} clip(s) created with intense-audio strategy", clips_created);
+    println!(
+        "  - {} clip(s) created with intense-audio strategy",
+        clips_created
+    );
     println!("  - All clips are valid");
 
     // Clean up
