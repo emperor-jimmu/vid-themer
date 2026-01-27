@@ -489,18 +489,26 @@ impl FFmpegExecutor {
         // Build video filter chain
         let mut filters = Vec::new();
 
-        // HDR to SDR tone mapping for sources with HDR metadata
-        // zscale handles HDR→SDR conversion properly with tone mapping
-        // This is critical for 4K HDR sources to avoid color/brightness issues
-        filters.push("zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p".to_string());
+        // Check if source is HDR (10-bit or has HDR transfer characteristics)
+        let is_hdr = codec.contains("hevc") || codec.contains("h265") || codec.contains("vp9");
+        
+        if is_hdr {
+            // HDR to SDR tone mapping for HDR sources
+            // zscale handles HDR→SDR conversion properly with tone mapping
+            // This is critical for 4K HDR sources to avoid color/brightness issues
+            filters.push("zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p".to_string());
+        } else {
+            // For SDR sources, just ensure proper color space and format
+            filters.push("format=yuv420p".to_string());
+        }
 
         // Add scale filter if needed (downscaling only, no upscaling)
-        // This comes AFTER tone mapping and format conversion
+        // This comes AFTER tone mapping/format conversion
         if let Some(scale_filter) = self.calculate_scale_filter(source_resolution) {
             filters.push(scale_filter);
         }
 
-        // Apply video filters (always present now due to tone mapping)
+        // Apply video filters
         args.push("-vf".to_string());
         args.push(filters.join(","));
 
