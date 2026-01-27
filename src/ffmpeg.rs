@@ -270,21 +270,17 @@ impl FFmpegExecutor {
 
     /// Build audio-related FFmpeg arguments based on configuration
     /// Returns arguments for either including or excluding audio
-    fn build_audio_args(&self, duration: f64) -> Vec<String> {
+    fn build_audio_args(&self, _duration: f64) -> Vec<String> {
         if !self.include_audio {
             // Exclude audio track
             vec!["-an".to_string()]
         } else {
-            // Calculate fade out start time (duration - 1 second)
-            let fade_start = duration - 1.0;
-            
             // Include audio with AAC codec
             // Apply loudness normalization (EBU R128) then reduce volume to 40% (0.4)
-            // Add 1-second fade out at the end
             // Downmix to stereo to handle complex channel layouts (e.g., 5.1.2 Dolby Atmos)
             vec![
                 "-af".to_string(),
-                format!("loudnorm=I=-16:TP=-1.5:LRA=11,volume=0.4,afade=t=out:st={}:d=1", fade_start),
+                "loudnorm=I=-16:TP=-1.5:LRA=11,volume=0.4".to_string(),
                 "-c:a".to_string(),
                 "aac".to_string(),
                 "-b:a".to_string(),
@@ -504,11 +500,6 @@ impl FFmpegExecutor {
             filters.push(scale_filter);
         }
 
-        // Add 1-second fade out at the end of the clip
-        // Calculate fade start time (duration - 1 second)
-        let fade_start = time_range.duration_seconds - 1.0;
-        filters.push(format!("fade=t=out:st={}:d=1", fade_start));
-
         // Apply video filters
         args.push("-vf".to_string());
         args.push(filters.join(","));
@@ -531,8 +522,92 @@ impl FFmpegExecutor {
         args
     }
 
+    /// Apply fade effect to an already extracted clip (second pass)
+    /// This is more reliable than applying fade during extraction
+    fn apply_fade_effect(
+        &self,
+        input_path: &Path,
+        output_path: &Path,
+        duration: f64,
+    ) -> Result<(), FFmpegError> {
+        let fade_start = duration - 1.0;
+        if fade_start <= 0.0 {
+            // Clip too short for fade, just rename
+            std::fs::rename(input_path, output_path).map_err(|e| {
+                FFmpegError::ExecutionFailed(format!("Failed to rename file: {}", e))
+            })?;
+            return Ok(());
+        }
+
+        let args = vec![
+            "-i".to_string(),
+            input_path.to_string_lossy().to_string(),
+            "-vf".to_string(),
+            format!("fade=type=out:duration=1:start_time={}", fade_start),
+            "-af".to_string(),
+            format!("afade=type=out:duration=1:start_time={}", fade_start),
+            "-c:v".to_string(),
+            "libx264".to_string(),
+            "-preset".to_string(),
+            "fast".to_string(),
+            "-crf".to_string(),
+            "23".to_string(),
+            "-profile:v".to_string(),
+            "high".to_string(),
+            "-level:v".to_string(),
+            "4.0".to_string(),
+            "-pix_fmt".to_string(),
+            "yuv420p".to_string(),
+            // GOP settings for streaming compatibility
+            "-g".to_string(),
+            "72".to_string(),
+            "-keyint_min".to_string(),
+            "72".to_string(),
+            "-sc_threshold".to_string(),
+            "0".to_string(),
+            // Color settings
+            "-colorspace".to_string(),
+            "bt709".to_string(),
+            "-color_primaries".to_string(),
+            "bt709".to_string(),
+            "-color_trc".to_string(),
+            "bt709".to_string(),
+            "-color_range".to_string(),
+            "tv".to_string(),
+            // Audio settings
+            "-c:a".to_string(),
+            "aac".to_string(),
+            "-b:a".to_string(),
+            "128k".to_string(),
+            "-ar".to_string(),
+            "48000".to_string(),
+            // MP4 muxer options for web browser compatibility
+            "-movflags".to_string(),
+            "+faststart+frag_keyframe".to_string(),
+            "-y".to_string(),
+            output_path.to_string_lossy().to_string(),
+        ];
+
+        let output = Command::new("ffmpeg").args(&args).output().map_err(|e| {
+            FFmpegError::ExecutionFailed(format!("Failed to apply fade effect: {}", e))
+        })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(FFmpegError::ExecutionFailed(format!(
+                "Failed to apply fade effect: {}",
+                stderr
+            )));
+        }
+
+        // Remove the temporary file
+        let _ = std::fs::remove_file(input_path);
+
+        Ok(())
+    }
+
     /// Extract a clip from a video file
-    /// Executes FFmpeg command and captures stderr for error messages
+    /// Uses two-pass encoding: first extract, then apply fade effect
     pub fn extract_clip(
         &self,
         video_path: &Path,
@@ -544,16 +619,19 @@ impl FFmpegExecutor {
         let source_resolution = (metadata.width, metadata.height);
         let codec = &metadata.codec;
 
-        // Build the FFmpeg command with codec-aware seeking
+        // Create a temporary file path for the first pass
+        let temp_path = output_path.with_extension("tmp.mp4");
+
+        // Build the FFmpeg command with codec-aware seeking (first pass - no fade)
         let args = self.build_extract_command(
             video_path,
             time_range,
-            output_path,
+            &temp_path,
             source_resolution,
             codec,
         );
 
-        // Execute FFmpeg command
+        // Execute FFmpeg command (first pass)
         let output = Command::new("ffmpeg").args(&args).output().map_err(|e| {
             FFmpegError::ExecutionFailed(format!(
                 "Failed to execute ffmpeg for '{}': {}",
@@ -565,6 +643,9 @@ impl FFmpegExecutor {
         // Check if the command was successful
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
+
+            // Clean up temp file if it exists
+            let _ = std::fs::remove_file(&temp_path);
 
             // Check for specific error patterns that might benefit from recovery
             if stderr.contains("corrupt")
@@ -592,7 +673,13 @@ impl FFmpegExecutor {
             )));
         }
 
-        // Validate output file
+        // Validate first pass output
+        self.validate_output(&temp_path)?;
+
+        // Second pass: Apply fade effect
+        self.apply_fade_effect(&temp_path, output_path, time_range.duration_seconds)?;
+
+        // Validate final output
         self.validate_output(output_path)?;
 
         Ok(())
