@@ -12,9 +12,9 @@ mod constants {
     /// Target bitrate for hardware-accelerated encoding (5 Mbps)
     pub const HW_ACCEL_BITRATE: &str = "5M";
     
-    /// Constant Rate Factor for software encoding (26 = good quality, smaller files)
+    /// Constant Rate Factor for software encoding (29 = moderate quality, smaller files)
     /// Range: 0-51, where lower = better quality, 18-28 is typical
-    pub const SOFTWARE_CRF: &str = "26";
+    pub const SOFTWARE_CRF: &str = "29";
     
     /// Keyframe interval in frames (30 frames ≈ 1 second at 30fps)
     /// Ensures good seeking and streaming compatibility

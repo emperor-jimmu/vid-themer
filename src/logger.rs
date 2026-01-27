@@ -10,9 +10,45 @@ pub struct FailureLogger {
 }
 
 impl FailureLogger {
-    /// Create a new failure logger with a log file in the specified directory
-    pub fn new(root_dir: &Path) -> std::io::Result<Self> {
-        let log_path = root_dir.join("video_clip_extractor_failures.log");
+    /// Create a new failure logger with a timestamped log file in the current working directory
+    pub fn new(_root_dir: &Path) -> std::io::Result<Self> {
+        // Get current working directory (where the executable is running from)
+        let current_dir = std::env::current_dir()?;
+        
+        // Generate timestamp for log filename (format: YYYY-MM-DD-HH-MM-SS.log)
+        let now = std::time::SystemTime::now();
+        let datetime = now.duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        
+        // Convert to local time components
+        let total_seconds = datetime.as_secs();
+        let days_since_epoch = total_seconds / 86400;
+        let seconds_today = total_seconds % 86400;
+        
+        // Calculate date (simplified calculation from Unix epoch)
+        let mut year = 1970;
+        let mut remaining_days = days_since_epoch;
+        
+        loop {
+            let days_in_year = if Self::is_leap_year(year) { 366 } else { 365 };
+            if remaining_days < days_in_year {
+                break;
+            }
+            remaining_days -= days_in_year;
+            year += 1;
+        }
+        
+        let (month, day) = Self::day_of_year_to_month_day(remaining_days as u32 + 1, Self::is_leap_year(year));
+        
+        // Calculate time
+        let hour = seconds_today / 3600;
+        let minute = (seconds_today % 3600) / 60;
+        let second = seconds_today % 60;
+        
+        let timestamp = format!("{:04}-{:02}-{:02}-{:02}-{:02}-{:02}.log", 
+            year, month, day, hour, minute, second);
+        
+        let log_path = current_dir.join(timestamp);
         
         // Create or truncate the log file
         let mut file = File::create(&log_path)?;
@@ -21,6 +57,31 @@ impl FailureLogger {
         writeln!(file)?;
         
         Ok(Self { log_path })
+    }
+    
+    /// Check if a year is a leap year
+    fn is_leap_year(year: i32) -> bool {
+        (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+    }
+    
+    /// Convert day of year to (month, day)
+    fn day_of_year_to_month_day(day_of_year: u32, is_leap: bool) -> (u32, u32) {
+        let days_in_months = if is_leap {
+            [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        } else {
+            [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        };
+        
+        let mut remaining = day_of_year;
+        for (month_idx, &days) in days_in_months.iter().enumerate() {
+            if remaining <= days {
+                return ((month_idx + 1) as u32, remaining);
+            }
+            remaining -= days;
+        }
+        
+        // Fallback (should not happen)
+        (12, 31)
     }
 
     /// Log a failed processing result with detailed error information
