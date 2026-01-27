@@ -1606,4 +1606,162 @@ mod tests {
             let _ = fs::remove_dir_all(&temp_base);
         }
     }
+
+    // Feature: multiple-clips-per-video, Property 8: Output Directory Consistency
+    // **Validates: Requirements 6.2**
+    proptest! {
+        #[test]
+        fn test_output_directory_consistency_property(
+            // Generate clip counts from 1 to 4
+            clip_count in 1u8..=4u8,
+            // Generate various video file names
+            video_name in "[a-zA-Z0-9_-]{1,20}\\.(mp4|mkv)",
+            // Test with different parent directory names
+            parent_dir_name in "[a-zA-Z0-9_-]{1,15}",
+        ) {
+            // Property: For any generated clip from a video at path P, the clip should be
+            // located in the "backdrops/" subdirectory relative to P's parent directory.
+            // This property ensures that all clips, regardless of count or video location,
+            // are consistently placed in the same output directory structure.
+
+            // Create a temporary directory for testing
+            let temp_base = std::env::temp_dir().join(format!(
+                "processor_output_dir_property_test_{}_{}",
+                std::process::id(),
+                rand::random::<u32>()
+            ));
+            let _ = fs::remove_dir_all(&temp_base);
+
+            // Create parent directory with the generated name
+            let parent_dir = temp_base.join(&parent_dir_name);
+            fs::create_dir_all(&parent_dir).unwrap();
+
+            // Create test video file
+            let video_file = create_test_video_structure(&parent_dir, &video_name);
+
+            // Create processor with multi-clip mock selector
+            let selector = Box::new(MultiClipMockSelector { clip_count });
+            let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
+            let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, clip_count);
+
+            // Create backdrops directory
+            let backdrops_dir = processor.create_backdrops_directory(&video_file).unwrap();
+
+            // Property 1 (CORE): The backdrops directory should be in the video's parent directory
+            // This is the main property being tested - output directory consistency
+            prop_assert_eq!(
+                backdrops_dir.parent().unwrap(),
+                &video_file.parent_dir,
+                "Backdrops directory should be in the video's parent directory for video '{}'",
+                video_name
+            );
+
+            // Property 2: The backdrops directory name should always be "backdrops" (lowercase)
+            let backdrops_dir_name = backdrops_dir.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            prop_assert_eq!(
+                backdrops_dir_name,
+                "backdrops",
+                "Directory name should always be 'backdrops' in lowercase"
+            );
+
+            // Property 3: For ALL clips (1 to N), each clip should be in the backdrops directory
+            for i in 1..=clip_count {
+                let clip_path = backdrops_dir.join(format!("vid{}.mp4", i));
+                
+                // Verify the clip's parent directory is the backdrops directory
+                prop_assert_eq!(
+                    clip_path.parent().unwrap(),
+                    &backdrops_dir,
+                    "Clip {} should be in the backdrops directory",
+                    i
+                );
+
+                // Verify the full path structure: parent_dir/backdrops/vidX.mp4
+                let expected_path = video_file.parent_dir.join("backdrops").join(format!("vid{}.mp4", i));
+                prop_assert_eq!(
+                    &clip_path,
+                    &expected_path,
+                    "Clip {} should follow the structure: parent_dir/backdrops/vidX.mp4",
+                    i
+                );
+            }
+
+            // Property 4: The backdrops directory should be a direct child of the video's parent directory
+            // (not nested deeper)
+            let backdrops_parent = backdrops_dir.parent().unwrap();
+            prop_assert_eq!(
+                backdrops_parent,
+                &video_file.parent_dir,
+                "Backdrops directory should be a direct child of the video's parent directory"
+            );
+
+            // Property 5: The relative path from video's parent to any clip should always be "backdrops/vidX.mp4"
+            for i in 1..=clip_count {
+                let clip_path = backdrops_dir.join(format!("vid{}.mp4", i));
+                let relative_path = clip_path.strip_prefix(&video_file.parent_dir).unwrap();
+                
+                let expected_relative = std::path::Path::new("backdrops").join(format!("vid{}.mp4", i));
+                prop_assert_eq!(
+                    relative_path,
+                    &expected_relative,
+                    "Relative path for clip {} should be 'backdrops/vidX.mp4'",
+                    i
+                );
+            }
+
+            // Property 6: The backdrops directory should exist after creation
+            prop_assert!(
+                backdrops_dir.exists(),
+                "Backdrops directory should exist at {:?}",
+                backdrops_dir
+            );
+
+            // Property 7: The backdrops directory should be a directory (not a file)
+            prop_assert!(
+                backdrops_dir.is_dir(),
+                "Backdrops path should be a directory, not a file"
+            );
+
+            // Property 8: The output directory structure should be consistent regardless of video name
+            // This is implicitly tested by the properties above, but we verify explicitly
+            let another_video = create_test_video_structure(&parent_dir, "different_video.mp4");
+            let another_backdrops_dir = processor.create_backdrops_directory(&another_video).unwrap();
+            
+            prop_assert_eq!(
+                &backdrops_dir,
+                &another_backdrops_dir,
+                "All videos in the same parent directory should use the same backdrops directory"
+            );
+
+            // Property 9: The output directory structure should be consistent regardless of clip count
+            // Create processors with different clip counts and verify they use the same backdrops directory
+            for test_clip_count in 1u8..=4u8 {
+                let test_selector = Box::new(MultiClipMockSelector { clip_count: test_clip_count });
+                let test_processor = VideoProcessor::new(test_selector, FFmpegExecutor::new(Resolution::Hd1080, true), 1.0, 40.0, test_clip_count);
+                let test_backdrops_dir = test_processor.create_backdrops_directory(&video_file).unwrap();
+                
+                prop_assert_eq!(
+                    &backdrops_dir,
+                    &test_backdrops_dir,
+                    "Backdrops directory should be the same regardless of clip count"
+                );
+            }
+
+            // Property 10: The backdrops directory path should not depend on the video filename
+            // (only on the parent directory)
+            let video_with_different_name = create_test_video_structure(&parent_dir, "yet_another_video.mkv");
+            let backdrops_for_different_video = processor.create_backdrops_directory(&video_with_different_name).unwrap();
+            
+            prop_assert_eq!(
+                &backdrops_dir,
+                &backdrops_for_different_video,
+                "Backdrops directory should be the same for all videos in the same parent directory"
+            );
+
+            // Clean up
+            let _ = fs::remove_dir_all(&temp_base);
+        }
+    }
 }

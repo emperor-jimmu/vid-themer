@@ -127,7 +127,8 @@ This implementation plan breaks down the multiple-clips-per-video feature into d
     - **Property 7: Sequential Naming Convention**
     - **Validates: Requirements 6.1**
 
-  - [ ]* 6.4 Write property test for output directory consistency
+  - [x] 6.4 Write property test for output directory consistency
+
     - **Property 8: Output Directory Consistency**
     - **Validates: Requirements 6.2**
 
