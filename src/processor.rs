@@ -76,7 +76,10 @@ impl VideoProcessor {
                     video_path,
                     output_path: PathBuf::new(),
                     success: false,
-                    error_message: Some("No valid clips could be selected".to_string()),
+                    error_message: Some(format!(
+                        "No valid clips could be selected (requested: {} clips)",
+                        self.clip_count
+                    )),
                     ffmpeg_stderr: None,
                     clips_generated: 0,
                 };
@@ -86,7 +89,10 @@ impl VideoProcessor {
                     video_path,
                     output_path: PathBuf::new(),
                     success: false,
-                    error_message: Some(format!("Failed to select clip segment: {}", e)),
+                    error_message: Some(format!(
+                        "Failed to select clip segment (requested: {} clips): {}",
+                        self.clip_count, e
+                    )),
                     ffmpeg_stderr: None,
                     clips_generated: 0,
                 };
@@ -134,7 +140,10 @@ impl VideoProcessor {
                     video_path,
                     output_path: output_path.clone(),
                     success: false,
-                    error_message: Some(format!("Failed to extract clip {}: {}", clip_num, e)),
+                    error_message: Some(format!(
+                        "Failed to extract clip {} of {} (vid{}.mp4): {}",
+                        clip_num, time_ranges.len(), clip_num, e
+                    )),
                     ffmpeg_stderr: stderr,
                     clips_generated: index,
                 };

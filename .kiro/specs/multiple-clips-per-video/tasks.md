@@ -190,7 +190,7 @@ This implementation plan breaks down the multiple-clips-per-video feature into d
     - Verify strategy-specific selection maintained
     - _Requirements: 7.1, 7.2_
 
-- [ ] 11. Update error handling and logging
+- [x] 11. Update error handling and logging
   - Add `NoValidClips` variant to `ProcessError` enum in `src/error.rs`
   - Update error messages to include clip count context
   - Ensure warning messages include video filename and actual clip count

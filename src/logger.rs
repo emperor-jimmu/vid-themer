@@ -110,6 +110,9 @@ impl FailureLogger {
             writeln!(file, "Error: {}", error_msg)?;
         }
 
+        // Include clip generation information for multi-clip failures
+        writeln!(file, "Clips Generated: {}", result.clips_generated)?;
+
         if !result.output_path.as_os_str().is_empty() {
             writeln!(file, "Output Path: {}", result.output_path.display())?;
         }
@@ -162,9 +165,13 @@ mod tests {
 
         let logger = FailureLogger::new(&temp_dir).unwrap();
 
+        // Use a realistic path that will work on all platforms
+        let video_path = temp_dir.join("test").join("video.mp4");
+        let output_path = temp_dir.join("test").join("backdrops").join("backdrop.mp4");
+
         let result = ProcessResult {
-            video_path: PathBuf::from("/test/video.mp4"),
-            output_path: PathBuf::from("/test/backdrops/backdrop.mp4"),
+            video_path,
+            output_path,
             success: false,
             error_message: Some("Test error".to_string()),
             ffmpeg_stderr: None,
@@ -175,11 +182,52 @@ mod tests {
 
         // Verify log file contains the failure
         let log_content = fs::read_to_string(logger.log_path()).unwrap();
-        // Check for the video filename (platform-agnostic)
-        assert!(log_content.contains("video.mp4"));
+        // Check for the video filename (platform-agnostic - path separators may vary)
+        assert!(
+            log_content.contains("video.mp4"),
+            "Log should contain video filename"
+        );
         assert!(log_content.contains("FAILURE:"));
         assert!(log_content.contains("Test error"));
         assert!(log_content.contains("FFmpeg stderr output"));
+        assert!(log_content.contains("Clips Generated: 0"));
+
+        // Clean up
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_log_failure_with_multiple_clips() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "logger_multi_clip_test_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let logger = FailureLogger::new(&temp_dir).unwrap();
+
+        // Use realistic paths
+        let video_path = temp_dir.join("test").join("video.mp4");
+        let output_path = temp_dir.join("test").join("backdrops").join("vid2.mp4");
+
+        let result = ProcessResult {
+            video_path,
+            output_path,
+            success: false,
+            error_message: Some("Failed to extract clip 2 of 3".to_string()),
+            ffmpeg_stderr: None,
+            clips_generated: 1,
+        };
+
+        logger.log_failure(&result, None);
+
+        // Verify log file contains the multi-clip failure information
+        let log_content = fs::read_to_string(logger.log_path()).unwrap();
+        assert!(log_content.contains("video.mp4"));
+        assert!(log_content.contains("FAILURE:"));
+        assert!(log_content.contains("Failed to extract clip 2 of 3"));
+        assert!(log_content.contains("Clips Generated: 1"));
 
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
