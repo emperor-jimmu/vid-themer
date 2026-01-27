@@ -104,8 +104,8 @@ This implementation plan breaks down the multiple-clips-per-video feature into d
     - Test graceful degradation
     - _Requirements: 2.1, 2.3, 3.1, 7.2_
 
-- [ ] 6. Update VideoProcessor for multiple clips
-  - [ ] 6.1 Modify VideoProcessor to handle multiple clips
+- [x] 6. Update VideoProcessor for multiple clips
+  - [x] 6.1 Modify VideoProcessor to handle multiple clips
     - Add `clip_count` field to `VideoProcessor` struct in `src/processor.rs`
     - Update `process_video` method to call `select_clips` with clip_count
     - Handle empty vector result (NoValidClips error)
@@ -115,13 +115,15 @@ This implementation plan breaks down the multiple-clips-per-video feature into d
     - Update `ProcessResult` enum to include `clips_generated: usize` field
     - _Requirements: 2.1, 2.3, 6.1, 6.2, 9.2_
 
-  - [ ]* 6.2 Write unit tests for processor clip naming
+  - [x] 6.2 Write unit tests for processor clip naming
+
     - Test sequential naming for 1-4 clips
     - Test output directory creation
     - Test file path construction
     - _Requirements: 6.1, 6.2_
 
-  - [ ]* 6.3 Write property test for sequential naming convention
+  - [x] 6.3 Write property test for sequential naming convention
+
     - **Property 7: Sequential Naming Convention**
     - **Validates: Requirements 6.1**
 

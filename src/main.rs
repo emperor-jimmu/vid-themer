@@ -101,6 +101,7 @@ fn main() {
         ffmpeg_executor,
         args.intro_exclusion_percent,
         args.outro_exclusion_percent,
+        args.clip_count,
     );
     
     // Create ProgressReporter with logger

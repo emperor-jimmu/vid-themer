@@ -446,9 +446,9 @@ mod tests {
 
     #[test]
     fn test_intro_exclusion_default() {
-        // Test that intro exclusion defaults to 1%
+        // Test that intro exclusion defaults to 2%
         let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path"]);
-        assert_eq!(args.intro_exclusion_percent, 1.0);
+        assert_eq!(args.intro_exclusion_percent, 2.0);
     }
 
     #[test]

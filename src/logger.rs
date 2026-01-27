@@ -161,6 +161,7 @@ mod tests {
             success: false,
             error_message: Some("Test error".to_string()),
             ffmpeg_stderr: None,
+            clips_generated: 0,
         };
 
         logger.log_failure(&result, Some("FFmpeg stderr output"));

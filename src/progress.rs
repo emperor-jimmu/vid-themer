@@ -92,6 +92,7 @@ mod tests {
             success,
             error_message,
             ffmpeg_stderr: None,
+            clips_generated: if success { 1 } else { 0 },
         }
     }
 
