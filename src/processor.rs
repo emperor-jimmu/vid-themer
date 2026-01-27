@@ -59,13 +59,25 @@ impl VideoProcessor {
         };
         
         // Step 2: Select segment using ClipSelector strategy
-        let time_range = match self.selector.select_segment(
+        // Temporarily request 1 clip to maintain backward compatibility
+        // This will be updated in task 6 to support multiple clips
+        let time_ranges = match self.selector.select_clips(
             &video.path,
             duration,
             self.intro_exclusion_percent,
             self.outro_exclusion_percent,
+            1, // clip_count - will be parameterized in task 6
         ) {
-            Ok(tr) => tr,
+            Ok(ranges) if !ranges.is_empty() => ranges,
+            Ok(_) => {
+                return ProcessResult {
+                    video_path,
+                    output_path: PathBuf::new(),
+                    success: false,
+                    error_message: Some("No valid clips could be selected".to_string()),
+                    ffmpeg_stderr: None,
+                };
+            }
             Err(e) => {
                 return ProcessResult {
                     video_path,
@@ -76,6 +88,10 @@ impl VideoProcessor {
                 };
             }
         };
+        
+        // Use the first clip for now (backward compatibility)
+        // Task 6 will update this to handle multiple clips
+        let time_range = &time_ranges[0];
         
         // Step 3: Create output directory
         let output_path = match self.create_output_directory(video) {
@@ -176,18 +192,19 @@ mod tests {
     struct MockSelector;
 
     impl ClipSelector for MockSelector {
-        fn select_segment(
+        fn select_clips(
             &self,
             _video_path: &std::path::Path,
             duration: f64,
             _intro_exclusion_percent: f64,
             _outro_exclusion_percent: f64,
-        ) -> Result<TimeRange, crate::selector::SelectionError> {
-            // Return a simple time range for testing
-            Ok(TimeRange {
+            _clip_count: u8,
+        ) -> Result<Vec<TimeRange>, crate::selector::SelectionError> {
+            // Return a simple time range for testing (single clip for backward compatibility)
+            Ok(vec![TimeRange {
                 start_seconds: 0.0,
                 duration_seconds: duration.min(5.0),
-            })
+            }])
         }
     }
 

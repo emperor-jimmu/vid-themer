@@ -24,14 +24,15 @@ This implementation plan breaks down the multiple-clips-per-video feature into d
   - **Property 1: CLI Input Validation**
   - **Validates: Requirements 1.2, 1.4**
 
-- [ ] 2. Extend TimeRange with overlap detection and validation
+- [x] 2. Extend TimeRange with overlap detection and validation
   - Add `overlaps(&self, other: &TimeRange) -> bool` method to `TimeRange` in `src/selector.rs`
   - Add `duration(&self) -> f64` method to calculate range duration
   - Add `is_valid_duration(&self) -> bool` method to check MIN/MAX bounds
   - Add constants `MIN_CLIP_DURATION` and `MAX_CLIP_DURATION` if not already present
   - _Requirements: 3.1, 5.1_
 
-- [ ]* 2.1 Write unit tests for TimeRange methods
+- [x] 2.1 Write unit tests for TimeRange methods
+
   - Test overlapping ranges (various overlap scenarios)
   - Test non-overlapping ranges
   - Test adjacent ranges (touching but not overlapping)
@@ -39,11 +40,12 @@ This implementation plan breaks down the multiple-clips-per-video feature into d
   - Test valid/invalid duration checks
   - _Requirements: 3.1, 5.1_
 
-- [ ]* 2.2 Write property test for non-overlapping detection
+- [x] 2.2 Write property test for non-overlapping detection
+
   - **Property 4: Non-Overlapping Segments**
   - **Validates: Requirements 3.1**
 
-- [ ] 3. Update ClipSelector trait interface
+- [x] 3. Update ClipSelector trait interface
   - Change `select_clip` method signature to `select_clips` in `src/selector.rs`
   - Update return type from `Result<TimeRange>` to `Result<Vec<TimeRange>>`
   - Add `clip_count: u8` parameter to method signature
