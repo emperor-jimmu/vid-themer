@@ -79,6 +79,7 @@ pub struct VideoMetadata {
     pub height: u32,
 }
 
+#[derive(Debug, Clone)]
 pub struct AudioSegment {
     pub start_time: f64,
     pub duration: f64,

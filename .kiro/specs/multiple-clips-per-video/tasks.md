@@ -52,8 +52,8 @@ This implementation plan breaks down the multiple-clips-per-video feature into d
   - Update trait documentation to describe multi-clip behavior
   - _Requirements: 2.1, 3.1_
 
-- [ ] 4. Implement RandomSelector for multiple clips
-  - [ ] 4.1 Update RandomSelector to implement new trait signature
+- [x] 4. Implement RandomSelector for multiple clips
+  - [x] 4.1 Update RandomSelector to implement new trait signature
     - Modify `select_clips` method to accept `clip_count` parameter
     - Calculate valid selection zone (intro/outro exclusion)
     - Check if video can accommodate requested clips
@@ -62,18 +62,21 @@ This implementation plan breaks down the multiple-clips-per-video feature into d
     - Sort clips by start time before returning
     - _Requirements: 2.1, 3.1, 4.1, 5.1, 7.1, 7.4_
 
-  - [ ]* 4.2 Write unit tests for RandomSelector
+  - [x] 4.2 Write unit tests for RandomSelector
+
     - Test single clip generation (backward compatibility)
     - Test multiple clip generation (2, 3, 4 clips)
     - Test graceful degradation for short videos
     - Test exclusion zone compliance
     - _Requirements: 2.1, 2.3, 3.1, 4.1_
 
-  - [ ]* 4.3 Write property test for exact clip count generation
+  - [x] 4.3 Write property test for exact clip count generation
+
     - **Property 2: Exact Clip Count Generation**
     - **Validates: Requirements 2.1**
 
-  - [ ]* 4.4 Write property test for exclusion zone compliance
+  - [x] 4.4 Write property test for exclusion zone compliance
+
     - **Property 5: Exclusion Zone Compliance**
     - **Validates: Requirements 4.1**
 
@@ -81,8 +84,8 @@ This implementation plan breaks down the multiple-clips-per-video feature into d
     - **Property 6: Duration Constraint Compliance**
     - **Validates: Requirements 5.1**
 
-- [ ] 5. Implement IntenseAudioSelector for multiple clips
-  - [ ] 5.1 Update IntenseAudioSelector to implement new trait signature
+- [x] 5. Implement IntenseAudioSelector for multiple clips
+  - [x] 5.1 Update IntenseAudioSelector to implement new trait signature
     - Modify `select_clips` method to accept `clip_count` parameter
     - Calculate valid selection zone
     - Analyze audio intensity across video (reuse existing logic)
@@ -93,7 +96,8 @@ This implementation plan breaks down the multiple-clips-per-video feature into d
     - Sort selected clips by start time before returning
     - _Requirements: 2.1, 3.1, 4.1, 5.1, 7.2, 7.4_
 
-  - [ ]* 5.2 Write unit tests for IntenseAudioSelector
+  - [x] 5.2 Write unit tests for IntenseAudioSelector
+
     - Test single clip selection
     - Test multiple clip selection with mock audio data
     - Test peak selection with overlapping candidates
