@@ -165,21 +165,25 @@ This implementation plan breaks down the multiple-clips-per-video feature into d
     - **Property 11: No-Crash Guarantee for Constrained Videos**
     - **Validates: Requirements 9.3**
 
-- [ ]* 10. Add integration tests for end-to-end behavior
-  - [ ]* 10.1 Write integration test for full pipeline with multiple clips
+- [x] 10. Add integration tests for end-to-end behavior
+
+  - [x] 10.1 Write integration test for full pipeline with multiple clips
+
     - Create test video with sufficient duration in `tests/multiple_clips_pipeline.rs`
     - Run extractor with clip_count=3
     - Verify 3 clips generated with correct names (vid1.mp4, vid2.mp4, vid3.mp4)
     - Verify clips are non-overlapping and within constraints
     - _Requirements: 2.1, 3.1, 4.1, 5.1, 6.1, 6.2_
 
-  - [ ]* 10.2 Write integration test for backward compatibility
+  - [x] 10.2 Write integration test for backward compatibility
+
     - Run with clip_count=1
     - Verify single clip named "vid1.mp4"
     - Compare behavior with expected single-clip behavior
     - _Requirements: 8.1, 8.2_
 
-  - [ ]* 10.3 Write integration test for strategy-specific behavior
+  - [x] 10.3 Write integration test for strategy-specific behavior
+
     - Test random strategy with clip_count=2
     - Test intense-audio strategy with clip_count=2
     - Verify strategy-specific selection maintained
