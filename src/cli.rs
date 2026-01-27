@@ -82,6 +82,7 @@ pub enum Resolution {
 mod tests {
     use super::*;
     use clap::CommandFactory;
+    use proptest::prelude::*;
 
     #[test]
     fn test_default_values() {
@@ -628,5 +629,38 @@ mod tests {
         assert_eq!(args.clip_count, 2);
         assert!(matches!(args.strategy, SelectionStrategy::IntenseAudio));
         assert!(matches!(args.resolution, Resolution::Hd720));
+    }
+
+    // Feature: multiple-clips-per-video, Property 1: CLI Input Validation
+    proptest! {
+        #[test]
+        fn test_clip_count_validation_property(clip_count in any::<i32>()) {
+            // Property: For any input value to the --clip-count parameter,
+            // if the value is an integer between 1 and 4 (inclusive), it should be accepted;
+            // otherwise, it should be rejected with an error message.
+            // Validates: Requirements 1.2, 1.4
+
+            let clip_count_str = clip_count.to_string();
+            let result = CliArgs::try_parse_from(&[
+                "video-clip-extractor",
+                "/test/path",
+                "--clip-count",
+                &clip_count_str,
+            ]);
+
+            if (1..=4).contains(&clip_count) {
+                // Valid range: should be accepted
+                prop_assert!(result.is_ok(), "Valid clip count {} should be accepted", clip_count);
+                if let Ok(args) = result {
+                    prop_assert_eq!(args.clip_count, clip_count as u8);
+                }
+            } else {
+                // Invalid range: should be rejected
+                prop_assert!(result.is_err(), "Invalid clip count {} should be rejected", clip_count);
+                // The error kind may vary (ValueValidation for out-of-range positive values,
+                // UnknownArgument for negative values due to parsing issues)
+                // The important property is that it's rejected, not the specific error kind
+            }
+        }
     }
 }
