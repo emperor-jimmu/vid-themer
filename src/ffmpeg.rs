@@ -293,6 +293,8 @@ impl FFmpegExecutor {
                 "aac".to_string(),
                 "-b:a".to_string(),
                 "128k".to_string(), // Explicit bitrate for consistency
+                "-ar".to_string(),
+                "48000".to_string(), // Standard 48 kHz sample rate for maximum compatibility
                 "-ac".to_string(),
                 "2".to_string(), // Force stereo output (2.0)
             ]
@@ -383,16 +385,25 @@ impl FFmpegExecutor {
             }
         }
 
-        // Handle timestamp edge cases
+        // Handle timestamp edge cases - use make_non_negative for better HLS compatibility
+        // This shifts timestamps to be non-negative while preserving relative timing
         args.extend(vec![
             "-avoid_negative_ts".to_string(),
-            "make_zero".to_string(),
+            "make_non_negative".to_string(),
         ]);
 
         args.extend(vec![
             // Duration
             "-t".to_string(),
             time_range.duration_seconds.to_string(),
+            // Explicitly map only video and audio streams (exclude subtitles, data, attachments)
+            "-map".to_string(),
+            "0:v:0".to_string(), // First video stream
+            "-map".to_string(),
+            "0:a:0?".to_string(), // First audio stream (optional, may not exist)
+            // Strip all metadata for clean output
+            "-map_metadata".to_string(),
+            "-1".to_string(),
         ]);
 
         // Video codec selection (hardware or software)
@@ -431,21 +442,22 @@ impl FFmpegExecutor {
             }
         } else {
             // Software encoding with libx264
-            // H.264 (AVC) with High Profile, Level 4.1 for maximum compatibility
+            // H.264 (AVC) with Main Profile, Level 4.0 for maximum direct play compatibility
+            // Main profile is supported by virtually all devices without transcoding
             args.extend(vec![
                 "-c:v".to_string(),
                 "libx264".to_string(),
                 "-preset".to_string(),
                 "fast".to_string(),
-                // CRF for quality/size balance (27 = lower quality, smaller files)
+                // CRF for quality/size balance (23 = higher quality for better direct play)
                 "-crf".to_string(),
-                constants::SOFTWARE_CRF.to_string(),
-                // H.264 Profile: High (best compression, widely supported)
+                "23".to_string(),
+                // H.264 Profile: Main (universal compatibility, direct play on all devices)
                 "-profile:v".to_string(),
-                "high".to_string(),
-                // H.264 Level: 4.1 (supports up to 1080p @ 30fps, excellent compatibility)
+                "main".to_string(),
+                // H.264 Level: 4.0 (supports up to 1080p @ 30fps, maximum compatibility)
                 "-level:v".to_string(),
-                "4.1".to_string(),
+                "4.0".to_string(),
             ]);
         }
 
@@ -453,41 +465,53 @@ impl FFmpegExecutor {
             // Explicitly set output pixel format to 8-bit yuv420p
             "-pix_fmt".to_string(),
             "yuv420p".to_string(),
-            // Keyframe interval for better seeking and streaming compatibility
+            // Fixed GOP size for streaming compatibility (72 frames = 3 seconds at 24fps)
+            // 3-second segments are standard for HLS and allow direct play without transcoding
             "-g".to_string(),
-            constants::KEYFRAME_INTERVAL.to_string(),
+            "72".to_string(),
             "-keyint_min".to_string(),
-            constants::KEYFRAME_INTERVAL.to_string(),
-            // Set color metadata for proper playback compatibility
+            "72".to_string(),
+            // Disable scene-cut detection to maintain fixed GOP structure
+            "-sc_threshold".to_string(),
+            "0".to_string(),
+            // Strip HDR metadata and force SDR color space for maximum compatibility
+            // This ensures clips work with all players and streaming servers (including Jellyfin VAAPI)
             "-colorspace".to_string(),
             "bt709".to_string(),
             "-color_primaries".to_string(),
             "bt709".to_string(),
             "-color_trc".to_string(),
             "bt709".to_string(),
+            "-color_range".to_string(),
+            "tv".to_string(),
         ]);
 
         // Build video filter chain
         let mut filters = Vec::new();
 
-        // CRITICAL: Add pixel format conversion FIRST to handle 10-bit sources
-        // This must come before any other filters (especially scale) to ensure
-        // compatibility with libx264 which expects 8-bit input
-        // Using format=yuv420p explicitly converts from any pixel format (including yuv420p10le)
-        filters.push("format=yuv420p".to_string());
+        // HDR to SDR tone mapping for sources with HDR metadata
+        // zscale handles HDR→SDR conversion properly with tone mapping
+        // This is critical for 4K HDR sources to avoid color/brightness issues
+        filters.push("zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p".to_string());
 
         // Add scale filter if needed (downscaling only, no upscaling)
-        // This comes AFTER format conversion so it works with 8-bit input
+        // This comes AFTER tone mapping and format conversion
         if let Some(scale_filter) = self.calculate_scale_filter(source_resolution) {
             filters.push(scale_filter);
         }
 
-        // Apply video filters (always present now due to format filter)
+        // Apply video filters (always present now due to tone mapping)
         args.push("-vf".to_string());
         args.push(filters.join(","));
 
         // Audio handling
         args.extend(self.build_audio_args());
+
+        // MP4 muxer options for streaming compatibility
+        args.extend(vec![
+            "-movflags".to_string(),
+            "+faststart".to_string(), // Move moov atom to beginning for streaming
+        ]);
 
         // Output file (overwrite if exists)
         args.push("-y".to_string());
