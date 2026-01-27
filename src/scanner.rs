@@ -40,14 +40,13 @@ impl VideoScanner {
             // Check if there are any non-zero size .mp4 files in the backdrops directory
             if let Ok(entries) = std::fs::read_dir(&backdrops_dir) {
                 for entry in entries.flatten() {
-                    if let Ok(metadata) = entry.metadata() {
-                        if metadata.is_file() && metadata.len() > 0 {
-                            if let Some(ext) = entry.path().extension() {
-                                if ext == "mp4" {
-                                    return true; // Skip if any valid backdrop file exists
-                                }
-                            }
-                        }
+                    if let Ok(metadata) = entry.metadata()
+                        && metadata.is_file()
+                        && metadata.len() > 0
+                        && let Some(ext) = entry.path().extension()
+                        && ext == "mp4"
+                    {
+                        return true; // Skip if any valid backdrop file exists
                     }
                 }
             }

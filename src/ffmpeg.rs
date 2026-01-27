@@ -12,14 +12,6 @@ mod constants {
     /// Target bitrate for hardware-accelerated encoding (5 Mbps)
     pub const HW_ACCEL_BITRATE: &str = "5M";
 
-    /// Constant Rate Factor for software encoding (27 = lower quality, smaller files)
-    /// Range: 0-51, where lower = better quality, 18-28 is typical
-    pub const SOFTWARE_CRF: &str = "27";
-
-    /// Keyframe interval in frames (30 frames ≈ 1 second at 30fps)
-    /// Ensures good seeking and streaming compatibility
-    pub const KEYFRAME_INTERVAL: &str = "30";
-
     // Seeking optimization settings
     /// Fast seek offset for H.264 videos (seconds before target)
     /// Larger offset = faster seeking but more decoding needed
@@ -278,17 +270,21 @@ impl FFmpegExecutor {
 
     /// Build audio-related FFmpeg arguments based on configuration
     /// Returns arguments for either including or excluding audio
-    fn build_audio_args(&self) -> Vec<String> {
+    fn build_audio_args(&self, duration: f64) -> Vec<String> {
         if !self.include_audio {
             // Exclude audio track
             vec!["-an".to_string()]
         } else {
+            // Calculate fade out start time (duration - 1 second)
+            let fade_start = duration - 1.0;
+            
             // Include audio with AAC codec
             // Apply loudness normalization (EBU R128) then reduce volume to 40% (0.4)
+            // Add 1-second fade out at the end
             // Downmix to stereo to handle complex channel layouts (e.g., 5.1.2 Dolby Atmos)
             vec![
                 "-af".to_string(),
-                "loudnorm=I=-16:TP=-1.5:LRA=11,volume=0.4".to_string(),
+                format!("loudnorm=I=-16:TP=-1.5:LRA=11,volume=0.4,afade=t=out:st={}:d=1", fade_start),
                 "-c:a".to_string(),
                 "aac".to_string(),
                 "-b:a".to_string(),
@@ -508,12 +504,17 @@ impl FFmpegExecutor {
             filters.push(scale_filter);
         }
 
+        // Add 1-second fade out at the end of the clip
+        // Calculate fade start time (duration - 1 second)
+        let fade_start = time_range.duration_seconds - 1.0;
+        filters.push(format!("fade=t=out:st={}:d=1", fade_start));
+
         // Apply video filters
         args.push("-vf".to_string());
         args.push(filters.join(","));
 
         // Audio handling
-        args.extend(self.build_audio_args());
+        args.extend(self.build_audio_args(time_range.duration_seconds));
 
         // MP4 muxer options for streaming compatibility
         // faststart: Move moov atom to beginning for streaming
