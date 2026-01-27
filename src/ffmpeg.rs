@@ -12,9 +12,9 @@ mod constants {
     /// Target bitrate for hardware-accelerated encoding (5 Mbps)
     pub const HW_ACCEL_BITRATE: &str = "5M";
 
-    /// Constant Rate Factor for software encoding (29 = moderate quality, smaller files)
+    /// Constant Rate Factor for software encoding (32 = lower quality, smaller files)
     /// Range: 0-51, where lower = better quality, 18-28 is typical
-    pub const SOFTWARE_CRF: &str = "29";
+    pub const SOFTWARE_CRF: &str = "32";
 
     /// Keyframe interval in frames (30 frames ≈ 1 second at 30fps)
     /// Ensures good seeking and streaming compatibility
@@ -284,11 +284,11 @@ impl FFmpegExecutor {
             vec!["-an".to_string()]
         } else {
             // Include audio with AAC codec
-            // Apply loudness normalization (EBU R128) then reduce volume by 40% (0.6)
+            // Apply loudness normalization (EBU R128) then reduce volume to 40% (0.4)
             // Downmix to stereo to handle complex channel layouts (e.g., 5.1.2 Dolby Atmos)
             vec![
                 "-af".to_string(),
-                "loudnorm=I=-16:TP=-1.5:LRA=11,volume=0.6".to_string(),
+                "loudnorm=I=-16:TP=-1.5:LRA=11,volume=0.4".to_string(),
                 "-c:a".to_string(),
                 "aac".to_string(),
                 "-b:a".to_string(),
@@ -437,7 +437,7 @@ impl FFmpegExecutor {
                 "libx264".to_string(),
                 "-preset".to_string(),
                 "fast".to_string(),
-                // CRF for quality/size balance (29 = smaller files, still good quality)
+                // CRF for quality/size balance (32 = lower quality, smaller files)
                 "-crf".to_string(),
                 constants::SOFTWARE_CRF.to_string(),
                 // H.264 Profile: High (best compression, widely supported)

@@ -11,7 +11,7 @@ use common::*;
 fn test_full_pipeline_with_multiple_clips() {
     // Test Requirements: 2.1, 3.1, 4.1, 5.1, 6.1, 6.2
     // Verify that the tool can generate multiple clips (2) from a single video
-    // with correct naming (vid1.mp4, vid2.mp4) and non-overlapping segments
+    // with correct naming (backdrop1.mp4, backdrop2.mp4) and non-overlapping segments
 
     let temp_base = std::env::temp_dir().join(format!(
         "integration_multiple_clips_test_{}",
@@ -77,16 +77,16 @@ fn test_full_pipeline_with_multiple_clips() {
         "Backdrops directory should be created"
     );
 
-    let clip1 = backdrops_dir.join("vid1.mp4");
-    let clip2 = backdrops_dir.join("vid2.mp4");
+    let clip1 = backdrops_dir.join("backdrop1.mp4");
+    let clip2 = backdrops_dir.join("backdrop2.mp4");
 
     assert!(
         clip1.exists(),
-        "vid1.mp4 should be created (Requirement 6.1)"
+        "backdrop1.mp4 should be created (Requirement 6.1)"
     );
     assert!(
         clip2.exists(),
-        "vid2.mp4 should be created (Requirement 6.1)"
+        "backdrop2.mp4 should be created (Requirement 6.1)"
     );
 
     println!("✓ All 2 clips created with correct names");
@@ -133,7 +133,7 @@ fn test_full_pipeline_with_multiple_clips() {
     // This is implicitly tested by the selector, but we verify clips were created successfully
 
     println!("\n✓ Multiple clips pipeline test passed:");
-    println!("  - 2 clips created with correct names (vid1.mp4, vid2.mp4)");
+    println!("  - 2 clips created with correct names (backdrop1.mp4, backdrop2.mp4)");
     println!("  - All clips in backdrops/ subdirectory");
     println!("  - All clips have valid durations (12-18 seconds)");
     println!("  - Clips are non-overlapping (verified by successful creation)");
@@ -146,7 +146,7 @@ fn test_full_pipeline_with_multiple_clips() {
 fn test_backward_compatibility_single_clip() {
     // Test Requirements: 8.1, 8.2
     // Verify that clip_count=1 behaves identically to the legacy system
-    // Single clip should be named "vid1.mp4"
+    // Single clip should be named "backdrop1.mp4"
 
     let temp_base = std::env::temp_dir().join(format!(
         "integration_backward_compat_test_{}",
@@ -196,17 +196,17 @@ fn test_backward_compatibility_single_clip() {
         "video-clip-extractor should complete successfully with clip_count=1"
     );
 
-    // Verify single clip named "vid1.mp4" (Requirement 8.2)
+    // Verify single clip named "backdrop1.mp4" (Requirement 8.2)
     let backdrops_dir = temp_base.join("backdrops");
-    let clip1 = backdrops_dir.join("vid1.mp4");
+    let clip1 = backdrops_dir.join("backdrop1.mp4");
 
     assert!(
         clip1.exists(),
-        "Single clip should be named vid1.mp4 (Requirement 8.2)"
+        "Single clip should be named backdrop1.mp4 (Requirement 8.2)"
     );
 
     // Verify no other clips exist
-    let clip2 = backdrops_dir.join("vid2.mp4");
+    let clip2 = backdrops_dir.join("backdrop2.mp4");
     assert!(
         !clip2.exists(),
         "Only one clip should exist when clip_count=1"
@@ -226,7 +226,7 @@ fn test_backward_compatibility_single_clip() {
     }
 
     println!("\n✓ Backward compatibility test passed:");
-    println!("  - Single clip named vid1.mp4");
+    println!("  - Single clip named backdrop1.mp4");
     println!("  - No additional clips created");
     println!("  - Clip has valid duration");
 
@@ -279,17 +279,17 @@ fn test_default_clip_count() {
         "video-clip-extractor should complete successfully with default clip_count"
     );
 
-    // Verify single clip named "vid1.mp4"
+    // Verify single clip named "backdrop1.mp4"
     let backdrops_dir = temp_base.join("backdrops");
-    let clip1 = backdrops_dir.join("vid1.mp4");
+    let clip1 = backdrops_dir.join("backdrop1.mp4");
 
     assert!(
         clip1.exists(),
-        "Default clip_count should be 1, creating vid1.mp4 (Requirement 8.1)"
+        "Default clip_count should be 1, creating backdrop1.mp4 (Requirement 8.1)"
     );
 
     // Verify no other clips exist
-    let clip2 = backdrops_dir.join("vid2.mp4");
+    let clip2 = backdrops_dir.join("backdrop2.mp4");
     assert!(
         !clip2.exists(),
         "Only one clip should exist with default clip_count"
@@ -297,7 +297,7 @@ fn test_default_clip_count() {
 
     println!("\n✓ Default clip count test passed:");
     println!("  - Default clip_count is 1 (backward compatible)");
-    println!("  - Single clip named vid1.mp4");
+    println!("  - Single clip named backdrop1.mp4");
 
     // Clean up
     let _ = fs::remove_dir_all(&temp_base);
@@ -354,11 +354,11 @@ fn test_strategy_specific_random() {
 
     // Verify 2 clips created
     let backdrops_dir = temp_base.join("backdrops");
-    let clip1 = backdrops_dir.join("vid1.mp4");
-    let clip2 = backdrops_dir.join("vid2.mp4");
+    let clip1 = backdrops_dir.join("backdrop1.mp4");
+    let clip2 = backdrops_dir.join("backdrop2.mp4");
 
-    assert!(clip1.exists(), "vid1.mp4 should be created");
-    assert!(clip2.exists(), "vid2.mp4 should be created");
+    assert!(clip1.exists(), "backdrop1.mp4 should be created");
+    assert!(clip2.exists(), "backdrop2.mp4 should be created");
 
     // Verify clips are valid
     for (i, clip_path) in [&clip1, &clip2].iter().enumerate() {
@@ -430,12 +430,12 @@ fn test_strategy_specific_intense_audio() {
 
     // Verify at least 1 clip created (graceful degradation may apply)
     let backdrops_dir = temp_base.join("backdrops");
-    let clip1 = backdrops_dir.join("vid1.mp4");
+    let clip1 = backdrops_dir.join("backdrop1.mp4");
 
-    assert!(clip1.exists(), "At least vid1.mp4 should be created");
+    assert!(clip1.exists(), "At least backdrop1.mp4 should be created");
 
     // Check if second clip was created
-    let clip2 = backdrops_dir.join("vid2.mp4");
+    let clip2 = backdrops_dir.join("backdrop2.mp4");
     let clips_created = if clip2.exists() { 2 } else { 1 };
 
     // Verify clips are valid

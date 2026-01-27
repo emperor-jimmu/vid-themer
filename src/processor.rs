@@ -3,6 +3,7 @@
 use crate::ffmpeg::FFmpegExecutor;
 use crate::scanner::VideoFile;
 use crate::selector::ClipSelector;
+use colored::Colorize;
 use std::path::PathBuf;
 
 // Constants for output directory and file naming
@@ -131,15 +132,22 @@ impl VideoProcessor {
         
         for (index, time_range) in time_ranges.iter().enumerate() {
             let clip_num = index + 1;
-            let output_filename = format!("vid{}.mp4", clip_num);
+            let output_filename = format!("backdrop{}.mp4", clip_num);
             
             // Show per-clip progress bar for multiple clips
             if total_clips > 1 {
                 let bar_width = 20;
                 let filled = (clip_num * bar_width) / total_clips;
                 let empty = bar_width - filled;
-                let bar = format!("[{}{}]", "X".repeat(filled), " ".repeat(empty));
-                println!("  {} {} {}/{}", output_filename, bar, clip_num, total_clips);
+                let bar = format!("[{}{}]", 
+                    "X".repeat(filled).bright_green(),
+                    " ".repeat(empty)
+                );
+                println!("  {} {} {}", 
+                    output_filename.bright_cyan().bold(),
+                    bar,
+                    format!("{}/{}", clip_num, total_clips).bright_yellow()
+                );
             }
             
             let output_path = backdrops_dir.join(&output_filename);
@@ -155,7 +163,7 @@ impl VideoProcessor {
                     output_path: output_path.clone(),
                     success: false,
                     error_message: Some(format!(
-                        "Failed to extract clip {} of {} (vid{}.mp4): {}",
+                        "Failed to extract clip {} of {} (backdrop{}.mp4): {}",
                         clip_num,
                         time_ranges.len(),
                         clip_num,
@@ -1269,7 +1277,7 @@ mod tests {
 
     #[test]
     fn test_sequential_naming_single_clip() {
-        // Test that a single clip is named "vid1.mp4"
+        // Test that a single clip is named "backdrop1.mp4"
         let temp_dir =
             std::env::temp_dir().join(format!("processor_naming_single_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
@@ -1286,10 +1294,10 @@ mod tests {
         let backdrops_dir = processor.create_backdrops_directory(&video_file).unwrap();
 
         // Verify the expected output path for single clip
-        let expected_path = backdrops_dir.join("vid1.mp4");
+        let expected_path = backdrops_dir.join("backdrop1.mp4");
         assert_eq!(
             expected_path.file_name().unwrap().to_str().unwrap(),
-            "vid1.mp4"
+            "backdrop1.mp4"
         );
 
         // Clean up
@@ -1298,7 +1306,7 @@ mod tests {
 
     #[test]
     fn test_sequential_naming_two_clips() {
-        // Test that two clips are named "vid1.mp4" and "vid2.mp4"
+        // Test that two clips are named "backdrop1.mp4" and "backdrop2.mp4"
         let temp_dir =
             std::env::temp_dir().join(format!("processor_naming_two_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
@@ -1315,16 +1323,16 @@ mod tests {
         let backdrops_dir = processor.create_backdrops_directory(&video_file).unwrap();
 
         // Verify the expected output paths for two clips
-        let expected_path1 = backdrops_dir.join("vid1.mp4");
-        let expected_path2 = backdrops_dir.join("vid2.mp4");
+        let expected_path1 = backdrops_dir.join("backdrop1.mp4");
+        let expected_path2 = backdrops_dir.join("backdrop2.mp4");
 
         assert_eq!(
             expected_path1.file_name().unwrap().to_str().unwrap(),
-            "vid1.mp4"
+            "backdrop1.mp4"
         );
         assert_eq!(
             expected_path2.file_name().unwrap().to_str().unwrap(),
-            "vid2.mp4"
+            "backdrop2.mp4"
         );
 
         // Clean up
@@ -1333,7 +1341,7 @@ mod tests {
 
     #[test]
     fn test_sequential_naming_three_clips() {
-        // Test that three clips are named "vid1.mp4", "vid2.mp4", "vid3.mp4"
+        // Test that three clips are named "backdrop1.mp4", "backdrop2.mp4", "backdrop3.mp4"
         let temp_dir =
             std::env::temp_dir().join(format!("processor_naming_three_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
@@ -1350,21 +1358,21 @@ mod tests {
         let backdrops_dir = processor.create_backdrops_directory(&video_file).unwrap();
 
         // Verify the expected output paths for three clips
-        let expected_path1 = backdrops_dir.join("vid1.mp4");
-        let expected_path2 = backdrops_dir.join("vid2.mp4");
-        let expected_path3 = backdrops_dir.join("vid3.mp4");
+        let expected_path1 = backdrops_dir.join("backdrop1.mp4");
+        let expected_path2 = backdrops_dir.join("backdrop2.mp4");
+        let expected_path3 = backdrops_dir.join("backdrop3.mp4");
 
         assert_eq!(
             expected_path1.file_name().unwrap().to_str().unwrap(),
-            "vid1.mp4"
+            "backdrop1.mp4"
         );
         assert_eq!(
             expected_path2.file_name().unwrap().to_str().unwrap(),
-            "vid2.mp4"
+            "backdrop2.mp4"
         );
         assert_eq!(
             expected_path3.file_name().unwrap().to_str().unwrap(),
-            "vid3.mp4"
+            "backdrop3.mp4"
         );
 
         // Clean up
@@ -1373,7 +1381,7 @@ mod tests {
 
     #[test]
     fn test_sequential_naming_four_clips() {
-        // Test that four clips are named "vid1.mp4", "vid2.mp4", "vid3.mp4", "vid4.mp4"
+        // Test that four clips are named "backdrop1.mp4", "backdrop2.mp4", "backdrop3.mp4", "backdrop4.mp4"
         let temp_dir =
             std::env::temp_dir().join(format!("processor_naming_four_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
@@ -1390,26 +1398,26 @@ mod tests {
         let backdrops_dir = processor.create_backdrops_directory(&video_file).unwrap();
 
         // Verify the expected output paths for four clips
-        let expected_path1 = backdrops_dir.join("vid1.mp4");
-        let expected_path2 = backdrops_dir.join("vid2.mp4");
-        let expected_path3 = backdrops_dir.join("vid3.mp4");
-        let expected_path4 = backdrops_dir.join("vid4.mp4");
+        let expected_path1 = backdrops_dir.join("backdrop1.mp4");
+        let expected_path2 = backdrops_dir.join("backdrop2.mp4");
+        let expected_path3 = backdrops_dir.join("backdrop3.mp4");
+        let expected_path4 = backdrops_dir.join("backdrop4.mp4");
 
         assert_eq!(
             expected_path1.file_name().unwrap().to_str().unwrap(),
-            "vid1.mp4"
+            "backdrop1.mp4"
         );
         assert_eq!(
             expected_path2.file_name().unwrap().to_str().unwrap(),
-            "vid2.mp4"
+            "backdrop2.mp4"
         );
         assert_eq!(
             expected_path3.file_name().unwrap().to_str().unwrap(),
-            "vid3.mp4"
+            "backdrop3.mp4"
         );
         assert_eq!(
             expected_path4.file_name().unwrap().to_str().unwrap(),
-            "vid4.mp4"
+            "backdrop4.mp4"
         );
 
         // Clean up
@@ -1480,8 +1488,8 @@ mod tests {
         let backdrops_dir = processor.create_backdrops_directory(&video_file).unwrap();
 
         // Construct expected paths
-        let expected_path1 = backdrops_dir.join("vid1.mp4");
-        let expected_path2 = backdrops_dir.join("vid2.mp4");
+        let expected_path1 = backdrops_dir.join("backdrop1.mp4");
+        let expected_path2 = backdrops_dir.join("backdrop2.mp4");
 
         // Verify path structure
         assert_eq!(expected_path1.parent().unwrap(), &backdrops_dir);
@@ -1491,8 +1499,8 @@ mod tests {
         assert_eq!(backdrops_dir.parent().unwrap(), &video_file.parent_dir);
 
         // Verify full path structure
-        let expected_full_path1 = video_file.parent_dir.join("backdrops").join("vid1.mp4");
-        let expected_full_path2 = video_file.parent_dir.join("backdrops").join("vid2.mp4");
+        let expected_full_path1 = video_file.parent_dir.join("backdrops").join("backdrop1.mp4");
+        let expected_full_path2 = video_file.parent_dir.join("backdrops").join("backdrop2.mp4");
 
         assert_eq!(expected_path1, expected_full_path1);
         assert_eq!(expected_path2, expected_full_path2);
@@ -1510,7 +1518,7 @@ mod tests {
             clip_count in 1u8..=4u8,
         ) {
             // Property: For any clip count N (1-4), the generated clips should be named
-            // "vid1.mp4", "vid2.mp4", ..., "vidN.mp4" in sequential order
+            // "backdrop1.mp4", "backdrop2.mp4", ..., "vidN.mp4" in sequential order
 
             // Create a temporary directory for testing
             let temp_base = std::env::temp_dir().join(format!(
@@ -1556,7 +1564,7 @@ mod tests {
             }
 
             // Property 3: The naming should be sequential (no gaps)
-            // Verify that vid1.mp4, vid2.mp4, ..., vidN.mp4 exist (conceptually)
+            // Verify that backdrop1.mp4, backdrop2.mp4, ..., vidN.mp4 exist (conceptually)
             // and there are no other numbered clips
             for i in 1..=clip_count {
                 let expected_path = backdrops_dir.join(format!("vid{}.mp4", i));
@@ -1569,10 +1577,10 @@ mod tests {
             }
 
             // Property 4: The naming should start at 1 (not 0)
-            let first_clip_path = backdrops_dir.join("vid1.mp4");
+            let first_clip_path = backdrops_dir.join("backdrop1.mp4");
             prop_assert!(
-                first_clip_path.to_string_lossy().contains("vid1.mp4"),
-                "First clip should be named 'vid1.mp4', not 'vid0.mp4'"
+                first_clip_path.to_string_lossy().contains("backdrop1.mp4"),
+                "First clip should be named 'backdrop1.mp4', not 'backdrop0.mp4'"
             );
 
             // Property 5: The naming should end at N (not N+1)

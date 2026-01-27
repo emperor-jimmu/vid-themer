@@ -2,6 +2,7 @@
 
 use crate::logger::FailureLogger;
 use crate::processor::ProcessResult;
+use colored::Colorize;
 
 pub struct ProgressReporter {
     pub total: usize,
@@ -34,38 +35,39 @@ impl ProgressReporter {
 
     pub fn start(&mut self, total: usize) {
         self.total = total;
-        println!("Found {} videos to process", total);
+        println!("{} {} videos to process", "Found".bright_cyan().bold(), total.to_string().bright_yellow().bold());
     }
 
     pub fn update(&mut self, result: &ProcessResult) {
         self.current += 1;
 
         println!(
-            "[{}/{}] Processing: {}",
-            self.current,
-            self.total,
-            result.video_path.display()
+            "{} Processing: {}",
+            format!("[{}/{}]", self.current, self.total).bright_blue().bold(),
+            result.video_path.display().to_string().bright_white()
         );
 
         if result.success {
             self.successful += 1;
             if result.clips_generated == 1 {
-                println!("  -> Output: {}", result.output_path.display());
+                println!("  {} {}", "->".bright_green(), result.output_path.display().to_string().bright_cyan());
             } else {
                 println!(
-                    "  -> Generated {} clips in {}",
-                    result.clips_generated,
+                    "  {} Generated {} clips in {}",
+                    "->".bright_green(),
+                    result.clips_generated.to_string().bright_yellow().bold(),
                     result
                         .output_path
                         .parent()
                         .map(|p| p.display().to_string())
                         .unwrap_or_else(|| "backdrops/".to_string())
+                        .bright_cyan()
                 );
             }
         } else {
             self.failed += 1;
             if let Some(error) = &result.error_message {
-                println!("  X Error: {}", error);
+                println!("  {} {}", "X".bright_red().bold(), error.bright_red());
             }
 
             // Log failure to file if logger is available
@@ -77,14 +79,19 @@ impl ProgressReporter {
 
     pub fn finish(&self) {
         println!(
-            "Completed: {} successful, {} failed",
-            self.successful, self.failed
+            "{} {} successful, {} failed",
+            "Completed:".bright_cyan().bold(),
+            self.successful.to_string().bright_green().bold(),
+            self.failed.to_string().bright_red().bold()
         );
 
         if self.failed > 0
             && let Some(logger) = &self.logger
         {
-            println!("Failure details logged to: {}", logger.log_path().display());
+            println!("{} {}", 
+                "Failure details logged to:".bright_yellow(), 
+                logger.log_path().display().to_string().bright_white()
+            );
         }
     }
 }
