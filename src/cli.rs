@@ -25,12 +25,16 @@ pub struct CliArgs {
     pub include_audio: bool,
 
     /// Intro exclusion zone as percentage of video duration (0-100)
-    #[arg(long = "intro-exclusion", default_value_t = 1.0, value_parser = validate_percentage)]
+    #[arg(long = "intro-exclusion", default_value_t = 2.0, value_parser = validate_percentage)]
     pub intro_exclusion_percent: f64,
 
     /// Outro exclusion zone as percentage of video duration (0-100)
     #[arg(long = "outro-exclusion", default_value_t = 40.0, value_parser = validate_percentage)]
     pub outro_exclusion_percent: f64,
+
+    /// Number of clips to generate per video (1-4)
+    #[arg(short = 'c', long = "clip-count", default_value = "1", value_parser = validate_clip_count)]
+    pub clip_count: u8,
 }
 
 fn validate_percentage(s: &str) -> Result<f64, String> {
@@ -39,6 +43,17 @@ fn validate_percentage(s: &str) -> Result<f64, String> {
         return Err(format!("percentage must be between 0 and 100, got {}", value));
     }
     Ok(value)
+}
+
+fn validate_clip_count(s: &str) -> Result<u8, String> {
+    let count = s.parse::<u8>()
+        .map_err(|_| "Clip count must be a number".to_string())?;
+    
+    if count < 1 || count > 4 {
+        return Err("Clip count must be between 1 and 4".to_string());
+    }
+    
+    Ok(count)
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -558,5 +573,147 @@ mod tests {
         ]);
         assert_eq!(args.intro_exclusion_percent, 100.0);
         assert_eq!(args.outro_exclusion_percent, 100.0);
+    }
+
+    // Tests for clip_count parameter (Task 1.1)
+
+    #[test]
+    fn test_clip_count_default() {
+        // Test that clip count defaults to 1
+        let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path"]);
+        assert_eq!(args.clip_count, 1);
+    }
+
+    #[test]
+    fn test_clip_count_valid_1() {
+        // Test valid clip count: 1
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--clip-count",
+            "1"
+        ]);
+        assert_eq!(args.clip_count, 1);
+    }
+
+    #[test]
+    fn test_clip_count_valid_2() {
+        // Test valid clip count: 2
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--clip-count",
+            "2"
+        ]);
+        assert_eq!(args.clip_count, 2);
+    }
+
+    #[test]
+    fn test_clip_count_valid_3() {
+        // Test valid clip count: 3
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--clip-count",
+            "3"
+        ]);
+        assert_eq!(args.clip_count, 3);
+    }
+
+    #[test]
+    fn test_clip_count_valid_4() {
+        // Test valid clip count: 4
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--clip-count",
+            "4"
+        ]);
+        assert_eq!(args.clip_count, 4);
+    }
+
+    #[test]
+    fn test_clip_count_short_flag() {
+        // Test short flag for clip count
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "-c",
+            "3"
+        ]);
+        assert_eq!(args.clip_count, 3);
+    }
+
+    #[test]
+    fn test_clip_count_invalid_zero() {
+        // Test that clip count of 0 produces an error
+        let result = CliArgs::try_parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--clip-count",
+            "0"
+        ]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    fn test_clip_count_invalid_5() {
+        // Test that clip count of 5 produces an error
+        let result = CliArgs::try_parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--clip-count",
+            "5"
+        ]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    fn test_clip_count_invalid_negative() {
+        // Test that negative clip count produces an error
+        let result = CliArgs::try_parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--clip-count",
+            "-1"
+        ]);
+        assert!(result.is_err());
+        // Negative values fail at parse stage
+    }
+
+    #[test]
+    fn test_clip_count_invalid_non_numeric() {
+        // Test that non-numeric clip count produces an error
+        let result = CliArgs::try_parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--clip-count",
+            "abc"
+        ]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    fn test_clip_count_with_other_flags() {
+        // Test clip count combined with other flags
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "-c",
+            "2",
+            "-s",
+            "intense-audio",
+            "-r",
+            "720p"
+        ]);
+        assert_eq!(args.clip_count, 2);
+        assert!(matches!(args.strategy, SelectionStrategy::IntenseAudio));
+        assert!(matches!(args.resolution, Resolution::Hd720));
     }
 }

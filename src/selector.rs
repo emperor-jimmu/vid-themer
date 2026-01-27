@@ -311,7 +311,7 @@ mod tests {
             // Test that for videos long enough to accommodate exclusions,
             // the selected segment respects the intro and outro exclusion zones
             
-            const INTRO_EXCLUSION_PERCENT: f64 = 1.0;
+            const INTRO_EXCLUSION_PERCENT: f64 = 2.0;
             const OUTRO_EXCLUSION_PERCENT: f64 = 40.0;
             const MIN_CLIP_DURATION: f64 = 12.0;
             const MAX_CLIP_DURATION: f64 = 18.0;
