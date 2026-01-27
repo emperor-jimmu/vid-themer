@@ -128,14 +128,9 @@ impl VideoProcessor {
         let mut last_output_path = PathBuf::new();
         let total_clips = time_ranges.len();
         
-        // Get video filename for progress display
-        let video_name = video.path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("video");
-        
         for (index, time_range) in time_ranges.iter().enumerate() {
             let clip_num = index + 1;
+            let output_filename = format!("vid{}.mp4", clip_num);
             
             // Show per-clip progress bar for multiple clips
             if total_clips > 1 {
@@ -143,10 +138,10 @@ impl VideoProcessor {
                 let filled = (clip_num * bar_width) / total_clips;
                 let empty = bar_width - filled;
                 let bar = format!("[{}{}]", "X".repeat(filled), " ".repeat(empty));
-                println!("  {} {} {}/{}", video_name, bar, clip_num, total_clips);
+                println!("  {} {} {}/{}", output_filename, bar, clip_num, total_clips);
             }
             
-            let output_path = backdrops_dir.join(format!("vid{}.mp4", clip_num));
+            let output_path = backdrops_dir.join(&output_filename);
             last_output_path = output_path.clone();
 
             if let Err(e) = self
