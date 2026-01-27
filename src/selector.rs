@@ -55,6 +55,7 @@ impl ClipConfig {
 /// Represents a time segment within a video.
 ///
 /// Used to specify which portion of a video should be extracted as a clip.
+#[derive(Clone)]
 pub struct TimeRange {
     /// Start position in seconds from the beginning of the video
     pub start_seconds: f64,
@@ -232,29 +233,40 @@ impl ClipSelector for RandomSelector {
         let mut attempts = 0;
 
         // Implement loop to generate N random non-overlapping clips
+        // Use a smarter approach: track available gaps and sample from them
         while clips.len() < actual_clip_count as usize && attempts < MAX_ATTEMPTS {
             attempts += 1;
 
             // Generate random clip duration between min and max
             let clip_duration = rng.gen_range(MIN_CLIP_DURATION..=MAX_CLIP_DURATION);
 
-            // Calculate valid start range
-            let max_start = outro_cutoff - clip_duration;
+            // Find available gaps between existing clips
+            let available_gaps = self.find_available_gaps(
+                intro_cutoff,
+                outro_cutoff,
+                &clips,
+                clip_duration,
+            );
 
-            // Skip if no valid range exists
-            if intro_cutoff >= max_start {
+            // If no gaps available, try with a shorter clip duration
+            if available_gaps.is_empty() {
                 continue;
             }
 
-            // Generate random start time within valid bounds
-            let start = rng.gen_range(intro_cutoff..=max_start);
+            // Randomly select a gap
+            let gap_index = rng.gen_range(0..available_gaps.len());
+            let (gap_start, gap_end) = available_gaps[gap_index];
+
+            // Generate random start time within the selected gap
+            let max_start = gap_end - clip_duration;
+            let start = rng.gen_range(gap_start..=max_start);
 
             let candidate = TimeRange {
                 start_seconds: start,
                 duration_seconds: clip_duration,
             };
 
-            // Check for overlaps with existing clips
+            // Double-check for overlaps (should not happen with gap-based approach)
             if !clips.iter().any(|existing| candidate.overlaps(existing)) {
                 clips.push(candidate);
             }
@@ -264,6 +276,58 @@ impl ClipSelector for RandomSelector {
         clips.sort_by(|a, b| a.start_seconds.partial_cmp(&b.start_seconds).unwrap());
 
         Ok(clips)
+    }
+}
+
+impl RandomSelector {
+    /// Find available gaps in the valid zone where a clip of the given duration can fit.
+    /// Returns a vector of (start, end) tuples representing available gaps.
+    fn find_available_gaps(
+        &self,
+        intro_cutoff: f64,
+        outro_cutoff: f64,
+        existing_clips: &[TimeRange],
+        clip_duration: f64,
+    ) -> Vec<(f64, f64)> {
+        let mut gaps = Vec::new();
+
+        // If no existing clips, the entire valid zone is available
+        if existing_clips.is_empty() {
+            if outro_cutoff - intro_cutoff >= clip_duration {
+                gaps.push((intro_cutoff, outro_cutoff));
+            }
+            return gaps;
+        }
+
+        // Sort clips by start time (should already be sorted, but ensure it)
+        let mut sorted_clips = existing_clips.to_vec();
+        sorted_clips.sort_by(|a, b| a.start_seconds.partial_cmp(&b.start_seconds).unwrap());
+
+        // Check gap before first clip
+        let first_clip_start = sorted_clips[0].start_seconds;
+        if first_clip_start - intro_cutoff >= clip_duration {
+            gaps.push((intro_cutoff, first_clip_start));
+        }
+
+        // Check gaps between consecutive clips
+        for i in 0..sorted_clips.len() - 1 {
+            let current_end = sorted_clips[i].start_seconds + sorted_clips[i].duration_seconds;
+            let next_start = sorted_clips[i + 1].start_seconds;
+            let gap_size = next_start - current_end;
+
+            if gap_size >= clip_duration {
+                gaps.push((current_end, next_start));
+            }
+        }
+
+        // Check gap after last clip
+        let last_clip_end = sorted_clips[sorted_clips.len() - 1].start_seconds
+            + sorted_clips[sorted_clips.len() - 1].duration_seconds;
+        if outro_cutoff - last_clip_end >= clip_duration {
+            gaps.push((last_clip_end, outro_cutoff));
+        }
+
+        gaps
     }
 }
 
@@ -1661,6 +1725,47 @@ mod tests {
                 prop_assert!(clip.start_seconds >= intro_cutoff && clip_end <= outro_cutoff,
                     "Clip {} [{}, {}) should be entirely within valid zone [{}, {})",
                     i, clip.start_seconds, clip_end, intro_cutoff, outro_cutoff);
+            }
+        }
+    }
+
+    // Feature: multiple-clips-per-video, Property 6: Duration Constraint Compliance
+    proptest! {
+        #[test]
+        fn test_duration_constraint_compliance_property(
+            duration in 100.0..3600.0f64,
+            intro_percent in 0.0..=20.0f64,
+            outro_percent in 0.0..=50.0f64,
+            clip_count in 1u8..=4u8,
+        ) {
+            // **Validates: Requirements 5.1**
+            // Property: For any generated clip, the clip duration should be between
+            // MIN_CLIP_DURATION (12 seconds) and MAX_CLIP_DURATION (18 seconds) inclusive.
+
+            let selector = RandomSelector;
+            let video_path = PathBuf::from("test.mp4");
+
+            let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, clip_count);
+            prop_assert!(result.is_ok(), "Selection should succeed");
+
+            let clips = result.unwrap();
+
+            // Property: All clips must have valid durations (12-18 seconds)
+            for (i, clip) in clips.iter().enumerate() {
+                let clip_duration = clip.duration();
+
+                prop_assert!(clip_duration >= MIN_CLIP_DURATION,
+                    "Clip {} duration {} should be >= MIN_CLIP_DURATION ({})",
+                    i, clip_duration, MIN_CLIP_DURATION);
+
+                prop_assert!(clip_duration <= MAX_CLIP_DURATION,
+                    "Clip {} duration {} should be <= MAX_CLIP_DURATION ({})",
+                    i, clip_duration, MAX_CLIP_DURATION);
+
+                // Also verify using the is_valid_duration method
+                prop_assert!(clip.is_valid_duration(),
+                    "Clip {} with duration {} should pass is_valid_duration() check",
+                    i, clip_duration);
             }
         }
     }

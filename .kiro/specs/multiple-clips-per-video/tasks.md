@@ -81,7 +81,8 @@ This implementation plan breaks down the multiple-clips-per-video feature into d
     - **Property 5: Exclusion Zone Compliance**
     - **Validates: Requirements 4.1**
 
-  - [ ]* 4.5 Write property test for duration constraints
+  - [x] 4.5 Write property test for duration constraints
+
     - **Property 6: Duration Constraint Compliance**
     - **Validates: Requirements 5.1**
 
