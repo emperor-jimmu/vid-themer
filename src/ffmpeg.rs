@@ -385,11 +385,11 @@ impl FFmpegExecutor {
             }
         }
 
-        // Handle timestamp edge cases - use make_non_negative for better HLS compatibility
-        // This shifts timestamps to be non-negative while preserving relative timing
+        // Handle timestamp edge cases - start timestamps at zero for maximum compatibility
+        // This ensures clips work properly with HLS streaming and all players
         args.extend(vec![
             "-avoid_negative_ts".to_string(),
-            "make_non_negative".to_string(),
+            "make_zero".to_string(),
         ]);
 
         args.extend(vec![
@@ -442,8 +442,8 @@ impl FFmpegExecutor {
             }
         } else {
             // Software encoding with libx264
-            // H.264 (AVC) with Main Profile, Level 4.0 for maximum direct play compatibility
-            // Main profile is supported by virtually all devices without transcoding
+            // H.264 (AVC) with High Profile, Level 4.0 for maximum compatibility
+            // High profile with specific constraints for web browser compatibility
             args.extend(vec![
                 "-c:v".to_string(),
                 "libx264".to_string(),
@@ -452,9 +452,9 @@ impl FFmpegExecutor {
                 // CRF for quality/size balance (23 = higher quality for better direct play)
                 "-crf".to_string(),
                 "23".to_string(),
-                // H.264 Profile: Main (universal compatibility, direct play on all devices)
+                // H.264 Profile: High with constrained settings for web compatibility
                 "-profile:v".to_string(),
-                "main".to_string(),
+                "high".to_string(),
                 // H.264 Level: 4.0 (supports up to 1080p @ 30fps, maximum compatibility)
                 "-level:v".to_string(),
                 "4.0".to_string(),
@@ -516,9 +516,11 @@ impl FFmpegExecutor {
         args.extend(self.build_audio_args());
 
         // MP4 muxer options for streaming compatibility
+        // faststart: Move moov atom to beginning for streaming
+        // frag_keyframe: Fragment at keyframes for better seeking in browsers
         args.extend(vec![
             "-movflags".to_string(),
-            "+faststart".to_string(), // Move moov atom to beginning for streaming
+            "+faststart+frag_keyframe".to_string(),
         ]);
 
         // Output file (overwrite if exists)
