@@ -43,7 +43,7 @@ fn test_full_pipeline_with_sample_videos() {
     let mut videos_created = 0;
     for video_path in &video_paths {
         // Create videos with different durations and resolutions
-        let duration = 15; // 15 seconds
+        let duration = 30; // 30 seconds (enough for 10-15s clip with 1% intro + 40% outro exclusion)
         let (width, height) = (1280, 720); // 720p
 
         if create_test_video(video_path, duration, width, height) {
@@ -119,9 +119,9 @@ fn test_full_pipeline_with_sample_videos() {
 
     // Verify output files are created in correct locations
     let expected_outputs = vec![
-        movies_dir.join("backdrops").join("backdrop.mp4"),
-        shows_dir.join("backdrops").join("backdrop.mp4"),
-        nested_dir.join("backdrops").join("backdrop.mp4"),
+        movies_dir.join("backdrops").join("backdrop1.mp4"),
+        shows_dir.join("backdrops").join("backdrop1.mp4"),
+        nested_dir.join("backdrops").join("backdrop1.mp4"),
     ];
 
     let mut clips_found = 0;
@@ -190,7 +190,7 @@ fn test_full_pipeline_with_sample_videos() {
 #[test]
 fn test_pipeline_with_existing_clips() {
     // Test that the tool overwrites existing clips
-    // Note: The scanner skips directories with existing backdrops/backdrop.mp4,
+    // Note: The scanner skips directories with existing backdrops/backdrop1.mp4,
     // so we need to test the overwrite behavior by running the tool twice
     let temp_base =
         std::env::temp_dir().join(format!("integration_overwrite_test_{}", std::process::id()));
@@ -200,7 +200,7 @@ fn test_pipeline_with_existing_clips() {
     let video_path = temp_base.join("test_video.mp4");
 
     // Create a test video
-    if !create_test_video(&video_path, 15, 1280, 720) {
+    if !create_test_video(&video_path, 30, 1280, 720) {
         eprintln!("Skipping overwrite test: FFmpeg not available");
         let _ = fs::remove_dir_all(&temp_base);
         return;
@@ -225,7 +225,7 @@ fn test_pipeline_with_existing_clips() {
     );
 
     let backdrops_dir = temp_base.join("backdrops");
-    let clip_path = backdrops_dir.join("backdrop.mp4");
+    let clip_path = backdrops_dir.join("backdrop1.mp4");
 
     assert!(clip_path.exists(), "Clip should be created on first run");
 
@@ -236,7 +236,7 @@ fn test_pipeline_with_existing_clips() {
     std::thread::sleep(std::time::Duration::from_millis(100));
 
     // Run the tool a second time - it should overwrite the existing clip
-    // Since the directory now has backdrops/backdrop.mp4, the scanner will skip it
+    // Since the directory now has backdrops/backdrop1.mp4, the scanner will skip it
     // This test verifies that the scanner correctly skips directories with existing clips
     let output2 = Command::new(&binary_path)
         .arg(&temp_base)
@@ -251,7 +251,7 @@ fn test_pipeline_with_existing_clips() {
         "Second run should complete successfully"
     );
 
-    // The scanner should skip the directory since it has backdrops/backdrop.mp4
+    // The scanner should skip the directory since it has backdrops/backdrop1.mp4
     assert!(
         stdout2.contains("already have backdrop clips") || stdout2.contains("No videos found"),
         "Scanner should skip directory with existing backdrop"
@@ -281,7 +281,7 @@ fn test_pipeline_with_existing_clips() {
 
 #[test]
 fn test_pipeline_skips_directories_with_existing_clips() {
-    // Test that directories with existing backdrops/backdrop.mp4 are skipped
+    // Test that directories with existing backdrops/backdrop1.mp4 are skipped
     let temp_base =
         std::env::temp_dir().join(format!("integration_skip_test_{}", std::process::id()));
     let _ = fs::remove_dir_all(&temp_base);
@@ -297,8 +297,8 @@ fn test_pipeline_skips_directories_with_existing_clips() {
     let video1 = dir1.join("video1.mp4");
     let video2 = dir2.join("video2.mp4");
 
-    let videos_created = create_test_video(&video1, 15, 1280, 720) as u32
-        + create_test_video(&video2, 15, 1280, 720) as u32;
+    let videos_created = create_test_video(&video1, 30, 1280, 720) as u32
+        + create_test_video(&video2, 30, 1280, 720) as u32;
 
     if videos_created == 0 {
         eprintln!("Skipping skip test: FFmpeg not available");
@@ -309,7 +309,7 @@ fn test_pipeline_skips_directories_with_existing_clips() {
     // Create an existing backdrop in dir1 (should cause dir1 to be skipped)
     let backdrops_dir1 = dir1.join("backdrops");
     fs::create_dir_all(&backdrops_dir1).unwrap();
-    let existing_clip1 = backdrops_dir1.join("backdrop.mp4");
+    let existing_clip1 = backdrops_dir1.join("backdrop1.mp4");
     fs::File::create(&existing_clip1).unwrap();
 
     // Build the project
@@ -333,7 +333,7 @@ fn test_pipeline_skips_directories_with_existing_clips() {
     // Verify that only dir2 was processed (dir1 should be skipped)
     // The output should show fewer videos found than we created
     let backdrops_dir2 = dir2.join("backdrops");
-    let clip2 = backdrops_dir2.join("backdrop.mp4");
+    let clip2 = backdrops_dir2.join("backdrop1.mp4");
 
     // dir2 should have a new clip
     if videos_created == 2 {

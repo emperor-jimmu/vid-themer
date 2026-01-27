@@ -34,14 +34,22 @@ impl VideoScanner {
             return true;
         }
 
-        // Check if it already has a valid backdrop (non-zero size)
-        let backdrop_path = dir.join(BACKDROPS_DIR).join(BACKDROP_FILE);
-        if backdrop_path.exists() {
-            // Check if the file has non-zero size
-            if let Ok(metadata) = std::fs::metadata(&backdrop_path)
-                && metadata.len() > 0
-            {
-                return true; // Skip only if file exists and has content
+        // Check if it already has any valid backdrop files (non-zero size)
+        let backdrops_dir = dir.join(BACKDROPS_DIR);
+        if backdrops_dir.exists() && backdrops_dir.is_dir() {
+            // Check if there are any non-zero size .mp4 files in the backdrops directory
+            if let Ok(entries) = std::fs::read_dir(&backdrops_dir) {
+                for entry in entries.flatten() {
+                    if let Ok(metadata) = entry.metadata() {
+                        if metadata.is_file() && metadata.len() > 0 {
+                            if let Some(ext) = entry.path().extension() {
+                                if ext == "mp4" {
+                                    return true; // Skip if any valid backdrop file exists
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 

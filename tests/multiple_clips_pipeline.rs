@@ -106,8 +106,8 @@ fn test_full_pipeline_with_multiple_clips() {
         // Verify clip duration is within constraints (12-18 seconds) (Requirement 5.1)
         if let Some(duration) = get_video_duration(clip_path) {
             assert!(
-                duration >= 11.5 && duration <= 18.5,
-                "Clip {} duration should be between 12 and 18 seconds, got: {:.2}s (Requirement 5.1)",
+                duration >= 9.5 && duration <= 15.5,
+                "Clip {} duration should be between 10 and 15 seconds, got: {:.2}s (Requirement 5.1)",
                 i + 1,
                 duration
             );
@@ -218,8 +218,8 @@ fn test_backward_compatibility_single_clip() {
 
     if let Some(duration) = get_video_duration(&clip1) {
         assert!(
-            duration >= 11.5 && duration <= 18.5,
-            "Clip duration should be between 12 and 18 seconds, got: {:.2}s",
+            duration >= 9.5 && duration <= 15.5,
+            "Clip duration should be between 10 and 15 seconds, got: {:.2}s",
             duration
         );
         println!("  Clip duration: {:.2}s", duration);
@@ -440,7 +440,7 @@ fn test_strategy_specific_intense_audio() {
 
     // Verify clips are valid
     for i in 1..=clips_created {
-        let clip_path = backdrops_dir.join(format!("vid{}.mp4", i));
+        let clip_path = backdrops_dir.join(format!("backdrop{}.mp4", i));
         let metadata = fs::metadata(&clip_path).unwrap();
         assert!(metadata.len() > 0, "Clip {} should not be empty", i);
     }

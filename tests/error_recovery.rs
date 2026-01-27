@@ -31,11 +31,11 @@ fn test_error_recovery_with_corrupted_video() {
     let video3 = dir3.join("valid_video3.mp4");
 
     let mut valid_videos_created = 0;
-    if create_test_video(&video1, 15, 1280, 720) {
+    if create_test_video(&video1, 30, 1280, 720) {
         valid_videos_created += 1;
         println!("Created valid test video: {:?}", video1);
     }
-    if create_test_video(&video3, 15, 1280, 720) {
+    if create_test_video(&video3, 30, 1280, 720) {
         valid_videos_created += 1;
         println!("Created valid test video: {:?}", video3);
     }
@@ -110,8 +110,8 @@ fn test_error_recovery_with_corrupted_video() {
 
     // Verify that valid videos were still processed successfully
     // Requirement 7.2: Continue processing other videos after error
-    let clip1 = dir1.join("backdrops").join("backdrop.mp4");
-    let clip3 = dir3.join("backdrops").join("backdrop.mp4");
+    let clip1 = dir1.join("backdrops").join("backdrop1.mp4");
+    let clip3 = dir3.join("backdrops").join("backdrop1.mp4");
 
     let mut successful_clips = 0;
     if clip1.exists() {
@@ -139,7 +139,7 @@ fn test_error_recovery_with_corrupted_video() {
     );
 
     // Verify the corrupted video did NOT produce a clip
-    let corrupted_clip = dir2.join("backdrops").join("backdrop.mp4");
+    let corrupted_clip = dir2.join("backdrops").join("backdrop1.mp4");
     assert!(
         !corrupted_clip.exists() || fs::metadata(&corrupted_clip).unwrap().len() == 0,
         "Corrupted video should not produce a valid clip"

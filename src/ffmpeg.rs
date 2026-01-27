@@ -12,9 +12,9 @@ mod constants {
     /// Target bitrate for hardware-accelerated encoding (5 Mbps)
     pub const HW_ACCEL_BITRATE: &str = "5M";
 
-    /// Constant Rate Factor for software encoding (32 = lower quality, smaller files)
+    /// Constant Rate Factor for software encoding (27 = lower quality, smaller files)
     /// Range: 0-51, where lower = better quality, 18-28 is typical
-    pub const SOFTWARE_CRF: &str = "32";
+    pub const SOFTWARE_CRF: &str = "27";
 
     /// Keyframe interval in frames (30 frames ≈ 1 second at 30fps)
     /// Ensures good seeking and streaming compatibility
@@ -437,7 +437,7 @@ impl FFmpegExecutor {
                 "libx264".to_string(),
                 "-preset".to_string(),
                 "fast".to_string(),
-                // CRF for quality/size balance (32 = lower quality, smaller files)
+                // CRF for quality/size balance (27 = lower quality, smaller files)
                 "-crf".to_string(),
                 constants::SOFTWARE_CRF.to_string(),
                 // H.264 Profile: High (best compression, widely supported)

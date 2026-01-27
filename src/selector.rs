@@ -12,10 +12,10 @@ pub const INTRO_EXCLUSION_PERCENT: f64 = 1.0;
 pub const OUTRO_EXCLUSION_PERCENT: f64 = 40.0;
 
 /// Minimum clip duration in seconds
-pub const MIN_CLIP_DURATION: f64 = 12.0;
+pub const MIN_CLIP_DURATION: f64 = 10.0;
 
 /// Maximum clip duration in seconds
-pub const MAX_CLIP_DURATION: f64 = 18.0;
+pub const MAX_CLIP_DURATION: f64 = 15.0;
 
 /// Configuration for clip duration constraints
 pub struct ClipConfig {
@@ -114,8 +114,8 @@ impl TimeRange {
 
     /// Check if the duration of this time range is within valid clip bounds.
     ///
-    /// Valid clip durations are between MIN_CLIP_DURATION (12 seconds) and
-    /// MAX_CLIP_DURATION (18 seconds) inclusive.
+    /// Valid clip durations are between MIN_CLIP_DURATION (10 seconds) and
+    /// MAX_CLIP_DURATION (15 seconds) inclusive.
     ///
     /// # Returns
     /// `true` if the duration is valid, `false` otherwise
@@ -123,7 +123,7 @@ impl TimeRange {
     /// # Examples
     /// ```
     /// # use video_clip_extractor::selector::TimeRange;
-    /// let valid_range = TimeRange { start_seconds: 10.0, duration_seconds: 15.0 };
+    /// let valid_range = TimeRange { start_seconds: 10.0, duration_seconds: 12.0 };
     /// assert!(valid_range.is_valid_duration());
     ///
     /// let too_short = TimeRange { start_seconds: 10.0, duration_seconds: 5.0 };
@@ -514,7 +514,7 @@ impl ClipSelector for ActionSelector {
                     let segment_end = seg.start_time + seg.duration;
                     zones.contains_segment(seg.start_time, segment_end)
                 }) {
-                    // Adjust clip duration to fit 12-18 second range
+                    // Adjust clip duration to fit 10-15 second range
                     let clip_duration = best_segment
                         .duration
                         .max(config.min_duration)
@@ -798,45 +798,45 @@ mod tests {
 
     #[test]
     fn test_timerange_valid_duration_within_bounds() {
-        // Test valid durations (12-18 seconds)
+        // Test valid durations (10-15 seconds)
         let range_min = TimeRange {
             start_seconds: 10.0,
-            duration_seconds: 12.0,
+            duration_seconds: 10.0,
         };
         assert!(
             range_min.is_valid_duration(),
-            "12 seconds should be valid (minimum)"
+            "10 seconds should be valid (minimum)"
         );
 
         let range_mid = TimeRange {
             start_seconds: 10.0,
-            duration_seconds: 15.0,
+            duration_seconds: 12.5,
         };
         assert!(
             range_mid.is_valid_duration(),
-            "15 seconds should be valid (middle)"
+            "12.5 seconds should be valid (middle)"
         );
 
         let range_max = TimeRange {
             start_seconds: 10.0,
-            duration_seconds: 18.0,
+            duration_seconds: 15.0,
         };
         assert!(
             range_max.is_valid_duration(),
-            "18 seconds should be valid (maximum)"
+            "15 seconds should be valid (maximum)"
         );
     }
 
     #[test]
     fn test_timerange_invalid_duration_too_short() {
-        // Test durations below minimum (< 12 seconds)
+        // Test durations below minimum (< 10 seconds)
         let range_short = TimeRange {
             start_seconds: 10.0,
-            duration_seconds: 11.9,
+            duration_seconds: 9.9,
         };
         assert!(
             !range_short.is_valid_duration(),
-            "11.9 seconds should be invalid (too short)"
+            "9.9 seconds should be invalid (too short)"
         );
 
         let range_very_short = TimeRange {
@@ -860,14 +860,14 @@ mod tests {
 
     #[test]
     fn test_timerange_invalid_duration_too_long() {
-        // Test durations above maximum (> 18 seconds)
+        // Test durations above maximum (> 15 seconds)
         let range_long = TimeRange {
             start_seconds: 10.0,
-            duration_seconds: 18.1,
+            duration_seconds: 15.1,
         };
         assert!(
             !range_long.is_valid_duration(),
-            "18.1 seconds should be invalid (too long)"
+            "15.1 seconds should be invalid (too long)"
         );
 
         let range_very_long = TimeRange {
@@ -1062,8 +1062,8 @@ mod tests {
 
             const INTRO_EXCLUSION_PERCENT: f64 = 2.0;
             const OUTRO_EXCLUSION_PERCENT: f64 = 40.0;
-            const MIN_CLIP_DURATION: f64 = 12.0;
-            const MAX_CLIP_DURATION: f64 = 18.0;
+            const MIN_CLIP_DURATION: f64 = 10.0;
+            const MAX_CLIP_DURATION: f64 = 15.0;
 
             let selector = RandomSelector;
             let video_path = PathBuf::from("test.mp4");
@@ -1125,9 +1125,9 @@ mod tests {
         let intro_exclusion = duration * (INTRO_EXCLUSION_PERCENT / 100.0); // 6 seconds
         let outro_exclusion = duration * (OUTRO_EXCLUSION_PERCENT / 100.0); // 240 seconds
 
-        // Verify clip duration is between 12 and 18 seconds
-        assert!(time_range.duration_seconds >= 12.0);
-        assert!(time_range.duration_seconds <= 18.0);
+        // Verify clip duration is between 10 and 15 seconds
+        assert!(time_range.duration_seconds >= 10.0);
+        assert!(time_range.duration_seconds <= 15.0);
 
         // Verify start time respects exclusion zones
         assert!(time_range.start_seconds >= intro_exclusion); // After intro exclusion
@@ -1140,7 +1140,7 @@ mod tests {
     fn test_random_selector_short_video_fallback() {
         let selector = RandomSelector;
         let video_path = PathBuf::from("test.mp4");
-        let duration = 10.0; // 10 seconds - too short for 1% intro (0.1s) + 12-18s clip + 40% outro (4s) = needs >16.1s
+        let duration = 10.0; // 10 seconds - too short for 1% intro (0.1s) + 10-15s clip + 40% outro (4s) = needs >14.1s
 
         let result = selector.select_clips(
             &video_path,
@@ -1741,7 +1741,7 @@ mod tests {
         ) {
             // **Validates: Requirements 5.1**
             // Property: For any generated clip, the clip duration should be between
-            // MIN_CLIP_DURATION (12 seconds) and MAX_CLIP_DURATION (18 seconds) inclusive.
+            // MIN_CLIP_DURATION (10 seconds) and MAX_CLIP_DURATION (15 seconds) inclusive.
 
             let selector = RandomSelector;
             let video_path = PathBuf::from("test.mp4");
@@ -1751,7 +1751,7 @@ mod tests {
 
             let clips = result.unwrap();
 
-            // Property: All clips must have valid durations (12-18 seconds)
+            // Property: All clips must have valid durations (10-15 seconds)
             for (i, clip) in clips.iter().enumerate() {
                 let clip_duration = clip.duration();
 
@@ -1784,11 +1784,11 @@ mod tests {
 
         let time_range = result.unwrap();
 
-        // Should use 18 seconds (max clip duration)
-        assert_eq!(time_range.duration_seconds, 18.0);
+        // Should use 15 seconds (max clip duration)
+        assert_eq!(time_range.duration_seconds, 15.0);
 
-        // Should be centered: (600 - 18) / 2 = 291.0
-        assert_eq!(time_range.start_seconds, 291.0);
+        // Should be centered: (600 - 15) / 2 = 292.5
+        assert_eq!(time_range.start_seconds, 292.5);
     }
 
     #[test]
@@ -1865,14 +1865,14 @@ mod tests {
         let time_range = &time_ranges[0];
 
         // Verify it uses middle segment calculation
-        // For a 600 second video, with 18 second clip duration:
-        // start = (600 - 18) / 2 = 291.0
+        // For a 600 second video, with 15 second clip duration:
+        // start = (600 - 15) / 2 = 292.5
         assert_eq!(
-            time_range.duration_seconds, 18.0,
-            "Should use max clip duration (18s)"
+            time_range.duration_seconds, 15.0,
+            "Should use max clip duration (15s)"
         );
         assert_eq!(
-            time_range.start_seconds, 291.0,
+            time_range.start_seconds, 292.5,
             "Should center the clip in the video"
         );
 
@@ -1895,10 +1895,10 @@ mod tests {
         assert!(!time_ranges_short.is_empty());
         let time_range_short = &time_ranges_short[0];
 
-        // For a 120 second video, with 18 second clip:
-        // start = (120 - 18) / 2 = 51.0
-        assert_eq!(time_range_short.duration_seconds, 18.0);
-        assert_eq!(time_range_short.start_seconds, 51.0);
+        // For a 120 second video, with 15 second clip:
+        // start = (120 - 15) / 2 = 52.5
+        assert_eq!(time_range_short.duration_seconds, 15.0);
+        assert_eq!(time_range_short.start_seconds, 52.5);
 
         // Test with a very short video (< 18 seconds)
         let very_short_duration = 7.0; // 7 seconds
@@ -2467,14 +2467,14 @@ mod tests {
         let time_range = &time_ranges[0];
 
         // Verify it uses middle segment calculation
-        // For a 600 second video, with 18 second clip duration:
-        // start = (600 - 18) / 2 = 291.0
+        // For a 600 second video, with 15 second clip duration:
+        // start = (600 - 15) / 2 = 292.5
         assert_eq!(
-            time_range.duration_seconds, 18.0,
-            "Should use max clip duration (18s)"
+            time_range.duration_seconds, 15.0,
+            "Should use max clip duration (15s)"
         );
         assert_eq!(
-            time_range.start_seconds, 291.0,
+            time_range.start_seconds, 292.5,
             "Should center the clip in the video"
         );
     }
@@ -2715,8 +2715,8 @@ mod tests {
             use crate::cli::Resolution;
             use std::path::PathBuf;
 
-            const MIN_CLIP_DURATION: f64 = 12.0;
-            const MAX_CLIP_DURATION: f64 = 18.0;
+            const MIN_CLIP_DURATION: f64 = 10.0;
+            const MAX_CLIP_DURATION: f64 = 15.0;
 
             // Create an FFmpegExecutor and ActionSelector
             let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
@@ -2756,7 +2756,7 @@ mod tests {
     proptest! {
         #[test]
         fn test_action_clip_within_video_boundaries(
-            duration in 12.0..3600.0f64,
+            duration in 10.0..3600.0f64,
             intro_percent in 0.0..=10.0f64,
             outro_percent in 0.0..=50.0f64,
         ) {
@@ -2795,7 +2795,7 @@ mod tests {
     proptest! {
         #[test]
         fn test_action_valid_timerange_return(
-            duration in 12.0..3600.0f64,
+            duration in 10.0..3600.0f64,
             intro_percent in 0.0..=10.0f64,
             outro_percent in 0.0..=50.0f64,
         ) {
@@ -2837,7 +2837,7 @@ mod tests {
     proptest! {
         #[test]
         fn test_action_middle_segment_consistency(
-            duration in 12.0..3600.0f64,
+            duration in 10.0..3600.0f64,
         ) {
             // Test that middle_segment produces consistent results regardless of selector
             let config = ClipConfig::default();
