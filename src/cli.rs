@@ -38,21 +38,27 @@ pub struct CliArgs {
 }
 
 fn validate_percentage(s: &str) -> Result<f64, String> {
-    let value: f64 = s.parse().map_err(|_| format!("'{}' is not a valid number", s))?;
+    let value: f64 = s
+        .parse()
+        .map_err(|_| format!("'{}' is not a valid number", s))?;
     if !(0.0..=100.0).contains(&value) {
-        return Err(format!("percentage must be between 0 and 100, got {}", value));
+        return Err(format!(
+            "percentage must be between 0 and 100, got {}",
+            value
+        ));
     }
     Ok(value)
 }
 
 fn validate_clip_count(s: &str) -> Result<u8, String> {
-    let count = s.parse::<u8>()
+    let count = s
+        .parse::<u8>()
         .map_err(|_| "Clip count must be a number".to_string())?;
-    
-    if count < 1 || count > 4 {
+
+    if !(1..=4).contains(&count) {
         return Err("Clip count must be between 1 and 4".to_string());
     }
-    
+
     Ok(count)
 }
 
@@ -81,7 +87,7 @@ mod tests {
     fn test_default_values() {
         // Test that default values are applied when optional arguments are omitted
         let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path"]);
-        
+
         assert_eq!(args.directory, PathBuf::from("/test/path"));
         assert!(matches!(args.strategy, SelectionStrategy::Random));
         assert!(matches!(args.resolution, Resolution::Hd1080));
@@ -91,13 +97,9 @@ mod tests {
     #[test]
     fn test_strategy_random() {
         // Test explicit random strategy flag
-        let args = CliArgs::parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "--strategy",
-            "random"
-        ]);
-        
+        let args =
+            CliArgs::parse_from(&["video-clip-extractor", "/test/path", "--strategy", "random"]);
+
         assert!(matches!(args.strategy, SelectionStrategy::Random));
     }
 
@@ -108,48 +110,35 @@ mod tests {
             "video-clip-extractor",
             "/test/path",
             "--strategy",
-            "intense-audio"
+            "intense-audio",
         ]);
-        
+
         assert!(matches!(args.strategy, SelectionStrategy::IntenseAudio));
     }
 
     #[test]
     fn test_strategy_short_flag() {
         // Test short flag for strategy
-        let args = CliArgs::parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "-s",
-            "intense-audio"
-        ]);
-        
+        let args =
+            CliArgs::parse_from(&["video-clip-extractor", "/test/path", "-s", "intense-audio"]);
+
         assert!(matches!(args.strategy, SelectionStrategy::IntenseAudio));
     }
 
     #[test]
     fn test_strategy_action() {
         // Test action strategy flag
-        let args = CliArgs::parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "--strategy",
-            "action"
-        ]);
-        
+        let args =
+            CliArgs::parse_from(&["video-clip-extractor", "/test/path", "--strategy", "action"]);
+
         assert!(matches!(args.strategy, SelectionStrategy::Action));
     }
 
     #[test]
     fn test_strategy_action_short_flag() {
         // Test short flag for action strategy
-        let args = CliArgs::parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "-s",
-            "action"
-        ]);
-        
+        let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path", "-s", "action"]);
+
         assert!(matches!(args.strategy, SelectionStrategy::Action));
     }
 
@@ -160,22 +149,18 @@ mod tests {
             "video-clip-extractor",
             "/test/path",
             "--strategy",
-            "intense-action"
+            "intense-action",
         ]);
-        
+
         assert!(matches!(args.strategy, SelectionStrategy::Action));
     }
 
     #[test]
     fn test_strategy_intense_action_alias_short_flag() {
         // Test short flag with intense-action alias
-        let args = CliArgs::parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "-s",
-            "intense-action"
-        ]);
-        
+        let args =
+            CliArgs::parse_from(&["video-clip-extractor", "/test/path", "-s", "intense-action"]);
+
         assert!(matches!(args.strategy, SelectionStrategy::Action));
     }
 
@@ -184,20 +169,16 @@ mod tests {
         // Test that help output includes action strategy documentation
         let mut cmd = CliArgs::command();
         let help = cmd.render_help().to_string();
-        
+
         assert!(help.contains("action"));
     }
 
     #[test]
     fn test_resolution_720p() {
         // Test 720p resolution flag
-        let args = CliArgs::parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "--resolution",
-            "720p"
-        ]);
-        
+        let args =
+            CliArgs::parse_from(&["video-clip-extractor", "/test/path", "--resolution", "720p"]);
+
         assert!(matches!(args.resolution, Resolution::Hd720));
     }
 
@@ -208,61 +189,41 @@ mod tests {
             "video-clip-extractor",
             "/test/path",
             "--resolution",
-            "1080p"
+            "1080p",
         ]);
-        
+
         assert!(matches!(args.resolution, Resolution::Hd1080));
     }
 
     #[test]
     fn test_resolution_short_flag() {
         // Test short flag for resolution
-        let args = CliArgs::parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "-r",
-            "720p"
-        ]);
-        
+        let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path", "-r", "720p"]);
+
         assert!(matches!(args.resolution, Resolution::Hd720));
     }
 
     #[test]
     fn test_audio_true() {
         // Test explicit audio inclusion
-        let args = CliArgs::parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "--audio",
-            "true"
-        ]);
-        
+        let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path", "--audio", "true"]);
+
         assert_eq!(args.include_audio, true);
     }
 
     #[test]
     fn test_audio_false() {
         // Test audio exclusion
-        let args = CliArgs::parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "--audio",
-            "false"
-        ]);
-        
+        let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path", "--audio", "false"]);
+
         assert_eq!(args.include_audio, false);
     }
 
     #[test]
     fn test_audio_short_flag() {
         // Test short flag for audio
-        let args = CliArgs::parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "-a",
-            "false"
-        ]);
-        
+        let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path", "-a", "false"]);
+
         assert_eq!(args.include_audio, false);
     }
 
@@ -277,9 +238,9 @@ mod tests {
             "--resolution",
             "720p",
             "--audio",
-            "false"
+            "false",
         ]);
-        
+
         assert_eq!(args.directory, PathBuf::from("/my/videos"));
         assert!(matches!(args.strategy, SelectionStrategy::IntenseAudio));
         assert!(matches!(args.resolution, Resolution::Hd720));
@@ -297,9 +258,9 @@ mod tests {
             "-r",
             "1080p",
             "-a",
-            "true"
+            "true",
         ]);
-        
+
         assert_eq!(args.directory, PathBuf::from("/my/videos"));
         assert!(matches!(args.strategy, SelectionStrategy::Random));
         assert!(matches!(args.resolution, Resolution::Hd1080));
@@ -317,9 +278,9 @@ mod tests {
             "--resolution",
             "720p",
             "-a",
-            "false"
+            "false",
         ]);
-        
+
         assert!(matches!(args.strategy, SelectionStrategy::IntenseAudio));
         assert!(matches!(args.resolution, Resolution::Hd720));
         assert_eq!(args.include_audio, false);
@@ -329,7 +290,7 @@ mod tests {
     fn test_missing_required_directory() {
         // Test that missing directory argument produces an error
         let result = CliArgs::try_parse_from(&["video-clip-extractor"]);
-        
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
@@ -342,9 +303,9 @@ mod tests {
             "video-clip-extractor",
             "/test/path",
             "--strategy",
-            "invalid-strategy"
+            "invalid-strategy",
         ]);
-        
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
@@ -353,13 +314,9 @@ mod tests {
     #[test]
     fn test_invalid_resolution() {
         // Test that invalid resolution value produces an error
-        let result = CliArgs::try_parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "--resolution",
-            "4k"
-        ]);
-        
+        let result =
+            CliArgs::try_parse_from(&["video-clip-extractor", "/test/path", "--resolution", "4k"]);
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
@@ -368,13 +325,9 @@ mod tests {
     #[test]
     fn test_invalid_audio_value() {
         // Test that invalid audio value produces an error
-        let result = CliArgs::try_parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "--audio",
-            "maybe"
-        ]);
-        
+        let result =
+            CliArgs::try_parse_from(&["video-clip-extractor", "/test/path", "--audio", "maybe"]);
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
@@ -383,12 +336,9 @@ mod tests {
     #[test]
     fn test_unknown_flag() {
         // Test that unknown flags produce an error
-        let result = CliArgs::try_parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "--unknown-flag"
-        ]);
-        
+        let result =
+            CliArgs::try_parse_from(&["video-clip-extractor", "/test/path", "--unknown-flag"]);
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
@@ -398,7 +348,7 @@ mod tests {
     fn test_help_flag() {
         // Test that --help flag produces help output
         let result = CliArgs::try_parse_from(&["video-clip-extractor", "--help"]);
-        
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
@@ -408,7 +358,7 @@ mod tests {
     fn test_help_flag_short() {
         // Test that -h flag produces help output
         let result = CliArgs::try_parse_from(&["video-clip-extractor", "-h"]);
-        
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
@@ -419,13 +369,13 @@ mod tests {
         // Test that --version flag produces version or unknown argument error
         // (version only works if configured in Cargo.toml)
         let result = CliArgs::try_parse_from(&["video-clip-extractor", "--version"]);
-        
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         // Version flag may not be available if not configured in Cargo.toml
         assert!(
-            err.kind() == clap::error::ErrorKind::DisplayVersion ||
-            err.kind() == clap::error::ErrorKind::UnknownArgument
+            err.kind() == clap::error::ErrorKind::DisplayVersion
+                || err.kind() == clap::error::ErrorKind::UnknownArgument
         );
     }
 
@@ -434,7 +384,7 @@ mod tests {
         // Test that help output contains expected information
         let mut cmd = CliArgs::command();
         let help = cmd.render_help().to_string();
-        
+
         assert!(help.contains("Extract thematic clips from video files"));
         assert!(help.contains("PATH"));
         assert!(help.contains("--strategy"));
@@ -465,7 +415,7 @@ mod tests {
             "video-clip-extractor",
             "/test/path",
             "--intro-exclusion",
-            "5.0"
+            "5.0",
         ]);
         assert_eq!(args.intro_exclusion_percent, 5.0);
     }
@@ -477,7 +427,7 @@ mod tests {
             "video-clip-extractor",
             "/test/path",
             "--outro-exclusion",
-            "30.0"
+            "30.0",
         ]);
         assert_eq!(args.outro_exclusion_percent, 30.0);
     }
@@ -491,7 +441,7 @@ mod tests {
             "--intro-exclusion",
             "2.5",
             "--outro-exclusion",
-            "25.0"
+            "25.0",
         ]);
         assert_eq!(args.intro_exclusion_percent, 2.5);
         assert_eq!(args.outro_exclusion_percent, 25.0);
@@ -504,7 +454,7 @@ mod tests {
             "video-clip-extractor",
             "/test/path",
             "--intro-exclusion",
-            "-5.0"
+            "-5.0",
         ]);
         assert!(result.is_err());
     }
@@ -516,7 +466,7 @@ mod tests {
             "video-clip-extractor",
             "/test/path",
             "--intro-exclusion",
-            "101.0"
+            "101.0",
         ]);
         assert!(result.is_err());
     }
@@ -528,7 +478,7 @@ mod tests {
             "video-clip-extractor",
             "/test/path",
             "--outro-exclusion",
-            "-10.0"
+            "-10.0",
         ]);
         assert!(result.is_err());
     }
@@ -540,7 +490,7 @@ mod tests {
             "video-clip-extractor",
             "/test/path",
             "--outro-exclusion",
-            "150.0"
+            "150.0",
         ]);
         assert!(result.is_err());
     }
@@ -554,7 +504,7 @@ mod tests {
             "--intro-exclusion",
             "0",
             "--outro-exclusion",
-            "0"
+            "0",
         ]);
         assert_eq!(args.intro_exclusion_percent, 0.0);
         assert_eq!(args.outro_exclusion_percent, 0.0);
@@ -569,7 +519,7 @@ mod tests {
             "--intro-exclusion",
             "100",
             "--outro-exclusion",
-            "100"
+            "100",
         ]);
         assert_eq!(args.intro_exclusion_percent, 100.0);
         assert_eq!(args.outro_exclusion_percent, 100.0);
@@ -587,72 +537,47 @@ mod tests {
     #[test]
     fn test_clip_count_valid_1() {
         // Test valid clip count: 1
-        let args = CliArgs::parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "--clip-count",
-            "1"
-        ]);
+        let args =
+            CliArgs::parse_from(&["video-clip-extractor", "/test/path", "--clip-count", "1"]);
         assert_eq!(args.clip_count, 1);
     }
 
     #[test]
     fn test_clip_count_valid_2() {
         // Test valid clip count: 2
-        let args = CliArgs::parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "--clip-count",
-            "2"
-        ]);
+        let args =
+            CliArgs::parse_from(&["video-clip-extractor", "/test/path", "--clip-count", "2"]);
         assert_eq!(args.clip_count, 2);
     }
 
     #[test]
     fn test_clip_count_valid_3() {
         // Test valid clip count: 3
-        let args = CliArgs::parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "--clip-count",
-            "3"
-        ]);
+        let args =
+            CliArgs::parse_from(&["video-clip-extractor", "/test/path", "--clip-count", "3"]);
         assert_eq!(args.clip_count, 3);
     }
 
     #[test]
     fn test_clip_count_valid_4() {
         // Test valid clip count: 4
-        let args = CliArgs::parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "--clip-count",
-            "4"
-        ]);
+        let args =
+            CliArgs::parse_from(&["video-clip-extractor", "/test/path", "--clip-count", "4"]);
         assert_eq!(args.clip_count, 4);
     }
 
     #[test]
     fn test_clip_count_short_flag() {
         // Test short flag for clip count
-        let args = CliArgs::parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "-c",
-            "3"
-        ]);
+        let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path", "-c", "3"]);
         assert_eq!(args.clip_count, 3);
     }
 
     #[test]
     fn test_clip_count_invalid_zero() {
         // Test that clip count of 0 produces an error
-        let result = CliArgs::try_parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "--clip-count",
-            "0"
-        ]);
+        let result =
+            CliArgs::try_parse_from(&["video-clip-extractor", "/test/path", "--clip-count", "0"]);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
@@ -661,12 +586,8 @@ mod tests {
     #[test]
     fn test_clip_count_invalid_5() {
         // Test that clip count of 5 produces an error
-        let result = CliArgs::try_parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "--clip-count",
-            "5"
-        ]);
+        let result =
+            CliArgs::try_parse_from(&["video-clip-extractor", "/test/path", "--clip-count", "5"]);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
@@ -675,12 +596,8 @@ mod tests {
     #[test]
     fn test_clip_count_invalid_negative() {
         // Test that negative clip count produces an error
-        let result = CliArgs::try_parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "--clip-count",
-            "-1"
-        ]);
+        let result =
+            CliArgs::try_parse_from(&["video-clip-extractor", "/test/path", "--clip-count", "-1"]);
         assert!(result.is_err());
         // Negative values fail at parse stage
     }
@@ -688,12 +605,8 @@ mod tests {
     #[test]
     fn test_clip_count_invalid_non_numeric() {
         // Test that non-numeric clip count produces an error
-        let result = CliArgs::try_parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "--clip-count",
-            "abc"
-        ]);
+        let result =
+            CliArgs::try_parse_from(&["video-clip-extractor", "/test/path", "--clip-count", "abc"]);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
@@ -710,7 +623,7 @@ mod tests {
             "-s",
             "intense-audio",
             "-r",
-            "720p"
+            "720p",
         ]);
         assert_eq!(args.clip_count, 2);
         assert!(matches!(args.strategy, SelectionStrategy::IntenseAudio));

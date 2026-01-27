@@ -8,10 +8,7 @@ use std::process::Command;
 #[test]
 fn test_zero_byte_backdrop_regeneration() {
     // Create a temporary test directory
-    let temp_dir = std::env::temp_dir().join(format!(
-        "zero_byte_test_{}",
-        std::process::id()
-    ));
+    let temp_dir = std::env::temp_dir().join(format!("zero_byte_test_{}", std::process::id()));
     let _ = fs::remove_dir_all(&temp_dir);
     fs::create_dir_all(&temp_dir).unwrap();
 
@@ -24,10 +21,10 @@ fn test_zero_byte_backdrop_regeneration() {
     let backdrops_dir = temp_dir.join("backdrops");
     fs::create_dir_all(&backdrops_dir).unwrap();
     let backdrop_path = backdrops_dir.join("backdrop.mp4");
-    
+
     // Create a 0-byte file
     fs::File::create(&backdrop_path).unwrap();
-    
+
     // Verify it's 0 bytes
     let metadata = fs::metadata(&backdrop_path).unwrap();
     assert_eq!(metadata.len(), 0, "Backdrop should be 0 bytes initially");
@@ -43,12 +40,13 @@ fn test_zero_byte_backdrop_regeneration() {
     if let Ok(result) = output {
         let stdout = String::from_utf8_lossy(&result.stdout);
         let stderr = String::from_utf8_lossy(&result.stderr);
-        
+
         // Should show "Found 1 videos to process" (not 0)
         assert!(
             stdout.contains("Found 1 videos") || stdout.contains("Found 1 video"),
             "Should find 1 video to process (0-byte backdrop should not cause skip). stdout: {}, stderr: {}",
-            stdout, stderr
+            stdout,
+            stderr
         );
     }
 
@@ -59,10 +57,7 @@ fn test_zero_byte_backdrop_regeneration() {
 #[test]
 fn test_non_zero_byte_backdrop_skipped() {
     // Create a temporary test directory
-    let temp_dir = std::env::temp_dir().join(format!(
-        "non_zero_byte_test_{}",
-        std::process::id()
-    ));
+    let temp_dir = std::env::temp_dir().join(format!("non_zero_byte_test_{}", std::process::id()));
     let _ = fs::remove_dir_all(&temp_dir);
     fs::create_dir_all(&temp_dir).unwrap();
 
@@ -75,11 +70,11 @@ fn test_non_zero_byte_backdrop_skipped() {
     let backdrops_dir = temp_dir.join("backdrops");
     fs::create_dir_all(&backdrops_dir).unwrap();
     let backdrop_path = backdrops_dir.join("backdrop.mp4");
-    
+
     // Create a file with content
     let mut backdrop_file = fs::File::create(&backdrop_path).unwrap();
     backdrop_file.write_all(b"some backdrop content").unwrap();
-    
+
     // Verify it's non-zero bytes
     let metadata = fs::metadata(&backdrop_path).unwrap();
     assert!(metadata.len() > 0, "Backdrop should have content");
@@ -92,7 +87,7 @@ fn test_non_zero_byte_backdrop_skipped() {
 
     if let Ok(result) = output {
         let stdout = String::from_utf8_lossy(&result.stdout);
-        
+
         // Should show that it skipped the directory
         assert!(
             stdout.contains("already have backdrop") || stdout.contains("Skipped 1 director"),

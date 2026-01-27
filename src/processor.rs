@@ -39,7 +39,7 @@ impl VideoProcessor {
     /// Handles errors gracefully by logging and continuing
     pub fn process_video(&self, video: &VideoFile) -> ProcessResult {
         let video_path = video.path.clone();
-        
+
         // Step 1: Get video duration
         let duration = match self.ffmpeg.get_duration(&video.path) {
             Ok(d) => d,
@@ -49,7 +49,7 @@ impl VideoProcessor {
                     crate::ffmpeg::FFmpegError::CorruptedFile(_) => {
                         format!("Skipping corrupted or incomplete video file: {}", e)
                     }
-                    _ => format!("Failed to get video duration: {}", e)
+                    _ => format!("Failed to get video duration: {}", e),
                 };
                 return ProcessResult {
                     video_path,
@@ -61,7 +61,7 @@ impl VideoProcessor {
                 };
             }
         };
-        
+
         // Step 2: Select segments using ClipSelector strategy
         let time_ranges = match self.selector.select_clips(
             &video.path,
@@ -92,7 +92,7 @@ impl VideoProcessor {
                 };
             }
         };
-        
+
         // Warn if fewer clips generated than requested
         if time_ranges.len() < self.clip_count as usize {
             eprintln!(
@@ -102,7 +102,7 @@ impl VideoProcessor {
                 video.path.display()
             );
         }
-        
+
         // Step 3: Create output directory
         let backdrops_dir = match self.create_backdrops_directory(video) {
             Ok(dir) => dir,
@@ -117,15 +117,18 @@ impl VideoProcessor {
                 };
             }
         };
-        
+
         // Step 4: Extract each clip with sequential naming
         let mut last_output_path = PathBuf::new();
         for (index, time_range) in time_ranges.iter().enumerate() {
             let clip_num = index + 1;
             let output_path = backdrops_dir.join(format!("vid{}.mp4", clip_num));
             last_output_path = output_path.clone();
-            
-            if let Err(e) = self.ffmpeg.extract_clip(&video.path, time_range, &output_path) {
+
+            if let Err(e) = self
+                .ffmpeg
+                .extract_clip(&video.path, time_range, &output_path)
+            {
                 let stderr = e.stderr().map(|s| s.to_string());
                 return ProcessResult {
                     video_path,
@@ -137,7 +140,7 @@ impl VideoProcessor {
                 };
             }
         }
-        
+
         ProcessResult {
             video_path,
             output_path: last_output_path,
@@ -153,18 +156,18 @@ impl VideoProcessor {
     fn create_backdrops_directory(&self, video: &VideoFile) -> Result<PathBuf, ProcessError> {
         // Create backdrops subdirectory in video's parent directory
         let backdrops_dir = video.parent_dir.join(BACKDROPS_DIR);
-        
+
         std::fs::create_dir_all(&backdrops_dir).map_err(|e| {
             ProcessError::OutputDirectoryCreationFailed(format!(
                 "Failed to create directory {:?}: {}",
                 backdrops_dir, e
             ))
         })?;
-        
+
         // Return the backdrops directory path
         Ok(backdrops_dir)
     }
-    
+
     /// Create the backdrops subdirectory and return the full output path
     /// Returns the path to backdrops/backdrop.mp4 relative to the video's parent directory
     /// This method is kept for backward compatibility with existing tests
@@ -189,22 +192,22 @@ pub enum ProcessError {
     #[error("Failed to process video: {0}")]
     #[allow(dead_code)]
     ProcessingFailed(String),
-    
+
     #[error("Failed to get video duration: {0}")]
     #[allow(dead_code)]
     DurationDetectionFailed(String),
-    
+
     #[error("Failed to select clip segment: {0}")]
     #[allow(dead_code)]
     SegmentSelectionFailed(String),
-    
+
     #[error("Failed to create output directory: {0}")]
     OutputDirectoryCreationFailed(String),
-    
+
     #[error("Failed to extract clip: {0}")]
     #[allow(dead_code)]
     ClipExtractionFailed(String),
-    
+
     #[error("No valid clips could be selected")]
     NoValidClips,
 }
@@ -242,11 +245,11 @@ mod tests {
     // Helper function to create a test video file structure
     fn create_test_video_structure(base_dir: &std::path::Path, video_name: &str) -> VideoFile {
         let video_path = base_dir.join(video_name);
-        
+
         // Create a dummy video file
         let mut file = fs::File::create(&video_path).unwrap();
         file.write_all(b"fake video content").unwrap();
-        
+
         VideoFile {
             path: video_path,
             parent_dir: base_dir.to_path_buf(),
@@ -265,7 +268,7 @@ mod tests {
         ) {
             // Property: For any video in a directory without an existing backdrops folder,
             // the tool should create the backdrops directory before writing the output
-            
+
             // Create a temporary directory for testing
             let temp_base = std::env::temp_dir().join(format!(
                 "processor_backdrops_test_{}_{}",
@@ -273,38 +276,38 @@ mod tests {
                 rand::random::<u32>()
             ));
             let _ = fs::remove_dir_all(&temp_base);
-            
+
             // Create parent directory with the generated name
             let parent_dir = temp_base.join(&parent_dir_name);
             fs::create_dir_all(&parent_dir).unwrap();
-            
+
             // Create test video file
             let video_file = create_test_video_structure(&parent_dir, &video_name);
-            
+
             // Verify the backdrops directory does NOT exist initially
             let backdrops_dir = parent_dir.join("backdrops");
             prop_assert!(
                 !backdrops_dir.exists(),
                 "Backdrops directory should not exist before processing"
             );
-            
+
             // Create processor with mock selector
             let selector = Box::new(MockSelector);
             let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
             let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1);
-            
+
             // Call create_output_directory to trigger directory creation
             let output_path = processor.create_output_directory(&video_file);
-            
+
             // Property 1: The method should succeed
             prop_assert!(
                 output_path.is_ok(),
                 "create_output_directory should succeed for video {:?}",
                 video_file.path
             );
-            
+
             let output_path = output_path.unwrap();
-            
+
             // Property 2 (CORE): The backdrops directory should now exist
             // This is the main property being tested - directory creation
             prop_assert!(
@@ -312,13 +315,13 @@ mod tests {
                 "Backdrops directory should be created at {:?} when it didn't exist before",
                 backdrops_dir
             );
-            
+
             // Property 3: The created path should be a directory (not a file)
             prop_assert!(
                 backdrops_dir.is_dir(),
                 "Backdrops path should be a directory, not a file"
             );
-            
+
             // Property 4: The backdrops directory should be in the video's parent directory
             let backdrops_parent = backdrops_dir.parent().unwrap();
             prop_assert_eq!(
@@ -326,18 +329,18 @@ mod tests {
                 &video_file.parent_dir,
                 "Backdrops directory should be created in the video's parent directory"
             );
-            
+
             // Property 5: The backdrops directory name should be "backdrops" (lowercase)
             let backdrops_dir_name = backdrops_dir.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
-            
+
             prop_assert_eq!(
                 backdrops_dir_name,
                 "backdrops",
                 "Directory name should be 'backdrops' in lowercase"
             );
-            
+
             // Property 6: The output path should point to backdrop.mp4 inside the created directory
             let expected_output = backdrops_dir.join("backdrop.mp4");
             prop_assert_eq!(
@@ -345,7 +348,7 @@ mod tests {
                 &expected_output,
                 "Output path should be backdrops/backdrop.mp4"
             );
-            
+
             // Property 7: The parent of the output file should be the backdrops directory
             let output_parent = output_path.parent().unwrap();
             prop_assert_eq!(
@@ -353,7 +356,7 @@ mod tests {
                 &backdrops_dir,
                 "Output file's parent should be the backdrops directory"
             );
-            
+
             // Property 8: Calling create_output_directory again should succeed (idempotent)
             // The directory already exists now, but the method should still work
             let output_path_2 = processor.create_output_directory(&video_file);
@@ -361,20 +364,20 @@ mod tests {
                 output_path_2.is_ok(),
                 "create_output_directory should succeed even when directory already exists (idempotent)"
             );
-            
+
             // Property 9: The backdrops directory should still exist after second call
             prop_assert!(
                 backdrops_dir.exists(),
                 "Backdrops directory should still exist after second call"
             );
-            
+
             // Property 10: Both calls should return the same output path
             prop_assert_eq!(
                 &output_path,
                 &output_path_2.unwrap(),
                 "Multiple calls should return the same output path"
             );
-            
+
             // Clean up
             let _ = fs::remove_dir_all(&temp_base);
         }
@@ -392,7 +395,7 @@ mod tests {
         ) {
             // Property: For any processed video, the output file should always be named "backdrop.mp4"
             // regardless of the source video name or parent directory structure
-            
+
             // Create a temporary directory for testing
             let temp_base = std::env::temp_dir().join(format!(
                 "processor_test_{}_{}",
@@ -400,36 +403,36 @@ mod tests {
                 rand::random::<u32>()
             ));
             let _ = fs::remove_dir_all(&temp_base);
-            
+
             // Create parent directory with the generated name
             let parent_dir = temp_base.join(&parent_dir_name);
             fs::create_dir_all(&parent_dir).unwrap();
-            
+
             // Create test video file
             let video_file = create_test_video_structure(&parent_dir, &video_name);
-            
+
             // Create processor with mock selector
             let selector = Box::new(MockSelector);
             let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
             let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1);
-            
+
             // Call create_output_directory to get the output path
             let output_path = processor.create_output_directory(&video_file);
-            
+
             // Property 1: The method should succeed
             prop_assert!(
                 output_path.is_ok(),
                 "create_output_directory should succeed for video {:?}",
                 video_file.path
             );
-            
+
             let output_path = output_path.unwrap();
-            
+
             // Property 2: The output file name should always be "backdrop.mp4" (lowercase)
             let output_filename = output_path.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
-            
+
             prop_assert_eq!(
                 output_filename,
                 "backdrop.mp4",
@@ -438,19 +441,19 @@ mod tests {
                 video_name,
                 parent_dir_name
             );
-            
+
             // Property 3: The output should be in a "backdrops" subdirectory
             let parent_of_output = output_path.parent().unwrap();
             let backdrops_dir_name = parent_of_output.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
-            
+
             prop_assert_eq!(
                 backdrops_dir_name,
                 "backdrops",
                 "Output should be in a 'backdrops' subdirectory"
             );
-            
+
             // Property 4: The backdrops directory should be in the video's parent directory
             let backdrops_parent = parent_of_output.parent().unwrap();
             prop_assert_eq!(
@@ -458,7 +461,7 @@ mod tests {
                 &video_file.parent_dir,
                 "Backdrops directory should be in the video's parent directory"
             );
-            
+
             // Property 5: The full output path structure should be: parent_dir/backdrops/backdrop.mp4
             let expected_path = video_file.parent_dir.join("backdrops").join("backdrop.mp4");
             prop_assert_eq!(
@@ -466,19 +469,19 @@ mod tests {
                 &expected_path,
                 "Output path should follow the structure: parent_dir/backdrops/backdrop.mp4"
             );
-            
+
             // Property 6: Verify the backdrops directory was actually created
             prop_assert!(
                 parent_of_output.exists(),
                 "Backdrops directory should be created at {:?}",
                 parent_of_output
             );
-            
+
             prop_assert!(
                 parent_of_output.is_dir(),
                 "Backdrops path should be a directory"
             );
-            
+
             // Clean up
             let _ = fs::remove_dir_all(&temp_base);
         }
@@ -487,38 +490,35 @@ mod tests {
     #[test]
     fn test_output_file_naming_basic() {
         // Basic unit test to verify output file naming
-        let temp_dir = std::env::temp_dir().join(format!(
-            "processor_basic_{}",
-            std::process::id()
-        ));
+        let temp_dir = std::env::temp_dir().join(format!("processor_basic_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
-        
+
         // Create a test video
         let video_file = create_test_video_structure(&temp_dir, "test_video.mp4");
-        
+
         // Create processor
         let selector = Box::new(MockSelector);
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
         let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1);
-        
+
         // Get output path
         let output_path = processor.create_output_directory(&video_file).unwrap();
-        
+
         // Verify the output file name is "backdrop.mp4"
         assert_eq!(
             output_path.file_name().unwrap().to_str().unwrap(),
             "backdrop.mp4"
         );
-        
+
         // Verify the structure
         let expected = temp_dir.join("backdrops").join("backdrop.mp4");
         assert_eq!(output_path, expected);
-        
+
         // Verify backdrops directory exists
         assert!(temp_dir.join("backdrops").exists());
         assert!(temp_dir.join("backdrops").is_dir());
-        
+
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
     }
@@ -526,13 +526,10 @@ mod tests {
     #[test]
     fn test_output_file_naming_with_different_video_names() {
         // Test that output is always "backdrop.mp4" regardless of source video name
-        let temp_dir = std::env::temp_dir().join(format!(
-            "processor_names_{}",
-            std::process::id()
-        ));
+        let temp_dir = std::env::temp_dir().join(format!("processor_names_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
-        
+
         let test_video_names = vec![
             "movie.mp4",
             "VIDEO.MP4",
@@ -540,15 +537,15 @@ mod tests {
             "video-with-dashes.mp4",
             "123456.mp4",
         ];
-        
+
         let selector = Box::new(MockSelector);
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
         let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1);
-        
+
         for video_name in test_video_names {
             let video_file = create_test_video_structure(&temp_dir, video_name);
             let output_path = processor.create_output_directory(&video_file).unwrap();
-            
+
             // Always should be "backdrop.mp4" in lowercase
             assert_eq!(
                 output_path.file_name().unwrap().to_str().unwrap(),
@@ -557,7 +554,7 @@ mod tests {
                 video_name
             );
         }
-        
+
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
     }
@@ -576,10 +573,10 @@ mod tests {
         ) {
             // Property: For any batch of videos where some fail to process,
             // the tool should continue processing remaining videos and not halt on the first error
-            
+
             // This test simulates the behavior by creating a batch of ProcessResults
             // where some succeed and some fail, then verifying that all videos are processed
-            
+
             // Create a temporary directory for testing
             let temp_base = std::env::temp_dir().join(format!(
                 "processor_error_recovery_test_{}_{}",
@@ -588,25 +585,25 @@ mod tests {
             ));
             let _ = fs::remove_dir_all(&temp_base);
             fs::create_dir_all(&temp_base).unwrap();
-            
+
             // Create multiple video files
             let mut video_files = Vec::new();
             for i in 0..video_count {
                 let video_dir = temp_base.join(format!("video_dir_{}", i));
                 fs::create_dir_all(&video_dir).unwrap();
-                
+
                 let video_name = format!("video_{}.mp4", i);
                 let video_file = create_test_video_structure(&video_dir, &video_name);
                 video_files.push(video_file);
             }
-            
+
             // Create a processor with mock selector
             // Note: The actual FFmpeg calls will fail on fake video files,
             // which is perfect for testing error recovery
             let selector = Box::new(MockSelector);
             let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
             let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1);
-            
+
             // Process all videos and collect results
             // Since we're using fake video files, FFmpeg will fail to get duration
             // This simulates real-world errors (corrupted videos, etc.)
@@ -615,7 +612,7 @@ mod tests {
                 let result = processor.process_video(video);
                 results.push(result);
             }
-            
+
             // Property 1: All videos should have been processed (no early termination)
             // This is the core property: even if some videos fail, all should be attempted
             prop_assert_eq!(
@@ -625,7 +622,7 @@ mod tests {
                  continues after errors rather than halting on first failure",
                 video_count
             );
-            
+
             // Property 2: Each result should have a video_path set
             for (i, result) in results.iter().enumerate() {
                 prop_assert!(
@@ -634,7 +631,7 @@ mod tests {
                     i
                 );
             }
-            
+
             // Property 3: Failed results should have error messages
             for (i, result) in results.iter().enumerate() {
                 if !result.success {
@@ -643,7 +640,7 @@ mod tests {
                         "Failed result {} should have an error message",
                         i
                     );
-                    
+
                     let error_msg = result.error_message.as_ref().unwrap();
                     prop_assert!(
                         !error_msg.is_empty(),
@@ -652,7 +649,7 @@ mod tests {
                     );
                 }
             }
-            
+
             // Property 4: The processing loop doesn't panic or abort
             // (if we got here, the loop completed successfully)
             // This validates Requirements 7.2: continue processing other videos after error
@@ -660,7 +657,7 @@ mod tests {
                 true,
                 "Processing loop completed without panic or early termination"
             );
-            
+
             // Property 5: Verify that process_video returns a result for each video
             // (not None, not panic, just a Result indicating success or failure)
             for (i, result) in results.iter().enumerate() {
@@ -679,7 +676,7 @@ mod tests {
                     );
                 }
             }
-            
+
             // Clean up
             let _ = fs::remove_dir_all(&temp_base);
         }
@@ -691,48 +688,48 @@ mod tests {
         // Unit test to explicitly verify error recovery behavior
         // This test creates a scenario where one video fails and verifies
         // that subsequent videos are still processed
-        
+
         let temp_base = std::env::temp_dir().join(format!(
             "processor_error_recovery_unit_{}",
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&temp_base);
         fs::create_dir_all(&temp_base).unwrap();
-        
+
         // Create three video files (all will fail FFmpeg calls since they're fake)
         let video1_dir = temp_base.join("video1");
         let video2_dir = temp_base.join("video2");
         let video3_dir = temp_base.join("video3");
-        
+
         fs::create_dir_all(&video1_dir).unwrap();
         fs::create_dir_all(&video2_dir).unwrap();
         fs::create_dir_all(&video3_dir).unwrap();
-        
+
         let video1 = create_test_video_structure(&video1_dir, "video1.mp4");
         let video2 = create_test_video_structure(&video2_dir, "video2.mp4");
         let video3 = create_test_video_structure(&video3_dir, "video3.mp4");
-        
+
         let videos = vec![video1, video2, video3];
-        
+
         // Create processor
         let selector = Box::new(MockSelector);
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
         let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1);
-        
+
         // Process all videos
         let mut results = Vec::new();
         for video in &videos {
             let result = processor.process_video(video);
             results.push(result);
         }
-        
+
         // Verify all three videos were processed (no early termination)
         assert_eq!(
             results.len(),
             3,
             "All 3 videos should be processed despite errors"
         );
-        
+
         // Verify each result has a video path
         for (i, result) in results.iter().enumerate() {
             assert!(
@@ -741,7 +738,7 @@ mod tests {
                 i
             );
         }
-        
+
         // Since these are fake videos, they should all fail
         // But the important thing is that all were attempted
         for (i, result) in results.iter().enumerate() {
@@ -753,9 +750,12 @@ mod tests {
                 );
             }
         }
-        
-        println!("✓ Error recovery test passed: all {} videos were processed", results.len());
-        
+
+        println!(
+            "✓ Error recovery test passed: all {} videos were processed",
+            results.len()
+        );
+
         // Clean up
         let _ = fs::remove_dir_all(&temp_base);
     }
@@ -773,7 +773,7 @@ mod tests {
         ) {
             // Property: For any error that occurs during processing,
             // the error message should include the file path of the video being processed
-            
+
             // Create a temporary directory for testing
             let temp_base = std::env::temp_dir().join(format!(
                 "processor_error_path_test_{}_{}",
@@ -781,58 +781,58 @@ mod tests {
                 rand::random::<u32>()
             ));
             let _ = fs::remove_dir_all(&temp_base);
-            
+
             // Create parent directory with the generated name
             let parent_dir = temp_base.join(&parent_dir_name);
             fs::create_dir_all(&parent_dir).unwrap();
-            
+
             // Create test video file (fake video that will cause FFmpeg to fail)
             let video_file = create_test_video_structure(&parent_dir, &video_name);
-            
+
             // Store the video path for verification
             let video_path = video_file.path.clone();
             let video_path_str = video_path.to_string_lossy().to_string();
-            
+
             // Create processor with mock selector
             let selector = Box::new(MockSelector);
             let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
             let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1);
-            
+
             // Process the video (will fail because it's a fake video file)
             let result = processor.process_video(&video_file);
-            
+
             // Property 1: The result should have the video_path set
             prop_assert_eq!(
                 &result.video_path,
                 &video_path,
                 "ProcessResult should contain the video path"
             );
-            
+
             // Property 2: Since this is a fake video, processing should fail
             // (FFmpeg will fail to get duration from the fake video file)
             prop_assert!(
                 !result.success,
                 "Processing should fail for fake video file"
             );
-            
+
             // Property 3: Failed processing should have an error message
             prop_assert!(
                 result.error_message.is_some(),
                 "Failed processing should have an error message"
             );
-            
+
             let error_message = result.error_message.as_ref().unwrap();
-            
+
             // Property 4: The error message should not be empty
             prop_assert!(
                 !error_message.is_empty(),
                 "Error message should not be empty"
             );
-            
+
             // Property 5: The error message should be descriptive
             // It should indicate what went wrong (e.g., "Failed to get video duration" or "Skipping corrupted")
             prop_assert!(
-                error_message.contains("Failed") || 
+                error_message.contains("Failed") ||
                 error_message.contains("failed") ||
                 error_message.contains("Error") ||
                 error_message.contains("error") ||
@@ -842,7 +842,7 @@ mod tests {
                 "Error message should be descriptive and indicate failure: '{}'",
                 error_message
             );
-            
+
             // Property 6 (CORE): The ProcessResult should contain the video path
             // This allows the caller (main.rs) to include the path in error output
             // The video_path field in ProcessResult serves as the path reference
@@ -850,32 +850,32 @@ mod tests {
                 !result.video_path.as_os_str().is_empty(),
                 "ProcessResult.video_path should be set to allow error reporting with path"
             );
-            
+
             // Property 7: Verify the video_path in the result matches the original video
             prop_assert_eq!(
                 result.video_path.to_string_lossy().to_string(),
                 video_path_str,
                 "ProcessResult.video_path should match the original video path"
             );
-            
+
             // Property 8: The video_path should contain the video filename
             let video_filename = video_path.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
-            
+
             prop_assert!(
                 result.video_path.to_string_lossy().contains(video_filename),
                 "ProcessResult.video_path should contain the video filename '{}'",
                 video_filename
             );
-            
+
             // Property 9: The video_path should contain the parent directory name
             prop_assert!(
                 result.video_path.to_string_lossy().contains(&parent_dir_name),
                 "ProcessResult.video_path should contain the parent directory name '{}'",
                 parent_dir_name
             );
-            
+
             // Clean up
             let _ = fs::remove_dir_all(&temp_base);
         }
@@ -896,7 +896,7 @@ mod tests {
             // Property: For any processed video, the output path should be in a subdirectory
             // named "backdrops" (lowercase) relative to the source video's parent directory,
             // with filename "backdrop.mp4" (lowercase).
-            
+
             // Create a temporary directory for testing
             let temp_base = std::env::temp_dir().join(format!(
                 "processor_path_structure_test_{}_{}",
@@ -904,7 +904,7 @@ mod tests {
                 rand::random::<u32>()
             ));
             let _ = fs::remove_dir_all(&temp_base);
-            
+
             // Create parent directory structure (optionally nested)
             let parent_dir = if use_nested {
                 // Create a nested structure: temp_base/nested/parent_dir_name
@@ -915,81 +915,81 @@ mod tests {
                 // Create a flat structure: temp_base/parent_dir_name
                 temp_base.join(&parent_dir_name)
             };
-            
+
             fs::create_dir_all(&parent_dir).unwrap();
-            
+
             // Create test video file
             let video_file = create_test_video_structure(&parent_dir, &video_name);
-            
+
             // Create processor with mock selector
             let selector = Box::new(MockSelector);
             let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
             let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1);
-            
+
             // Call create_output_directory to get the output path
             let output_path = processor.create_output_directory(&video_file);
-            
+
             // Property 1: The method should succeed
             prop_assert!(
                 output_path.is_ok(),
                 "create_output_directory should succeed for video {:?}",
                 video_file.path
             );
-            
+
             let output_path = output_path.unwrap();
-            
+
             // Property 2 (CORE): The output path should be in a subdirectory named "backdrops"
             // relative to the source video's parent directory
             let expected_backdrops_dir = video_file.parent_dir.join("backdrops");
             let actual_backdrops_dir = output_path.parent().unwrap();
-            
+
             prop_assert_eq!(
                 actual_backdrops_dir,
                 &expected_backdrops_dir,
                 "Output path should be in a 'backdrops' subdirectory relative to the video's parent directory"
             );
-            
+
             // Property 3: The backdrops directory name should be "backdrops" in lowercase
             let backdrops_dir_name = actual_backdrops_dir.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
-            
+
             prop_assert_eq!(
                 backdrops_dir_name,
                 "backdrops",
                 "Subdirectory name should be 'backdrops' in lowercase (not 'Backdrops' or 'BACKDROPS')"
             );
-            
+
             // Property 4: The output filename should be "backdrop.mp4" in lowercase
             let output_filename = output_path.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
-            
+
             prop_assert_eq!(
                 output_filename,
                 "backdrop.mp4",
                 "Output filename should be 'backdrop.mp4' in lowercase (not 'Backdrop.mp4' or 'BACKDROP.MP4')"
             );
-            
+
             // Property 5: The complete output path structure should be:
             // <video_parent_dir>/backdrops/backdrop.mp4
             let expected_output_path = video_file.parent_dir.join("backdrops").join("backdrop.mp4");
-            
+
             prop_assert_eq!(
                 &output_path,
                 &expected_output_path,
                 "Complete output path should follow the structure: <video_parent_dir>/backdrops/backdrop.mp4"
             );
-            
+
             // Property 6: The backdrops directory should be a direct child of the video's parent directory
             let backdrops_parent = actual_backdrops_dir.parent().unwrap();
-            
+
             prop_assert_eq!(
                 backdrops_parent,
                 &video_file.parent_dir,
                 "Backdrops directory should be a direct child of the video's parent directory"
             );
-            
+
             // Property 7: The output path should be relative to the video's parent directory,
             // not to some other location
             prop_assert!(
@@ -997,12 +997,12 @@ mod tests {
                 "Output path should start with the video's parent directory: {:?}",
                 video_file.parent_dir
             );
-            
+
             // Property 8: The path components should be in the correct order:
             // parent_dir -> backdrops -> backdrop.mp4
             let path_components: Vec<_> = output_path.components().collect();
             let parent_components: Vec<_> = video_file.parent_dir.components().collect();
-            
+
             // The output path should have exactly 2 more components than the parent dir
             // (backdrops + backdrop.mp4)
             prop_assert_eq!(
@@ -1010,19 +1010,19 @@ mod tests {
                 parent_components.len() + 2,
                 "Output path should have exactly 2 more components than parent dir (backdrops + backdrop.mp4)"
             );
-            
+
             // Property 9: Verify the backdrops directory was actually created
             prop_assert!(
                 expected_backdrops_dir.exists(),
                 "Backdrops directory should be created at {:?}",
                 expected_backdrops_dir
             );
-            
+
             prop_assert!(
                 expected_backdrops_dir.is_dir(),
                 "Backdrops path should be a directory, not a file"
             );
-            
+
             // Property 10: The structure should work regardless of nesting level
             // (whether the video is in a flat or nested directory structure)
             if use_nested {
@@ -1031,17 +1031,17 @@ mod tests {
                     "Output path should preserve nested directory structure"
                 );
             }
-            
+
             // Property 11: The output filename should be exactly "backdrop.mp4"
             // (not the original video name)
             let video_filename = video_file.path.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
-            
+
             let output_filename_check = output_path.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
-            
+
             if video_filename != "backdrop.mp4" {
                 prop_assert_ne!(
                     output_filename_check,
@@ -1050,7 +1050,7 @@ mod tests {
                     video_filename
                 );
             }
-            
+
             // Clean up
             let _ = fs::remove_dir_all(&temp_base);
         }
@@ -1071,7 +1071,7 @@ mod tests {
         ) {
             // Property: For any video in a directory with an existing backdrops/backdrop.mp4 file,
             // processing should replace the existing file with the new clip
-            
+
             // Create a temporary directory for testing
             let temp_base = std::env::temp_dir().join(format!(
                 "processor_overwrite_test_{}_{}",
@@ -1079,34 +1079,34 @@ mod tests {
                 rand::random::<u32>()
             ));
             let _ = fs::remove_dir_all(&temp_base);
-            
+
             // Create parent directory with the generated name
             let parent_dir = temp_base.join(&parent_dir_name);
             fs::create_dir_all(&parent_dir).unwrap();
-            
+
             // Create test video file
             let video_file = create_test_video_structure(&parent_dir, &video_name);
-            
+
             // Create processor with mock selector
             let selector = Box::new(MockSelector);
             let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
             let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1);
-            
+
             // Step 1: Create the backdrops directory and an existing backdrop.mp4 file
             let backdrops_dir = parent_dir.join("backdrops");
             fs::create_dir_all(&backdrops_dir).unwrap();
-            
+
             let existing_backdrop_path = backdrops_dir.join("backdrop.mp4");
             let mut existing_file = fs::File::create(&existing_backdrop_path).unwrap();
             existing_file.write_all(existing_content.as_bytes()).unwrap();
             drop(existing_file); // Close the file
-            
+
             // Verify the existing file was created
             prop_assert!(
                 existing_backdrop_path.exists(),
                 "Existing backdrop.mp4 should exist before processing"
             );
-            
+
             // Read the existing file content to verify it later
             let existing_file_content = fs::read_to_string(&existing_backdrop_path).unwrap();
             prop_assert_eq!(
@@ -1114,40 +1114,40 @@ mod tests {
                 &existing_content,
                 "Existing file should contain the original content"
             );
-            
+
             // Get the metadata of the existing file (modification time, size)
             let existing_metadata = fs::metadata(&existing_backdrop_path).unwrap();
             let existing_size = existing_metadata.len();
-            
+
             // Step 2: Call create_output_directory which should return the path to backdrop.mp4
             let output_path = processor.create_output_directory(&video_file);
-            
+
             // Property 1: The method should succeed even when the file already exists
             prop_assert!(
                 output_path.is_ok(),
                 "create_output_directory should succeed even when backdrop.mp4 already exists"
             );
-            
+
             let output_path = output_path.unwrap();
-            
+
             // Property 2: The output path should point to the same location as the existing file
             prop_assert_eq!(
                 &output_path,
                 &existing_backdrop_path,
                 "Output path should be the same as the existing backdrop.mp4 path"
             );
-            
+
             // Step 3: Simulate writing new content to the output path (overwriting)
             let mut new_file = fs::File::create(&output_path).unwrap();
             new_file.write_all(new_content.as_bytes()).unwrap();
             drop(new_file); // Close the file
-            
+
             // Property 3: The file should still exist after overwriting
             prop_assert!(
                 output_path.exists(),
                 "backdrop.mp4 should still exist after overwriting"
             );
-            
+
             // Property 4: The file content should be the new content (overwritten)
             let new_file_content = fs::read_to_string(&output_path).unwrap();
             prop_assert_eq!(
@@ -1155,18 +1155,18 @@ mod tests {
                 &new_content,
                 "File content should be the new content after overwriting"
             );
-            
+
             // Property 5: The file should not contain the old content
             prop_assert_ne!(
                 &new_file_content,
                 &existing_content,
                 "File should not contain the old content after overwriting"
             );
-            
+
             // Property 6: The file size should have changed (if content sizes differ)
             let new_metadata = fs::metadata(&output_path).unwrap();
             let new_size = new_metadata.len();
-            
+
             if existing_content.len() != new_content.len() {
                 prop_assert_ne!(
                     existing_size,
@@ -1174,30 +1174,30 @@ mod tests {
                     "File size should change when content is overwritten with different size"
                 );
             }
-            
+
             // Property 7: Verify the file path structure is still correct
             let parent_of_output = output_path.parent().unwrap();
             let backdrops_dir_name = parent_of_output.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
-            
+
             prop_assert_eq!(
                 backdrops_dir_name,
                 "backdrops",
                 "Output should still be in the 'backdrops' subdirectory after overwrite"
             );
-            
+
             // Property 8: Verify the filename is still "backdrop.mp4"
             let output_filename = output_path.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
-            
+
             prop_assert_eq!(
                 output_filename,
                 "backdrop.mp4",
                 "Output filename should still be 'backdrop.mp4' after overwrite"
             );
-            
+
             // Clean up
             let _ = fs::remove_dir_all(&temp_base);
         }
@@ -1223,7 +1223,7 @@ mod tests {
             let mut clips = Vec::new();
             let clip_duration = 5.0;
             let spacing = 2.0; // Gap between clips
-            
+
             for i in 0..clip_count.min((duration / (clip_duration + spacing)).floor() as u8) {
                 let start = i as f64 * (clip_duration + spacing);
                 if start + clip_duration <= duration {
@@ -1233,7 +1233,7 @@ mod tests {
                     });
                 }
             }
-            
+
             Ok(clips)
         }
     }
@@ -1241,27 +1241,28 @@ mod tests {
     #[test]
     fn test_sequential_naming_single_clip() {
         // Test that a single clip is named "vid1.mp4"
-        let temp_dir = std::env::temp_dir().join(format!(
-            "processor_naming_single_{}",
-            std::process::id()
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("processor_naming_single_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
-        
+
         let video_file = create_test_video_structure(&temp_dir, "test_video.mp4");
-        
+
         // Create processor with multi-clip mock selector
         let selector = Box::new(MultiClipMockSelector { clip_count: 1 });
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
         let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1);
-        
+
         // Create backdrops directory
         let backdrops_dir = processor.create_backdrops_directory(&video_file).unwrap();
-        
+
         // Verify the expected output path for single clip
         let expected_path = backdrops_dir.join("vid1.mp4");
-        assert_eq!(expected_path.file_name().unwrap().to_str().unwrap(), "vid1.mp4");
-        
+        assert_eq!(
+            expected_path.file_name().unwrap().to_str().unwrap(),
+            "vid1.mp4"
+        );
+
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
     }
@@ -1269,30 +1270,34 @@ mod tests {
     #[test]
     fn test_sequential_naming_two_clips() {
         // Test that two clips are named "vid1.mp4" and "vid2.mp4"
-        let temp_dir = std::env::temp_dir().join(format!(
-            "processor_naming_two_{}",
-            std::process::id()
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("processor_naming_two_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
-        
+
         let video_file = create_test_video_structure(&temp_dir, "test_video.mp4");
-        
+
         // Create processor with multi-clip mock selector
         let selector = Box::new(MultiClipMockSelector { clip_count: 2 });
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
         let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 2);
-        
+
         // Create backdrops directory
         let backdrops_dir = processor.create_backdrops_directory(&video_file).unwrap();
-        
+
         // Verify the expected output paths for two clips
         let expected_path1 = backdrops_dir.join("vid1.mp4");
         let expected_path2 = backdrops_dir.join("vid2.mp4");
-        
-        assert_eq!(expected_path1.file_name().unwrap().to_str().unwrap(), "vid1.mp4");
-        assert_eq!(expected_path2.file_name().unwrap().to_str().unwrap(), "vid2.mp4");
-        
+
+        assert_eq!(
+            expected_path1.file_name().unwrap().to_str().unwrap(),
+            "vid1.mp4"
+        );
+        assert_eq!(
+            expected_path2.file_name().unwrap().to_str().unwrap(),
+            "vid2.mp4"
+        );
+
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
     }
@@ -1300,32 +1305,39 @@ mod tests {
     #[test]
     fn test_sequential_naming_three_clips() {
         // Test that three clips are named "vid1.mp4", "vid2.mp4", "vid3.mp4"
-        let temp_dir = std::env::temp_dir().join(format!(
-            "processor_naming_three_{}",
-            std::process::id()
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("processor_naming_three_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
-        
+
         let video_file = create_test_video_structure(&temp_dir, "test_video.mp4");
-        
+
         // Create processor with multi-clip mock selector
         let selector = Box::new(MultiClipMockSelector { clip_count: 3 });
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
         let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 3);
-        
+
         // Create backdrops directory
         let backdrops_dir = processor.create_backdrops_directory(&video_file).unwrap();
-        
+
         // Verify the expected output paths for three clips
         let expected_path1 = backdrops_dir.join("vid1.mp4");
         let expected_path2 = backdrops_dir.join("vid2.mp4");
         let expected_path3 = backdrops_dir.join("vid3.mp4");
-        
-        assert_eq!(expected_path1.file_name().unwrap().to_str().unwrap(), "vid1.mp4");
-        assert_eq!(expected_path2.file_name().unwrap().to_str().unwrap(), "vid2.mp4");
-        assert_eq!(expected_path3.file_name().unwrap().to_str().unwrap(), "vid3.mp4");
-        
+
+        assert_eq!(
+            expected_path1.file_name().unwrap().to_str().unwrap(),
+            "vid1.mp4"
+        );
+        assert_eq!(
+            expected_path2.file_name().unwrap().to_str().unwrap(),
+            "vid2.mp4"
+        );
+        assert_eq!(
+            expected_path3.file_name().unwrap().to_str().unwrap(),
+            "vid3.mp4"
+        );
+
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
     }
@@ -1333,34 +1345,44 @@ mod tests {
     #[test]
     fn test_sequential_naming_four_clips() {
         // Test that four clips are named "vid1.mp4", "vid2.mp4", "vid3.mp4", "vid4.mp4"
-        let temp_dir = std::env::temp_dir().join(format!(
-            "processor_naming_four_{}",
-            std::process::id()
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("processor_naming_four_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
-        
+
         let video_file = create_test_video_structure(&temp_dir, "test_video.mp4");
-        
+
         // Create processor with multi-clip mock selector
         let selector = Box::new(MultiClipMockSelector { clip_count: 4 });
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
         let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 4);
-        
+
         // Create backdrops directory
         let backdrops_dir = processor.create_backdrops_directory(&video_file).unwrap();
-        
+
         // Verify the expected output paths for four clips
         let expected_path1 = backdrops_dir.join("vid1.mp4");
         let expected_path2 = backdrops_dir.join("vid2.mp4");
         let expected_path3 = backdrops_dir.join("vid3.mp4");
         let expected_path4 = backdrops_dir.join("vid4.mp4");
-        
-        assert_eq!(expected_path1.file_name().unwrap().to_str().unwrap(), "vid1.mp4");
-        assert_eq!(expected_path2.file_name().unwrap().to_str().unwrap(), "vid2.mp4");
-        assert_eq!(expected_path3.file_name().unwrap().to_str().unwrap(), "vid3.mp4");
-        assert_eq!(expected_path4.file_name().unwrap().to_str().unwrap(), "vid4.mp4");
-        
+
+        assert_eq!(
+            expected_path1.file_name().unwrap().to_str().unwrap(),
+            "vid1.mp4"
+        );
+        assert_eq!(
+            expected_path2.file_name().unwrap().to_str().unwrap(),
+            "vid2.mp4"
+        );
+        assert_eq!(
+            expected_path3.file_name().unwrap().to_str().unwrap(),
+            "vid3.mp4"
+        );
+        assert_eq!(
+            expected_path4.file_name().unwrap().to_str().unwrap(),
+            "vid4.mp4"
+        );
+
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
     }
@@ -1368,32 +1390,42 @@ mod tests {
     #[test]
     fn test_output_directory_creation_for_multiple_clips() {
         // Test that the backdrops directory is created correctly for multiple clips
-        let temp_dir = std::env::temp_dir().join(format!(
-            "processor_dir_creation_{}",
-            std::process::id()
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("processor_dir_creation_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
-        
+
         let video_file = create_test_video_structure(&temp_dir, "test_video.mp4");
-        
+
         // Verify the backdrops directory does NOT exist initially
         let backdrops_dir = temp_dir.join("backdrops");
-        assert!(!backdrops_dir.exists(), "Backdrops directory should not exist before processing");
-        
+        assert!(
+            !backdrops_dir.exists(),
+            "Backdrops directory should not exist before processing"
+        );
+
         // Create processor
         let selector = Box::new(MultiClipMockSelector { clip_count: 3 });
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
         let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 3);
-        
+
         // Create backdrops directory
         let created_dir = processor.create_backdrops_directory(&video_file).unwrap();
-        
+
         // Verify the backdrops directory now exists
-        assert!(backdrops_dir.exists(), "Backdrops directory should be created");
-        assert!(backdrops_dir.is_dir(), "Backdrops path should be a directory");
-        assert_eq!(created_dir, backdrops_dir, "Returned path should match expected backdrops directory");
-        
+        assert!(
+            backdrops_dir.exists(),
+            "Backdrops directory should be created"
+        );
+        assert!(
+            backdrops_dir.is_dir(),
+            "Backdrops path should be a directory"
+        );
+        assert_eq!(
+            created_dir, backdrops_dir,
+            "Returned path should match expected backdrops directory"
+        );
+
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
     }
@@ -1407,35 +1439,35 @@ mod tests {
         ));
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
-        
+
         let video_file = create_test_video_structure(&temp_dir, "test_video.mp4");
-        
+
         // Create processor
         let selector = Box::new(MultiClipMockSelector { clip_count: 2 });
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
         let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 2);
-        
+
         // Create backdrops directory
         let backdrops_dir = processor.create_backdrops_directory(&video_file).unwrap();
-        
+
         // Construct expected paths
         let expected_path1 = backdrops_dir.join("vid1.mp4");
         let expected_path2 = backdrops_dir.join("vid2.mp4");
-        
+
         // Verify path structure
         assert_eq!(expected_path1.parent().unwrap(), &backdrops_dir);
         assert_eq!(expected_path2.parent().unwrap(), &backdrops_dir);
-        
+
         // Verify the backdrops directory is in the video's parent directory
         assert_eq!(backdrops_dir.parent().unwrap(), &video_file.parent_dir);
-        
+
         // Verify full path structure
         let expected_full_path1 = video_file.parent_dir.join("backdrops").join("vid1.mp4");
         let expected_full_path2 = video_file.parent_dir.join("backdrops").join("vid2.mp4");
-        
+
         assert_eq!(expected_path1, expected_full_path1);
         assert_eq!(expected_path2, expected_full_path2);
-        
+
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
     }
@@ -1450,7 +1482,7 @@ mod tests {
         ) {
             // Property: For any clip count N (1-4), the generated clips should be named
             // "vid1.mp4", "vid2.mp4", ..., "vidN.mp4" in sequential order
-            
+
             // Create a temporary directory for testing
             let temp_base = std::env::temp_dir().join(format!(
                 "processor_naming_property_test_{}_{}",
@@ -1459,23 +1491,23 @@ mod tests {
             ));
             let _ = fs::remove_dir_all(&temp_base);
             fs::create_dir_all(&temp_base).unwrap();
-            
+
             // Create test video file
             let video_file = create_test_video_structure(&temp_base, "test_video.mp4");
-            
+
             // Create processor with multi-clip mock selector
             let selector = Box::new(MultiClipMockSelector { clip_count });
             let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
             let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, clip_count);
-            
+
             // Create backdrops directory
             let backdrops_dir = processor.create_backdrops_directory(&video_file).unwrap();
-            
+
             // Property 1: For each clip number from 1 to N, the filename should be "vidX.mp4"
             for i in 1..=clip_count {
                 let expected_filename = format!("vid{}.mp4", i);
                 let expected_path = backdrops_dir.join(&expected_filename);
-                
+
                 // Verify the filename is correct
                 prop_assert_eq!(
                     expected_path.file_name().unwrap().to_str().unwrap(),
@@ -1484,7 +1516,7 @@ mod tests {
                     i,
                     expected_filename
                 );
-                
+
                 // Property 2: The path should be in the backdrops directory
                 prop_assert_eq!(
                     expected_path.parent().unwrap(),
@@ -1493,7 +1525,7 @@ mod tests {
                     i
                 );
             }
-            
+
             // Property 3: The naming should be sequential (no gaps)
             // Verify that vid1.mp4, vid2.mp4, ..., vidN.mp4 exist (conceptually)
             // and there are no other numbered clips
@@ -1506,14 +1538,14 @@ mod tests {
                     i
                 );
             }
-            
+
             // Property 4: The naming should start at 1 (not 0)
             let first_clip_path = backdrops_dir.join("vid1.mp4");
             prop_assert!(
                 first_clip_path.to_string_lossy().contains("vid1.mp4"),
                 "First clip should be named 'vid1.mp4', not 'vid0.mp4'"
             );
-            
+
             // Property 5: The naming should end at N (not N+1)
             let last_clip_path = backdrops_dir.join(format!("vid{}.mp4", clip_count));
             prop_assert!(
@@ -1521,16 +1553,16 @@ mod tests {
                 "Last clip should be named 'vid{}.mp4'",
                 clip_count
             );
-            
+
             // Property 6: There should be no clip numbered N+1
             // We verify this by checking that our loop only generates clips 1 to N
             // (This is implicitly tested by the loop above)
-            
+
             // Property 7: All clip paths should follow the pattern "vidX.mp4" where X is a number
             for i in 1..=clip_count {
                 let clip_path = backdrops_dir.join(format!("vid{}.mp4", i));
                 let filename = clip_path.file_name().unwrap().to_str().unwrap();
-                
+
                 // Verify the pattern: starts with "vid", followed by a number, ends with ".mp4"
                 prop_assert!(
                     filename.starts_with("vid"),
@@ -1542,7 +1574,7 @@ mod tests {
                     "Clip filename should end with '.mp4': {}",
                     filename
                 );
-                
+
                 // Extract the number part and verify it matches the index
                 let number_part = &filename[3..filename.len()-4]; // Extract between "vid" and ".mp4"
                 let parsed_number: u8 = number_part.parse().unwrap();
@@ -1552,14 +1584,14 @@ mod tests {
                     "Clip number in filename should match the sequential index"
                 );
             }
-            
+
             // Property 8: The backdrops directory should be in the video's parent directory
             prop_assert_eq!(
                 backdrops_dir.parent().unwrap(),
                 &video_file.parent_dir,
                 "Backdrops directory should be in the video's parent directory"
             );
-            
+
             // Property 9: The backdrops directory name should be "backdrops" (lowercase)
             let backdrops_dir_name = backdrops_dir.file_name()
                 .and_then(|n| n.to_str())
@@ -1569,10 +1601,9 @@ mod tests {
                 "backdrops",
                 "Directory name should be 'backdrops' in lowercase"
             );
-            
+
             // Clean up
             let _ = fs::remove_dir_all(&temp_base);
         }
     }
-
 }

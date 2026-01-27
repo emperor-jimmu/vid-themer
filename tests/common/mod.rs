@@ -7,21 +7,22 @@ use std::process::Command;
 /// Returns true if video was created successfully, false otherwise
 pub fn create_test_video(path: &Path, duration_secs: u32, width: u32, height: u32) -> bool {
     // Check if FFmpeg is available
-    let ffmpeg_check = Command::new("ffmpeg")
-        .arg("-version")
-        .output();
-    
+    let ffmpeg_check = Command::new("ffmpeg").arg("-version").output();
+
     if ffmpeg_check.is_err() {
         eprintln!("FFmpeg not available, skipping video creation");
         return false;
     }
-    
+
     // Create a test video with color bars pattern
     let output = Command::new("ffmpeg")
         .arg("-f")
         .arg("lavfi")
         .arg("-i")
-        .arg(format!("testsrc=duration={}:size={}x{}:rate=30", duration_secs, width, height))
+        .arg(format!(
+            "testsrc=duration={}:size={}x{}:rate=30",
+            duration_secs, width, height
+        ))
         .arg("-f")
         .arg("lavfi")
         .arg("-i")
@@ -35,7 +36,7 @@ pub fn create_test_video(path: &Path, duration_secs: u32, width: u32, height: u3
         .arg("-y")
         .arg(path)
         .output();
-    
+
     match output {
         Ok(result) => result.status.success(),
         Err(_) => false,
@@ -55,11 +56,11 @@ pub fn get_video_duration(path: &Path) -> Option<f64> {
         .arg(path)
         .output()
         .ok()?;
-    
+
     if !output.status.success() {
         return None;
     }
-    
+
     let duration_str = String::from_utf8_lossy(&output.stdout);
     duration_str.trim().parse::<f64>().ok()
 }
@@ -79,14 +80,14 @@ pub fn get_video_resolution(path: &Path) -> Option<(u32, u32)> {
         .arg(path)
         .output()
         .ok()?;
-    
+
     if !output.status.success() {
         return None;
     }
-    
+
     let resolution_str = String::from_utf8_lossy(&output.stdout);
     let parts: Vec<&str> = resolution_str.trim().split('x').collect();
-    
+
     if parts.len() == 2 {
         let width = parts[0].parse::<u32>().ok()?;
         let height = parts[1].parse::<u32>().ok()?;
@@ -112,13 +113,13 @@ pub fn build_binary() -> Result<(), String> {
         .arg("--release")
         .output()
         .map_err(|e| format!("Failed to execute cargo build: {}", e))?;
-    
+
     if !build_output.status.success() {
         return Err(format!(
             "Failed to build project: {}",
             String::from_utf8_lossy(&build_output.stderr)
         ));
     }
-    
+
     Ok(())
 }

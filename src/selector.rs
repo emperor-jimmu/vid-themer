@@ -1,7 +1,7 @@
 // Clip selection strategies (trait + implementations)
 
-use std::path::Path;
 use rand::Rng;
+use std::path::Path;
 
 /// Default intro exclusion percentage (1% of video duration)
 #[allow(dead_code)]
@@ -44,7 +44,7 @@ impl ClipConfig {
         let clip_duration = self.max_duration.min(duration);
         let actual_duration = clip_duration.max(self.min_duration).min(duration);
         let start = ((duration - actual_duration) / 2.0).max(0.0);
-        
+
         Ok(TimeRange {
             start_seconds: start,
             duration_seconds: actual_duration,
@@ -53,7 +53,7 @@ impl ClipConfig {
 }
 
 /// Represents a time segment within a video.
-/// 
+///
 /// Used to specify which portion of a video should be extracted as a clip.
 pub struct TimeRange {
     /// Start position in seconds from the beginning of the video
@@ -64,23 +64,23 @@ pub struct TimeRange {
 
 impl TimeRange {
     /// Check if this time range overlaps with another time range.
-    /// 
+    ///
     /// Two ranges overlap if they share any portion of time. Adjacent ranges
     /// (where one ends exactly when the other starts) are not considered overlapping.
-    /// 
+    ///
     /// # Arguments
     /// * `other` - The other TimeRange to check for overlap
-    /// 
+    ///
     /// # Returns
     /// `true` if the ranges overlap, `false` otherwise
-    /// 
+    ///
     /// # Examples
     /// ```
     /// # use video_clip_extractor::selector::TimeRange;
     /// let range1 = TimeRange { start_seconds: 10.0, duration_seconds: 5.0 };
     /// let range2 = TimeRange { start_seconds: 12.0, duration_seconds: 5.0 };
     /// assert!(range1.overlaps(&range2)); // Overlaps from 12.0 to 15.0
-    /// 
+    ///
     /// let range3 = TimeRange { start_seconds: 15.0, duration_seconds: 5.0 };
     /// assert!(!range1.overlaps(&range3)); // Adjacent but not overlapping
     /// ```
@@ -88,17 +88,17 @@ impl TimeRange {
     pub fn overlaps(&self, other: &TimeRange) -> bool {
         let self_end = self.start_seconds + self.duration_seconds;
         let other_end = other.start_seconds + other.duration_seconds;
-        
+
         // Ranges overlap if one starts before the other ends AND vice versa
         // Using < instead of <= means adjacent ranges (touching) don't overlap
         !(self_end <= other.start_seconds || other_end <= self.start_seconds)
     }
-    
+
     /// Calculate the duration of this time range.
-    /// 
+    ///
     /// # Returns
     /// The duration in seconds
-    /// 
+    ///
     /// # Examples
     /// ```
     /// # use video_clip_extractor::selector::TimeRange;
@@ -109,24 +109,24 @@ impl TimeRange {
     pub fn duration(&self) -> f64 {
         self.duration_seconds
     }
-    
+
     /// Check if the duration of this time range is within valid clip bounds.
-    /// 
+    ///
     /// Valid clip durations are between MIN_CLIP_DURATION (12 seconds) and
     /// MAX_CLIP_DURATION (18 seconds) inclusive.
-    /// 
+    ///
     /// # Returns
     /// `true` if the duration is valid, `false` otherwise
-    /// 
+    ///
     /// # Examples
     /// ```
     /// # use video_clip_extractor::selector::TimeRange;
     /// let valid_range = TimeRange { start_seconds: 10.0, duration_seconds: 15.0 };
     /// assert!(valid_range.is_valid_duration());
-    /// 
+    ///
     /// let too_short = TimeRange { start_seconds: 10.0, duration_seconds: 5.0 };
     /// assert!(!too_short.is_valid_duration());
-    /// 
+    ///
     /// let too_long = TimeRange { start_seconds: 10.0, duration_seconds: 25.0 };
     /// assert!(!too_long.is_valid_duration());
     /// ```
@@ -151,7 +151,7 @@ impl ExclusionZones {
             outro_boundary: duration - (duration * (outro_percent / 100.0)),
         }
     }
-    
+
     /// Check if a segment (defined by start and end times) falls within valid zones
     fn contains_segment(&self, start: f64, end: f64) -> bool {
         start >= self.intro_boundary && end <= self.outro_boundary
@@ -159,25 +159,25 @@ impl ExclusionZones {
 }
 
 /// Trait for selecting clip segments from videos.
-/// 
+///
 /// Implementations of this trait provide different strategies for selecting
 /// one or more non-overlapping clip segments from a video file. All clips
 /// must respect exclusion zones (intro/outro) and duration constraints.
 pub trait ClipSelector {
     /// Select multiple non-overlapping clip segments from a video.
-    /// 
+    ///
     /// # Arguments
     /// * `video_path` - Path to the video file
     /// * `duration` - Total video duration in seconds
     /// * `intro_exclusion_percent` - Percentage of video duration to exclude from start (0-100)
     /// * `outro_exclusion_percent` - Percentage of video duration to exclude from end (0-100)
     /// * `clip_count` - Number of clips to generate (1-4)
-    /// 
+    ///
     /// # Returns
     /// Vector of TimeRange objects representing non-overlapping clip segments,
     /// sorted by start time. May return fewer than clip_count if video is too short
     /// or if insufficient non-overlapping segments can be found within constraints.
-    /// 
+    ///
     /// # Behavior
     /// - All returned clips must be non-overlapping
     /// - All clips must fall within the valid selection zone (after intro, before outro)
@@ -206,64 +206,63 @@ impl ClipSelector for RandomSelector {
         clip_count: u8,
     ) -> Result<Vec<TimeRange>, SelectionError> {
         const MAX_ATTEMPTS: u32 = 1000;
-        
+
         // Calculate valid selection zone (intro/outro exclusion)
         let intro_cutoff = duration * (intro_exclusion_percent / 100.0);
         let outro_cutoff = duration - (duration * (outro_exclusion_percent / 100.0));
         let valid_duration = outro_cutoff - intro_cutoff;
-        
+
         // Check if video can accommodate requested clips
         let min_required = (clip_count as f64) * MIN_CLIP_DURATION;
-        
+
         // If video is too short, generate as many clips as possible
         let actual_clip_count = if valid_duration < min_required {
-            let possible_count = (valid_duration / MIN_CLIP_DURATION).floor() as u8;
-            possible_count.max(0)
+            (valid_duration / MIN_CLIP_DURATION).floor() as u8
         } else {
             clip_count
         };
-        
+
         // If no clips can be generated, return empty vector
         if actual_clip_count == 0 || valid_duration < MIN_CLIP_DURATION {
             return Ok(vec![]);
         }
-        
+
         let mut clips = Vec::new();
         let mut rng = rand::thread_rng();
         let mut attempts = 0;
-        
+
         // Implement loop to generate N random non-overlapping clips
         while clips.len() < actual_clip_count as usize && attempts < MAX_ATTEMPTS {
             attempts += 1;
-            
+
             // Generate random clip duration between min and max
             let clip_duration = rng.gen_range(MIN_CLIP_DURATION..=MAX_CLIP_DURATION);
-            
+
             // Calculate valid start range
             let max_start = outro_cutoff - clip_duration;
-            
+
             // Skip if no valid range exists
             if intro_cutoff >= max_start {
                 continue;
             }
-            
+
             // Generate random start time within valid bounds
             let start = rng.gen_range(intro_cutoff..=max_start);
-            
+
             let candidate = TimeRange {
                 start_seconds: start,
                 duration_seconds: clip_duration,
             };
-            
+
             // Check for overlaps with existing clips
             if !clips.iter().any(|existing| candidate.overlaps(existing)) {
                 clips.push(candidate);
             }
         }
-        
+
         // Sort clips by start time before returning
         clips.sort_by(|a, b| a.start_seconds.partial_cmp(&b.start_seconds).unwrap());
-        
+
         Ok(clips)
     }
 }
@@ -289,106 +288,113 @@ impl ClipSelector for IntenseAudioSelector {
     ) -> Result<Vec<TimeRange>, SelectionError> {
         const MAX_ATTEMPTS: u32 = 1000;
         let config = ClipConfig::default();
-        
+
         // Calculate valid selection zone
         let intro_cutoff = duration * (intro_exclusion_percent / 100.0);
         let outro_cutoff = duration - (duration * (outro_exclusion_percent / 100.0));
         let valid_duration = outro_cutoff - intro_cutoff;
-        
+
         // Try to analyze audio intensity
-        match self.ffmpeg_executor.analyze_audio_intensity(video_path, duration) {
+        match self
+            .ffmpeg_executor
+            .analyze_audio_intensity(video_path, duration)
+        {
             Ok(segments) => {
                 // Check if video can accommodate requested clips
                 let min_required = (clip_count as f64) * MIN_CLIP_DURATION;
-                
+
                 // If video is too short, generate as many clips as possible
                 let actual_clip_count = if valid_duration < min_required {
-                    let possible_count = (valid_duration / MIN_CLIP_DURATION).floor() as u8;
-                    possible_count.max(0)
+                    (valid_duration / MIN_CLIP_DURATION).floor() as u8
                 } else {
                     clip_count
                 };
-                
+
                 // If no clips can be generated, return empty vector
                 if actual_clip_count == 0 || valid_duration < MIN_CLIP_DURATION {
                     return Ok(vec![]);
                 }
-                
+
                 // Calculate exclusion zone boundaries
-                let zones = ExclusionZones::new(duration, intro_exclusion_percent, outro_exclusion_percent);
-                
+                let zones =
+                    ExclusionZones::new(duration, intro_exclusion_percent, outro_exclusion_percent);
+
                 // Find intensity peaks within valid zone
                 // Segments are already sorted by intensity (highest first)
-                let valid_peaks: Vec<_> = segments.into_iter()
+                let valid_peaks: Vec<_> = segments
+                    .into_iter()
                     .filter(|seg| {
                         let segment_end = seg.start_time + seg.duration;
                         zones.contains_segment(seg.start_time, segment_end)
                     })
                     .collect();
-                
+
                 // If no valid peaks found, fall back to middle segment
                 if valid_peaks.is_empty() {
                     return Ok(vec![config.middle_segment(duration)?]);
                 }
-                
+
                 // Select top N non-overlapping peaks
                 let mut selected_clips = Vec::new();
                 let mut attempts = 0;
-                
+
                 for peak in valid_peaks {
                     if selected_clips.len() >= actual_clip_count as usize {
                         break;
                     }
-                    
+
                     attempts += 1;
                     if attempts > MAX_ATTEMPTS {
                         break;
                     }
-                    
+
                     // Create TimeRange around peak
                     // Use a duration in the middle of the valid range
-                    let clip_duration = MIN_CLIP_DURATION + 
-                        (MAX_CLIP_DURATION - MIN_CLIP_DURATION) * 0.5;
-                    
+                    let clip_duration =
+                        MIN_CLIP_DURATION + (MAX_CLIP_DURATION - MIN_CLIP_DURATION) * 0.5;
+
                     // Center the clip around the peak's start time
-                    let mut start = (peak.start_time - clip_duration / 2.0)
-                        .max(intro_cutoff);
-                    
+                    let mut start = (peak.start_time - clip_duration / 2.0).max(intro_cutoff);
+
                     // Ensure the clip doesn't exceed outro boundary
                     let mut end = start + clip_duration;
                     if end > outro_cutoff {
                         end = outro_cutoff;
                         start = (end - clip_duration).max(intro_cutoff);
                     }
-                    
+
                     // Recalculate duration in case adjustments were made
                     let actual_duration = end - start;
-                    
+
                     // Skip if duration is invalid
-                    if actual_duration < MIN_CLIP_DURATION || actual_duration > MAX_CLIP_DURATION {
+                    if !(MIN_CLIP_DURATION..=MAX_CLIP_DURATION).contains(&actual_duration) {
                         continue;
                     }
-                    
+
                     let candidate = TimeRange {
                         start_seconds: start,
                         duration_seconds: actual_duration,
                     };
-                    
+
                     // Check for overlaps with existing clips
-                    if !selected_clips.iter().any(|existing| candidate.overlaps(existing)) 
-                        && candidate.is_valid_duration() {
+                    if !selected_clips
+                        .iter()
+                        .any(|existing| candidate.overlaps(existing))
+                        && candidate.is_valid_duration()
+                    {
                         selected_clips.push(candidate);
                     }
                 }
-                
+
                 // If we couldn't generate any clips from peaks, fall back to middle segment
                 if selected_clips.is_empty() {
                     return Ok(vec![config.middle_segment(duration)?]);
                 }
-                
+
                 // Sort selected clips by start time before returning
-                selected_clips.sort_by(|a, b| a.start_seconds.partial_cmp(&b.start_seconds).unwrap());
-                
+                selected_clips
+                    .sort_by(|a, b| a.start_seconds.partial_cmp(&b.start_seconds).unwrap());
+
                 Ok(selected_clips)
             }
             Err(crate::ffmpeg::FFmpegError::NoAudioTrack) => {
@@ -426,31 +432,34 @@ impl ClipSelector for ActionSelector {
         // Temporary implementation - will be replaced in task 5
         // For now, just return a single clip regardless of clip_count
         let config = ClipConfig::default();
-        
+
         // Try to analyze motion intensity
-        match self.ffmpeg_executor.analyze_motion_intensity(video_path, duration) {
+        match self
+            .ffmpeg_executor
+            .analyze_motion_intensity(video_path, duration)
+        {
             Ok(segments) => {
                 // Calculate exclusion zone boundaries
-                let zones = ExclusionZones::new(duration, intro_exclusion_percent, outro_exclusion_percent);
-                
+                let zones =
+                    ExclusionZones::new(duration, intro_exclusion_percent, outro_exclusion_percent);
+
                 // Find the first segment that falls within valid zones
                 // Segments are already sorted by motion score (highest first)
-                if let Some(best_segment) = segments.into_iter()
-                    .find(|seg| {
-                        let segment_end = seg.start_time + seg.duration;
-                        zones.contains_segment(seg.start_time, segment_end)
-                    })
-                {
+                if let Some(best_segment) = segments.into_iter().find(|seg| {
+                    let segment_end = seg.start_time + seg.duration;
+                    zones.contains_segment(seg.start_time, segment_end)
+                }) {
                     // Adjust clip duration to fit 12-18 second range
-                    let clip_duration = best_segment.duration
+                    let clip_duration = best_segment
+                        .duration
                         .max(config.min_duration)
                         .min(config.max_duration)
                         .min(duration); // Don't exceed video duration
-                    
+
                     // Ensure the clip fits within the video
                     let start = best_segment.start_time;
                     let end = start + clip_duration;
-                    
+
                     if end <= duration {
                         return Ok(vec![TimeRange {
                             start_seconds: start,
@@ -465,7 +474,7 @@ impl ClipSelector for ActionSelector {
                         }]);
                     }
                 }
-                
+
                 // No valid segments found, fall back to middle segment
                 Ok(vec![config.middle_segment(duration)?])
             }
@@ -482,10 +491,10 @@ pub enum SelectionError {
     #[error("Video too short: {0}s")]
     #[allow(dead_code)]
     VideoTooShort(f64),
-    
+
     #[error("Failed to analyze audio: {0}")]
     AudioAnalysisFailed(String),
-    
+
     #[error("Failed to analyze motion: {0}")]
     #[allow(dead_code)]
     MotionAnalysisFailed(String),
@@ -494,8 +503,8 @@ pub enum SelectionError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use proptest::prelude::*;
+    use std::path::PathBuf;
 
     // Test constants
     const MIN_TEST_DURATION: f64 = 415.0; // Minimum duration for exclusion zone tests
@@ -507,182 +516,419 @@ mod tests {
     #[test]
     fn test_timerange_overlaps_complete_overlap() {
         // Test case: range2 is completely inside range1
-        let range1 = TimeRange { start_seconds: 10.0, duration_seconds: 20.0 };
-        let range2 = TimeRange { start_seconds: 15.0, duration_seconds: 5.0 };
-        
-        assert!(range1.overlaps(&range2), "range1 should overlap with range2 (range2 inside range1)");
-        assert!(range2.overlaps(&range1), "range2 should overlap with range1 (symmetric)");
+        let range1 = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 20.0,
+        };
+        let range2 = TimeRange {
+            start_seconds: 15.0,
+            duration_seconds: 5.0,
+        };
+
+        assert!(
+            range1.overlaps(&range2),
+            "range1 should overlap with range2 (range2 inside range1)"
+        );
+        assert!(
+            range2.overlaps(&range1),
+            "range2 should overlap with range1 (symmetric)"
+        );
     }
 
     #[test]
     fn test_timerange_overlaps_partial_overlap() {
         // Test case: ranges partially overlap
-        let range1 = TimeRange { start_seconds: 10.0, duration_seconds: 10.0 }; // 10-20
-        let range2 = TimeRange { start_seconds: 15.0, duration_seconds: 10.0 }; // 15-25
-        
-        assert!(range1.overlaps(&range2), "range1 should overlap with range2 (partial overlap)");
-        assert!(range2.overlaps(&range1), "range2 should overlap with range1 (symmetric)");
+        let range1 = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 10.0,
+        }; // 10-20
+        let range2 = TimeRange {
+            start_seconds: 15.0,
+            duration_seconds: 10.0,
+        }; // 15-25
+
+        assert!(
+            range1.overlaps(&range2),
+            "range1 should overlap with range2 (partial overlap)"
+        );
+        assert!(
+            range2.overlaps(&range1),
+            "range2 should overlap with range1 (symmetric)"
+        );
     }
 
     #[test]
     fn test_timerange_overlaps_start_overlap() {
         // Test case: range2 starts before range1 ends
-        let range1 = TimeRange { start_seconds: 10.0, duration_seconds: 5.0 }; // 10-15
-        let range2 = TimeRange { start_seconds: 12.0, duration_seconds: 8.0 }; // 12-20
-        
-        assert!(range1.overlaps(&range2), "range1 should overlap with range2");
-        assert!(range2.overlaps(&range1), "range2 should overlap with range1 (symmetric)");
+        let range1 = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 5.0,
+        }; // 10-15
+        let range2 = TimeRange {
+            start_seconds: 12.0,
+            duration_seconds: 8.0,
+        }; // 12-20
+
+        assert!(
+            range1.overlaps(&range2),
+            "range1 should overlap with range2"
+        );
+        assert!(
+            range2.overlaps(&range1),
+            "range2 should overlap with range1 (symmetric)"
+        );
     }
 
     #[test]
     fn test_timerange_no_overlap_before() {
         // Test case: range1 ends before range2 starts
-        let range1 = TimeRange { start_seconds: 10.0, duration_seconds: 5.0 }; // 10-15
-        let range2 = TimeRange { start_seconds: 20.0, duration_seconds: 5.0 }; // 20-25
-        
-        assert!(!range1.overlaps(&range2), "range1 should not overlap with range2 (gap between)");
-        assert!(!range2.overlaps(&range1), "range2 should not overlap with range1 (symmetric)");
+        let range1 = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 5.0,
+        }; // 10-15
+        let range2 = TimeRange {
+            start_seconds: 20.0,
+            duration_seconds: 5.0,
+        }; // 20-25
+
+        assert!(
+            !range1.overlaps(&range2),
+            "range1 should not overlap with range2 (gap between)"
+        );
+        assert!(
+            !range2.overlaps(&range1),
+            "range2 should not overlap with range1 (symmetric)"
+        );
     }
 
     #[test]
     fn test_timerange_no_overlap_after() {
         // Test case: range2 ends before range1 starts
-        let range1 = TimeRange { start_seconds: 20.0, duration_seconds: 5.0 }; // 20-25
-        let range2 = TimeRange { start_seconds: 10.0, duration_seconds: 5.0 }; // 10-15
-        
-        assert!(!range1.overlaps(&range2), "range1 should not overlap with range2");
-        assert!(!range2.overlaps(&range1), "range2 should not overlap with range1 (symmetric)");
+        let range1 = TimeRange {
+            start_seconds: 20.0,
+            duration_seconds: 5.0,
+        }; // 20-25
+        let range2 = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 5.0,
+        }; // 10-15
+
+        assert!(
+            !range1.overlaps(&range2),
+            "range1 should not overlap with range2"
+        );
+        assert!(
+            !range2.overlaps(&range1),
+            "range2 should not overlap with range1 (symmetric)"
+        );
     }
 
     #[test]
     fn test_timerange_adjacent_touching() {
         // Test case: ranges are adjacent (touching but not overlapping)
-        let range1 = TimeRange { start_seconds: 10.0, duration_seconds: 5.0 }; // 10-15
-        let range2 = TimeRange { start_seconds: 15.0, duration_seconds: 5.0 }; // 15-20
-        
-        assert!(!range1.overlaps(&range2), "Adjacent ranges should not overlap (range1 ends where range2 starts)");
-        assert!(!range2.overlaps(&range1), "Adjacent ranges should not overlap (symmetric)");
+        let range1 = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 5.0,
+        }; // 10-15
+        let range2 = TimeRange {
+            start_seconds: 15.0,
+            duration_seconds: 5.0,
+        }; // 15-20
+
+        assert!(
+            !range1.overlaps(&range2),
+            "Adjacent ranges should not overlap (range1 ends where range2 starts)"
+        );
+        assert!(
+            !range2.overlaps(&range1),
+            "Adjacent ranges should not overlap (symmetric)"
+        );
     }
 
     #[test]
     fn test_timerange_adjacent_touching_reverse() {
         // Test case: ranges are adjacent in reverse order
-        let range1 = TimeRange { start_seconds: 15.0, duration_seconds: 5.0 }; // 15-20
-        let range2 = TimeRange { start_seconds: 10.0, duration_seconds: 5.0 }; // 10-15
-        
-        assert!(!range1.overlaps(&range2), "Adjacent ranges should not overlap");
-        assert!(!range2.overlaps(&range1), "Adjacent ranges should not overlap (symmetric)");
+        let range1 = TimeRange {
+            start_seconds: 15.0,
+            duration_seconds: 5.0,
+        }; // 15-20
+        let range2 = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 5.0,
+        }; // 10-15
+
+        assert!(
+            !range1.overlaps(&range2),
+            "Adjacent ranges should not overlap"
+        );
+        assert!(
+            !range2.overlaps(&range1),
+            "Adjacent ranges should not overlap (symmetric)"
+        );
     }
 
     #[test]
     fn test_timerange_identical_ranges() {
         // Test case: identical ranges
-        let range1 = TimeRange { start_seconds: 10.0, duration_seconds: 5.0 };
-        let range2 = TimeRange { start_seconds: 10.0, duration_seconds: 5.0 };
-        
+        let range1 = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 5.0,
+        };
+        let range2 = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 5.0,
+        };
+
         assert!(range1.overlaps(&range2), "Identical ranges should overlap");
-        assert!(range2.overlaps(&range1), "Identical ranges should overlap (symmetric)");
+        assert!(
+            range2.overlaps(&range1),
+            "Identical ranges should overlap (symmetric)"
+        );
     }
 
     #[test]
     fn test_timerange_zero_duration() {
         // Test case: zero duration range (edge case)
-        let range1 = TimeRange { start_seconds: 10.0, duration_seconds: 0.0 };
-        let range2 = TimeRange { start_seconds: 10.0, duration_seconds: 5.0 };
-        
+        let range1 = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 0.0,
+        };
+        let range2 = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 5.0,
+        };
+
         // Zero duration range at the start of another range should not overlap
-        assert!(!range1.overlaps(&range2), "Zero duration range should not overlap");
-        assert!(!range2.overlaps(&range1), "Zero duration range should not overlap (symmetric)");
+        assert!(
+            !range1.overlaps(&range2),
+            "Zero duration range should not overlap"
+        );
+        assert!(
+            !range2.overlaps(&range1),
+            "Zero duration range should not overlap (symmetric)"
+        );
     }
 
     #[test]
     fn test_timerange_duration_calculation() {
         // Test duration() method returns the duration_seconds field
-        let range1 = TimeRange { start_seconds: 10.0, duration_seconds: 15.0 };
+        let range1 = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 15.0,
+        };
         assert_eq!(range1.duration(), 15.0, "Duration should be 15.0");
-        
-        let range2 = TimeRange { start_seconds: 0.0, duration_seconds: 12.0 };
+
+        let range2 = TimeRange {
+            start_seconds: 0.0,
+            duration_seconds: 12.0,
+        };
         assert_eq!(range2.duration(), 12.0, "Duration should be 12.0");
-        
-        let range3 = TimeRange { start_seconds: 100.0, duration_seconds: 18.0 };
+
+        let range3 = TimeRange {
+            start_seconds: 100.0,
+            duration_seconds: 18.0,
+        };
         assert_eq!(range3.duration(), 18.0, "Duration should be 18.0");
     }
 
     #[test]
     fn test_timerange_valid_duration_within_bounds() {
         // Test valid durations (12-18 seconds)
-        let range_min = TimeRange { start_seconds: 10.0, duration_seconds: 12.0 };
-        assert!(range_min.is_valid_duration(), "12 seconds should be valid (minimum)");
-        
-        let range_mid = TimeRange { start_seconds: 10.0, duration_seconds: 15.0 };
-        assert!(range_mid.is_valid_duration(), "15 seconds should be valid (middle)");
-        
-        let range_max = TimeRange { start_seconds: 10.0, duration_seconds: 18.0 };
-        assert!(range_max.is_valid_duration(), "18 seconds should be valid (maximum)");
+        let range_min = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 12.0,
+        };
+        assert!(
+            range_min.is_valid_duration(),
+            "12 seconds should be valid (minimum)"
+        );
+
+        let range_mid = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 15.0,
+        };
+        assert!(
+            range_mid.is_valid_duration(),
+            "15 seconds should be valid (middle)"
+        );
+
+        let range_max = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 18.0,
+        };
+        assert!(
+            range_max.is_valid_duration(),
+            "18 seconds should be valid (maximum)"
+        );
     }
 
     #[test]
     fn test_timerange_invalid_duration_too_short() {
         // Test durations below minimum (< 12 seconds)
-        let range_short = TimeRange { start_seconds: 10.0, duration_seconds: 11.9 };
-        assert!(!range_short.is_valid_duration(), "11.9 seconds should be invalid (too short)");
-        
-        let range_very_short = TimeRange { start_seconds: 10.0, duration_seconds: 5.0 };
-        assert!(!range_very_short.is_valid_duration(), "5 seconds should be invalid (too short)");
-        
-        let range_zero = TimeRange { start_seconds: 10.0, duration_seconds: 0.0 };
-        assert!(!range_zero.is_valid_duration(), "0 seconds should be invalid");
+        let range_short = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 11.9,
+        };
+        assert!(
+            !range_short.is_valid_duration(),
+            "11.9 seconds should be invalid (too short)"
+        );
+
+        let range_very_short = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 5.0,
+        };
+        assert!(
+            !range_very_short.is_valid_duration(),
+            "5 seconds should be invalid (too short)"
+        );
+
+        let range_zero = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 0.0,
+        };
+        assert!(
+            !range_zero.is_valid_duration(),
+            "0 seconds should be invalid"
+        );
     }
 
     #[test]
     fn test_timerange_invalid_duration_too_long() {
         // Test durations above maximum (> 18 seconds)
-        let range_long = TimeRange { start_seconds: 10.0, duration_seconds: 18.1 };
-        assert!(!range_long.is_valid_duration(), "18.1 seconds should be invalid (too long)");
-        
-        let range_very_long = TimeRange { start_seconds: 10.0, duration_seconds: 25.0 };
-        assert!(!range_very_long.is_valid_duration(), "25 seconds should be invalid (too long)");
-        
-        let range_extremely_long = TimeRange { start_seconds: 10.0, duration_seconds: 100.0 };
-        assert!(!range_extremely_long.is_valid_duration(), "100 seconds should be invalid (too long)");
+        let range_long = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 18.1,
+        };
+        assert!(
+            !range_long.is_valid_duration(),
+            "18.1 seconds should be invalid (too long)"
+        );
+
+        let range_very_long = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 25.0,
+        };
+        assert!(
+            !range_very_long.is_valid_duration(),
+            "25 seconds should be invalid (too long)"
+        );
+
+        let range_extremely_long = TimeRange {
+            start_seconds: 10.0,
+            duration_seconds: 100.0,
+        };
+        assert!(
+            !range_extremely_long.is_valid_duration(),
+            "100 seconds should be invalid (too long)"
+        );
     }
 
     #[test]
     fn test_timerange_boundary_values() {
         // Test exact boundary values
-        let range_exactly_min = TimeRange { start_seconds: 0.0, duration_seconds: MIN_CLIP_DURATION };
-        assert!(range_exactly_min.is_valid_duration(), "Exactly MIN_CLIP_DURATION should be valid");
-        
-        let range_exactly_max = TimeRange { start_seconds: 0.0, duration_seconds: MAX_CLIP_DURATION };
-        assert!(range_exactly_max.is_valid_duration(), "Exactly MAX_CLIP_DURATION should be valid");
-        
-        let range_just_below_min = TimeRange { start_seconds: 0.0, duration_seconds: MIN_CLIP_DURATION - 0.01 };
-        assert!(!range_just_below_min.is_valid_duration(), "Just below MIN_CLIP_DURATION should be invalid");
-        
-        let range_just_above_max = TimeRange { start_seconds: 0.0, duration_seconds: MAX_CLIP_DURATION + 0.01 };
-        assert!(!range_just_above_max.is_valid_duration(), "Just above MAX_CLIP_DURATION should be invalid");
+        let range_exactly_min = TimeRange {
+            start_seconds: 0.0,
+            duration_seconds: MIN_CLIP_DURATION,
+        };
+        assert!(
+            range_exactly_min.is_valid_duration(),
+            "Exactly MIN_CLIP_DURATION should be valid"
+        );
+
+        let range_exactly_max = TimeRange {
+            start_seconds: 0.0,
+            duration_seconds: MAX_CLIP_DURATION,
+        };
+        assert!(
+            range_exactly_max.is_valid_duration(),
+            "Exactly MAX_CLIP_DURATION should be valid"
+        );
+
+        let range_just_below_min = TimeRange {
+            start_seconds: 0.0,
+            duration_seconds: MIN_CLIP_DURATION - 0.01,
+        };
+        assert!(
+            !range_just_below_min.is_valid_duration(),
+            "Just below MIN_CLIP_DURATION should be invalid"
+        );
+
+        let range_just_above_max = TimeRange {
+            start_seconds: 0.0,
+            duration_seconds: MAX_CLIP_DURATION + 0.01,
+        };
+        assert!(
+            !range_just_above_max.is_valid_duration(),
+            "Just above MAX_CLIP_DURATION should be invalid"
+        );
     }
 
     #[test]
     fn test_timerange_overlaps_with_multiple_ranges() {
         // Test a range against multiple other ranges
-        let base_range = TimeRange { start_seconds: 50.0, duration_seconds: 15.0 }; // 50-65
-        
-        let before = TimeRange { start_seconds: 30.0, duration_seconds: 10.0 }; // 30-40
-        let touching_before = TimeRange { start_seconds: 35.0, duration_seconds: 15.0 }; // 35-50
-        let overlapping_start = TimeRange { start_seconds: 45.0, duration_seconds: 10.0 }; // 45-55
-        let inside = TimeRange { start_seconds: 55.0, duration_seconds: 5.0 }; // 55-60
-        let overlapping_end = TimeRange { start_seconds: 60.0, duration_seconds: 10.0 }; // 60-70
-        let touching_after = TimeRange { start_seconds: 65.0, duration_seconds: 10.0 }; // 65-75
-        let after = TimeRange { start_seconds: 70.0, duration_seconds: 10.0 }; // 70-80
-        
-        assert!(!base_range.overlaps(&before), "Should not overlap with range before");
-        assert!(!base_range.overlaps(&touching_before), "Should not overlap with range touching before");
-        assert!(base_range.overlaps(&overlapping_start), "Should overlap with range overlapping start");
-        assert!(base_range.overlaps(&inside), "Should overlap with range inside");
-        assert!(base_range.overlaps(&overlapping_end), "Should overlap with range overlapping end");
-        assert!(!base_range.overlaps(&touching_after), "Should not overlap with range touching after");
-        assert!(!base_range.overlaps(&after), "Should not overlap with range after");
+        let base_range = TimeRange {
+            start_seconds: 50.0,
+            duration_seconds: 15.0,
+        }; // 50-65
+
+        let before = TimeRange {
+            start_seconds: 30.0,
+            duration_seconds: 10.0,
+        }; // 30-40
+        let touching_before = TimeRange {
+            start_seconds: 35.0,
+            duration_seconds: 15.0,
+        }; // 35-50
+        let overlapping_start = TimeRange {
+            start_seconds: 45.0,
+            duration_seconds: 10.0,
+        }; // 45-55
+        let inside = TimeRange {
+            start_seconds: 55.0,
+            duration_seconds: 5.0,
+        }; // 55-60
+        let overlapping_end = TimeRange {
+            start_seconds: 60.0,
+            duration_seconds: 10.0,
+        }; // 60-70
+        let touching_after = TimeRange {
+            start_seconds: 65.0,
+            duration_seconds: 10.0,
+        }; // 65-75
+        let after = TimeRange {
+            start_seconds: 70.0,
+            duration_seconds: 10.0,
+        }; // 70-80
+
+        assert!(
+            !base_range.overlaps(&before),
+            "Should not overlap with range before"
+        );
+        assert!(
+            !base_range.overlaps(&touching_before),
+            "Should not overlap with range touching before"
+        );
+        assert!(
+            base_range.overlaps(&overlapping_start),
+            "Should overlap with range overlapping start"
+        );
+        assert!(
+            base_range.overlaps(&inside),
+            "Should overlap with range inside"
+        );
+        assert!(
+            base_range.overlaps(&overlapping_end),
+            "Should overlap with range overlapping end"
+        );
+        assert!(
+            !base_range.overlaps(&touching_after),
+            "Should not overlap with range touching after"
+        );
+        assert!(
+            !base_range.overlaps(&after),
+            "Should not overlap with range after"
+        );
     }
 
     // Feature: multiple-clips-per-video, Property 4: Non-Overlapping Segments
@@ -702,7 +948,7 @@ mod tests {
                     duration_seconds: *duration,
                 })
                 .collect();
-            
+
             // Property: For any pair of ranges that don't overlap according to overlaps(),
             // they should satisfy the mathematical definition of non-overlapping:
             // either range1.end <= range2.start OR range2.end <= range1.start
@@ -710,16 +956,16 @@ mod tests {
                 for j in (i + 1)..time_ranges.len() {
                     let range1 = &time_ranges[i];
                     let range2 = &time_ranges[j];
-                    
+
                     let range1_end = range1.start_seconds + range1.duration_seconds;
                     let range2_end = range2.start_seconds + range2.duration_seconds;
-                    
+
                     let overlaps_result = range1.overlaps(range2);
-                    
+
                     // Mathematical definition: ranges don't overlap if one ends before or at the other starts
-                    let mathematically_non_overlapping = 
+                    let mathematically_non_overlapping =
                         range1_end <= range2.start_seconds || range2_end <= range1.start_seconds;
-                    
+
                     // Property: overlaps() should return true IFF ranges are NOT mathematically non-overlapping
                     prop_assert_eq!(
                         overlaps_result,
@@ -730,7 +976,7 @@ mod tests {
                         range2.start_seconds, range2_end,
                         overlaps_result, mathematically_non_overlapping
                     );
-                    
+
                     // Property: overlaps() should be symmetric
                     prop_assert_eq!(
                         range1.overlaps(range2),
@@ -748,43 +994,43 @@ mod tests {
         fn test_random_selection_valid_bounds(duration in MIN_TEST_DURATION..3600.0f64) {
             // Test that for videos long enough to accommodate exclusions,
             // the selected segment respects the intro and outro exclusion zones
-            
+
             const INTRO_EXCLUSION_PERCENT: f64 = 2.0;
             const OUTRO_EXCLUSION_PERCENT: f64 = 40.0;
             const MIN_CLIP_DURATION: f64 = 12.0;
             const MAX_CLIP_DURATION: f64 = 18.0;
-            
+
             let selector = RandomSelector;
             let video_path = PathBuf::from("test.mp4");
-            
+
             // Calculate actual exclusion zones based on percentages
             let intro_exclusion = duration * (INTRO_EXCLUSION_PERCENT / 100.0);
             let outro_exclusion = duration * (OUTRO_EXCLUSION_PERCENT / 100.0);
-            
+
             let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
             prop_assert!(result.is_ok(), "Selection should succeed for valid duration");
-            
+
             let time_ranges = result.unwrap();
             prop_assert!(!time_ranges.is_empty(), "Should return at least one clip");
             let time_range = &time_ranges[0];
-            
+
             // Property 1: Clip duration should be between 12 and 18 seconds
             prop_assert!(time_range.duration_seconds >= MIN_CLIP_DURATION,
                 "Clip duration {} should be >= {}", time_range.duration_seconds, MIN_CLIP_DURATION);
             prop_assert!(time_range.duration_seconds <= MAX_CLIP_DURATION,
                 "Clip duration {} should be <= {}", time_range.duration_seconds, MAX_CLIP_DURATION);
-            
+
             // Property 2: Start time should be at least intro_exclusion from beginning
             prop_assert!(time_range.start_seconds >= intro_exclusion,
-                "Start time {} should be >= {} (intro exclusion)", 
+                "Start time {} should be >= {} (intro exclusion)",
                 time_range.start_seconds, intro_exclusion);
-            
+
             // Property 3: End time should be at least outro_exclusion before video end
             let end_time = time_range.start_seconds + time_range.duration_seconds;
             prop_assert!(end_time <= duration - outro_exclusion,
                 "End time {} should be <= {} (duration {} - outro exclusion {})",
                 end_time, duration - outro_exclusion, duration, outro_exclusion);
-            
+
             // Property 4: The selected segment should fit within video duration
             prop_assert!(end_time <= duration,
                 "End time {} should not exceed video duration {}", end_time, duration);
@@ -796,25 +1042,33 @@ mod tests {
         let selector = RandomSelector;
         let video_path = PathBuf::from("test.mp4");
         let duration = 600.0; // 10 minutes
-        
-        let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
+
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            1,
+        );
         assert!(result.is_ok());
-        
+
         let time_ranges = result.unwrap();
         assert!(!time_ranges.is_empty());
         let time_range = &time_ranges[0];
-        
+
         // Calculate actual exclusion zones (1% intro, 40% outro)
         let intro_exclusion = duration * (INTRO_EXCLUSION_PERCENT / 100.0); // 6 seconds
         let outro_exclusion = duration * (OUTRO_EXCLUSION_PERCENT / 100.0); // 240 seconds
-        
+
         // Verify clip duration is between 12 and 18 seconds
         assert!(time_range.duration_seconds >= 12.0);
         assert!(time_range.duration_seconds <= 18.0);
-        
+
         // Verify start time respects exclusion zones
         assert!(time_range.start_seconds >= intro_exclusion); // After intro exclusion
-        assert!(time_range.start_seconds + time_range.duration_seconds <= duration - outro_exclusion); // Before outro exclusion
+        assert!(
+            time_range.start_seconds + time_range.duration_seconds <= duration - outro_exclusion
+        ); // Before outro exclusion
     }
 
     #[test]
@@ -822,13 +1076,23 @@ mod tests {
         let selector = RandomSelector;
         let video_path = PathBuf::from("test.mp4");
         let duration = 10.0; // 10 seconds - too short for 1% intro (0.1s) + 12-18s clip + 40% outro (4s) = needs >16.1s
-        
-        let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
+
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            1,
+        );
         assert!(result.is_ok());
-        
+
         let time_ranges = result.unwrap();
         // With the new implementation, videos too short for exclusion zones return empty vector
-        assert_eq!(time_ranges.len(), 0, "Should return empty vector for video too short for exclusion zones");
+        assert_eq!(
+            time_ranges.len(),
+            0,
+            "Should return empty vector for video too short for exclusion zones"
+        );
     }
 
     #[test]
@@ -836,13 +1100,23 @@ mod tests {
         let selector = RandomSelector;
         let video_path = PathBuf::from("test.mp4");
         let duration = 3.0; // 3 seconds - shorter than minimum clip duration
-        
-        let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
+
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            1,
+        );
         assert!(result.is_ok());
-        
+
         let time_ranges = result.unwrap();
         // With the new implementation, videos too short return empty vector
-        assert_eq!(time_ranges.len(), 0, "Should return empty vector for video too short");
+        assert_eq!(
+            time_ranges.len(),
+            0,
+            "Should return empty vector for video too short"
+        );
     }
 
     #[test]
@@ -850,21 +1124,32 @@ mod tests {
         let selector = RandomSelector;
         let video_path = PathBuf::from("test.mp4");
         let duration = 600.0; // 10 minutes
-        
+
         // Run multiple times and collect start times
         let mut start_times = Vec::new();
         for _ in 0..10 {
-            let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
+            let result = selector.select_clips(
+                &video_path,
+                duration,
+                INTRO_EXCLUSION_PERCENT,
+                OUTRO_EXCLUSION_PERCENT,
+                1,
+            );
             assert!(result.is_ok());
             let time_ranges = result.unwrap();
             assert!(!time_ranges.is_empty());
             start_times.push(time_ranges[0].start_seconds);
         }
-        
+
         // Verify that not all start times are identical (variety check)
         let first = start_times[0];
-        let all_same = start_times.iter().all(|&x| (x - first).abs() < FLOAT_EPSILON);
-        assert!(!all_same, "Random selector should produce variety in start times");
+        let all_same = start_times
+            .iter()
+            .all(|&x| (x - first).abs() < FLOAT_EPSILON);
+        assert!(
+            !all_same,
+            "Random selector should produce variety in start times"
+        );
     }
 
     // Unit tests for RandomSelector with multiple clips
@@ -877,25 +1162,41 @@ mod tests {
         let selector = RandomSelector;
         let video_path = PathBuf::from("test.mp4");
         let duration = 600.0; // 10 minutes
-        
-        let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
+
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            1,
+        );
         assert!(result.is_ok(), "Single clip selection should succeed");
-        
+
         let clips = result.unwrap();
-        assert_eq!(clips.len(), 1, "Should generate exactly 1 clip when clip_count=1");
-        
+        assert_eq!(
+            clips.len(),
+            1,
+            "Should generate exactly 1 clip when clip_count=1"
+        );
+
         let clip = &clips[0];
-        
+
         // Verify clip duration is valid
         assert!(clip.duration_seconds >= MIN_CLIP_DURATION);
         assert!(clip.duration_seconds <= MAX_CLIP_DURATION);
-        
+
         // Verify exclusion zones are respected
         let intro_cutoff = duration * (INTRO_EXCLUSION_PERCENT / 100.0);
         let outro_cutoff = duration - (duration * (OUTRO_EXCLUSION_PERCENT / 100.0));
-        
-        assert!(clip.start_seconds >= intro_cutoff, "Clip should start after intro exclusion");
-        assert!(clip.start_seconds + clip.duration_seconds <= outro_cutoff, "Clip should end before outro exclusion");
+
+        assert!(
+            clip.start_seconds >= intro_cutoff,
+            "Clip should start after intro exclusion"
+        );
+        assert!(
+            clip.start_seconds + clip.duration_seconds <= outro_cutoff,
+            "Clip should end before outro exclusion"
+        );
     }
 
     #[test]
@@ -905,24 +1206,37 @@ mod tests {
         let selector = RandomSelector;
         let video_path = PathBuf::from("test.mp4");
         let duration = 600.0; // 10 minutes
-        
-        let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 2);
+
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            2,
+        );
         assert!(result.is_ok(), "Two clip selection should succeed");
-        
+
         let clips = result.unwrap();
-        assert_eq!(clips.len(), 2, "Should generate exactly 2 clips when clip_count=2");
-        
+        assert_eq!(
+            clips.len(),
+            2,
+            "Should generate exactly 2 clips when clip_count=2"
+        );
+
         // Verify all clips have valid durations
         for clip in &clips {
             assert!(clip.duration_seconds >= MIN_CLIP_DURATION);
             assert!(clip.duration_seconds <= MAX_CLIP_DURATION);
         }
-        
+
         // Verify clips are non-overlapping
         assert!(!clips[0].overlaps(&clips[1]), "Clips should not overlap");
-        
+
         // Verify clips are sorted by start time
-        assert!(clips[0].start_seconds < clips[1].start_seconds, "Clips should be sorted by start time");
+        assert!(
+            clips[0].start_seconds < clips[1].start_seconds,
+            "Clips should be sorted by start time"
+        );
     }
 
     #[test]
@@ -932,31 +1246,47 @@ mod tests {
         let selector = RandomSelector;
         let video_path = PathBuf::from("test.mp4");
         let duration = 600.0; // 10 minutes
-        
-        let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 3);
+
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            3,
+        );
         assert!(result.is_ok(), "Three clip selection should succeed");
-        
+
         let clips = result.unwrap();
-        assert_eq!(clips.len(), 3, "Should generate exactly 3 clips when clip_count=3");
-        
+        assert_eq!(
+            clips.len(),
+            3,
+            "Should generate exactly 3 clips when clip_count=3"
+        );
+
         // Verify all clips have valid durations
         for clip in &clips {
             assert!(clip.duration_seconds >= MIN_CLIP_DURATION);
             assert!(clip.duration_seconds <= MAX_CLIP_DURATION);
         }
-        
+
         // Verify clips are non-overlapping
         for i in 0..clips.len() {
             for j in (i + 1)..clips.len() {
-                assert!(!clips[i].overlaps(&clips[j]), 
-                    "Clips {} and {} should not overlap", i, j);
+                assert!(
+                    !clips[i].overlaps(&clips[j]),
+                    "Clips {} and {} should not overlap",
+                    i,
+                    j
+                );
             }
         }
-        
+
         // Verify clips are sorted by start time
         for i in 0..(clips.len() - 1) {
-            assert!(clips[i].start_seconds < clips[i + 1].start_seconds, 
-                "Clips should be sorted by start time");
+            assert!(
+                clips[i].start_seconds < clips[i + 1].start_seconds,
+                "Clips should be sorted by start time"
+            );
         }
     }
 
@@ -967,31 +1297,47 @@ mod tests {
         let selector = RandomSelector;
         let video_path = PathBuf::from("test.mp4");
         let duration = 600.0; // 10 minutes
-        
-        let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 4);
+
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            4,
+        );
         assert!(result.is_ok(), "Four clip selection should succeed");
-        
+
         let clips = result.unwrap();
-        assert_eq!(clips.len(), 4, "Should generate exactly 4 clips when clip_count=4");
-        
+        assert_eq!(
+            clips.len(),
+            4,
+            "Should generate exactly 4 clips when clip_count=4"
+        );
+
         // Verify all clips have valid durations
         for clip in &clips {
             assert!(clip.duration_seconds >= MIN_CLIP_DURATION);
             assert!(clip.duration_seconds <= MAX_CLIP_DURATION);
         }
-        
+
         // Verify clips are non-overlapping
         for i in 0..clips.len() {
             for j in (i + 1)..clips.len() {
-                assert!(!clips[i].overlaps(&clips[j]), 
-                    "Clips {} and {} should not overlap", i, j);
+                assert!(
+                    !clips[i].overlaps(&clips[j]),
+                    "Clips {} and {} should not overlap",
+                    i,
+                    j
+                );
             }
         }
-        
+
         // Verify clips are sorted by start time
         for i in 0..(clips.len() - 1) {
-            assert!(clips[i].start_seconds < clips[i + 1].start_seconds, 
-                "Clips should be sorted by start time");
+            assert!(
+                clips[i].start_seconds < clips[i + 1].start_seconds,
+                "Clips should be sorted by start time"
+            );
         }
     }
 
@@ -1002,28 +1348,47 @@ mod tests {
         let selector = RandomSelector;
         let video_path = PathBuf::from("test.mp4");
         let duration = 30.0; // 30 seconds - can fit 2 clips at minimum (2 * 12s = 24s)
-        
+
         // Request 4 clips but video can only fit 2
-        let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 4);
-        assert!(result.is_ok(), "Should succeed even when video is too short for all clips");
-        
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            4,
+        );
+        assert!(
+            result.is_ok(),
+            "Should succeed even when video is too short for all clips"
+        );
+
         let clips = result.unwrap();
-        
+
         // Should generate fewer clips than requested
-        assert!(clips.len() < 4, "Should generate fewer than 4 clips for short video");
-        assert!(clips.len() >= 1, "Should generate at least 1 clip if possible");
-        
+        assert!(
+            clips.len() < 4,
+            "Should generate fewer than 4 clips for short video"
+        );
+        assert!(
+            clips.len() >= 1,
+            "Should generate at least 1 clip if possible"
+        );
+
         // Verify all clips have valid durations
         for clip in &clips {
             assert!(clip.duration_seconds >= MIN_CLIP_DURATION);
             assert!(clip.duration_seconds <= MAX_CLIP_DURATION);
         }
-        
+
         // Verify clips are non-overlapping
         for i in 0..clips.len() {
             for j in (i + 1)..clips.len() {
-                assert!(!clips[i].overlaps(&clips[j]), 
-                    "Clips {} and {} should not overlap", i, j);
+                assert!(
+                    !clips[i].overlaps(&clips[j]),
+                    "Clips {} and {} should not overlap",
+                    i,
+                    j
+                );
             }
         }
     }
@@ -1035,12 +1400,25 @@ mod tests {
         let selector = RandomSelector;
         let video_path = PathBuf::from("test.mp4");
         let duration = 5.0; // 5 seconds - too short for minimum clip duration (12s)
-        
-        let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 2);
-        assert!(result.is_ok(), "Should succeed even when video is too short");
-        
+
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            2,
+        );
+        assert!(
+            result.is_ok(),
+            "Should succeed even when video is too short"
+        );
+
         let clips = result.unwrap();
-        assert_eq!(clips.len(), 0, "Should generate 0 clips when video is too short");
+        assert_eq!(
+            clips.len(),
+            0,
+            "Should generate 0 clips when video is too short"
+        );
     }
 
     #[test]
@@ -1050,30 +1428,38 @@ mod tests {
         let selector = RandomSelector;
         let video_path = PathBuf::from("test.mp4");
         let duration = 600.0; // 10 minutes
-        
+
         let intro_percent = 5.0; // 5% intro exclusion
         let outro_percent = 30.0; // 30% outro exclusion
-        
+
         let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, 3);
         assert!(result.is_ok(), "Selection should succeed");
-        
+
         let clips = result.unwrap();
         assert_eq!(clips.len(), 3, "Should generate 3 clips");
-        
+
         // Calculate exclusion boundaries
         let intro_cutoff = duration * (intro_percent / 100.0);
         let outro_cutoff = duration - (duration * (outro_percent / 100.0));
-        
+
         // Verify all clips respect exclusion zones
         for (i, clip) in clips.iter().enumerate() {
-            assert!(clip.start_seconds >= intro_cutoff, 
-                "Clip {} should start after intro exclusion (start: {}, cutoff: {})", 
-                i, clip.start_seconds, intro_cutoff);
-            
+            assert!(
+                clip.start_seconds >= intro_cutoff,
+                "Clip {} should start after intro exclusion (start: {}, cutoff: {})",
+                i,
+                clip.start_seconds,
+                intro_cutoff
+            );
+
             let clip_end = clip.start_seconds + clip.duration_seconds;
-            assert!(clip_end <= outro_cutoff, 
-                "Clip {} should end before outro exclusion (end: {}, cutoff: {})", 
-                i, clip_end, outro_cutoff);
+            assert!(
+                clip_end <= outro_cutoff,
+                "Clip {} should end before outro exclusion (end: {}, cutoff: {})",
+                i,
+                clip_end,
+                outro_cutoff
+            );
         }
     }
 
@@ -1084,20 +1470,31 @@ mod tests {
         let selector = RandomSelector;
         let video_path = PathBuf::from("test.mp4");
         let duration = 600.0; // 10 minutes
-        
+
         // Run multiple times to ensure sorting is consistent
         for _ in 0..5 {
-            let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 3);
+            let result = selector.select_clips(
+                &video_path,
+                duration,
+                INTRO_EXCLUSION_PERCENT,
+                OUTRO_EXCLUSION_PERCENT,
+                3,
+            );
             assert!(result.is_ok(), "Selection should succeed");
-            
+
             let clips = result.unwrap();
             assert_eq!(clips.len(), 3, "Should generate 3 clips");
-            
+
             // Verify chronological ordering
             for i in 0..(clips.len() - 1) {
-                assert!(clips[i].start_seconds < clips[i + 1].start_seconds, 
-                    "Clip {} (start: {}) should come before clip {} (start: {})", 
-                    i, clips[i].start_seconds, i + 1, clips[i + 1].start_seconds);
+                assert!(
+                    clips[i].start_seconds < clips[i + 1].start_seconds,
+                    "Clip {} (start: {}) should come before clip {} (start: {})",
+                    i,
+                    clips[i].start_seconds,
+                    i + 1,
+                    clips[i + 1].start_seconds
+                );
             }
         }
     }
@@ -1108,10 +1505,10 @@ mod tests {
         fn test_random_selection_variety_property(duration in MIN_TEST_DURATION..3600.0f64) {
             // Test that for any video long enough to accommodate exclusions,
             // multiple selections produce different start times (variety)
-            
+
             let selector = RandomSelector;
             let video_path = PathBuf::from("test.mp4");
-            
+
             // Run selection multiple times (10 iterations)
             let mut start_times = Vec::new();
             for _ in 0..10 {
@@ -1121,15 +1518,15 @@ mod tests {
                 prop_assert!(!time_ranges.is_empty(), "Should return at least one clip");
                 start_times.push(time_ranges[0].start_seconds);
             }
-            
+
             // Property: Not all start times should be identical
             // This verifies that the random selector uses different random seeds
             let first = start_times[0];
             let all_same = start_times.iter().all(|&x| (x - first).abs() < FLOAT_EPSILON);
-            
-            prop_assert!(!all_same, 
+
+            prop_assert!(!all_same,
                 "Random selector should produce variety in start times across multiple runs. \
-                 All {} selections produced start time {}", 
+                 All {} selections produced start time {}",
                 start_times.len(), first);
         }
     }
@@ -1144,23 +1541,23 @@ mod tests {
             // **Validates: Requirements 2.1**
             // Property: For any video file with sufficient duration and any valid clip count N (1-4),
             // the system should generate exactly N clips.
-            
+
             let selector = RandomSelector;
             let video_path = PathBuf::from("test.mp4");
-            
+
             // Calculate valid selection zone
             let intro_cutoff = duration * (INTRO_EXCLUSION_PERCENT / 100.0);
             let outro_cutoff = duration - (duration * (OUTRO_EXCLUSION_PERCENT / 100.0));
             let valid_duration = outro_cutoff - intro_cutoff;
-            
+
             // Calculate minimum required duration for N clips
             let min_required = (clip_count as f64) * MIN_CLIP_DURATION;
-            
+
             let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, clip_count);
             prop_assert!(result.is_ok(), "Selection should succeed");
-            
+
             let clips = result.unwrap();
-            
+
             // Property: If video has sufficient duration, should generate exactly clip_count clips
             if valid_duration >= min_required {
                 prop_assert_eq!(clips.len(), clip_count as usize,
@@ -1170,14 +1567,14 @@ mod tests {
                 // Property: If video is too short, should generate fewer clips (graceful degradation)
                 prop_assert!(clips.len() <= clip_count as usize,
                     "Should generate at most {} clips when video is too short", clip_count);
-                
+
                 // Property: Should generate as many clips as possible
                 let max_possible = (valid_duration / MIN_CLIP_DURATION).floor() as usize;
                 prop_assert!(clips.len() <= max_possible,
                     "Should not generate more than {} clips (max possible for valid_duration {})",
                     max_possible, valid_duration);
             }
-            
+
             // Property: All generated clips should be valid
             for (i, clip) in clips.iter().enumerate() {
                 // Valid duration
@@ -1187,7 +1584,7 @@ mod tests {
                 prop_assert!(clip.duration_seconds <= MAX_CLIP_DURATION,
                     "Clip {} duration {} should be <= MAX_CLIP_DURATION {}",
                     i, clip.duration_seconds, MAX_CLIP_DURATION);
-                
+
                 // Within video bounds
                 prop_assert!(clip.start_seconds >= 0.0,
                     "Clip {} start {} should be >= 0", i, clip.start_seconds);
@@ -1195,7 +1592,7 @@ mod tests {
                     "Clip {} end {} should be <= video duration {}",
                     i, clip.start_seconds + clip.duration_seconds, duration);
             }
-            
+
             // Property: All clips should be non-overlapping
             for i in 0..clips.len() {
                 for j in (i + 1)..clips.len() {
@@ -1203,7 +1600,7 @@ mod tests {
                         "Clip {} and clip {} should not overlap", i, j);
                 }
             }
-            
+
             // Property: Clips should be sorted by start time
             for i in 0..(clips.len().saturating_sub(1)) {
                 prop_assert!(clips[i].start_seconds < clips[i + 1].start_seconds,
@@ -1225,31 +1622,31 @@ mod tests {
             // **Validates: Requirements 4.1**
             // Property: For any generated clip from any video, the clip's time range should fall
             // entirely within the valid selection zone (clip.start >= intro_cutoff AND clip.end <= outro_cutoff).
-            
+
             let selector = RandomSelector;
             let video_path = PathBuf::from("test.mp4");
-            
+
             // Calculate exclusion zone boundaries
             let intro_cutoff = duration * (intro_percent / 100.0);
             let outro_cutoff = duration - (duration * (outro_percent / 100.0));
-            
+
             let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, clip_count);
             prop_assert!(result.is_ok(), "Selection should succeed");
-            
+
             let clips = result.unwrap();
-            
+
             // Property: All clips must respect exclusion zones
             for (i, clip) in clips.iter().enumerate() {
                 let clip_end = clip.start_seconds + clip.duration_seconds;
-                
+
                 prop_assert!(clip.start_seconds >= intro_cutoff,
                     "Clip {} start {} should be >= intro_cutoff {} (intro_percent: {})",
                     i, clip.start_seconds, intro_cutoff, intro_percent);
-                
+
                 prop_assert!(clip_end <= outro_cutoff,
                     "Clip {} end {} should be <= outro_cutoff {} (outro_percent: {})",
                     i, clip_end, outro_cutoff, outro_percent);
-                
+
                 // Property: Clip should be entirely within valid zone
                 prop_assert!(clip.start_seconds >= intro_cutoff && clip_end <= outro_cutoff,
                     "Clip {} [{}, {}) should be entirely within valid zone [{}, {})",
@@ -1265,15 +1662,15 @@ mod tests {
         // Test that middle_segment helper calculates correct fallback
         let config = ClipConfig::default();
         let duration = 600.0; // 10 minutes
-        
+
         let result = config.middle_segment(duration);
         assert!(result.is_ok());
-        
+
         let time_range = result.unwrap();
-        
+
         // Should use 18 seconds (max clip duration)
         assert_eq!(time_range.duration_seconds, 18.0);
-        
+
         // Should be centered: (600 - 18) / 2 = 291.0
         assert_eq!(time_range.start_seconds, 291.0);
     }
@@ -1283,15 +1680,15 @@ mod tests {
         // Test middle_segment with a short video
         let config = ClipConfig::default();
         let duration = 12.0; // 12 seconds
-        
+
         let result = config.middle_segment(duration);
         assert!(result.is_ok());
-        
+
         let time_range = result.unwrap();
-        
+
         // Should use full video duration (12 seconds)
         assert_eq!(time_range.duration_seconds, 12.0);
-        
+
         // Should start at 0 (centered)
         assert_eq!(time_range.start_seconds, 0.0);
     }
@@ -1301,15 +1698,15 @@ mod tests {
         // Test middle_segment with a very short video (< 5 seconds)
         let config = ClipConfig::default();
         let duration = 3.0; // 3 seconds
-        
+
         let result = config.middle_segment(duration);
         assert!(result.is_ok());
-        
+
         let time_range = result.unwrap();
-        
+
         // Should use full video duration
         assert_eq!(time_range.duration_seconds, 3.0);
-        
+
         // Should start at 0
         assert_eq!(time_range.start_seconds, 0.0);
     }
@@ -1323,60 +1720,99 @@ mod tests {
 
         // Create an FFmpegExecutor
         let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
-        
+
         // Create IntenseAudioSelector
         let selector = IntenseAudioSelector::new(ffmpeg_executor);
-        
+
         // Use a non-existent video path - this will cause audio analysis to fail
         // which simulates a video with no audio track
         let video_path = PathBuf::from("/nonexistent/video_no_audio.mp4");
         let duration = 600.0; // 10 minutes
-        
+
         // The selector should fall back to middle segment when audio analysis fails
-        let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
-        
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            1,
+        );
+
         // The result should be Ok (fallback to middle segment)
-        assert!(result.is_ok(), "Should fall back to middle segment when no audio track");
-        
+        assert!(
+            result.is_ok(),
+            "Should fall back to middle segment when no audio track"
+        );
+
         let time_ranges = result.unwrap();
         assert!(!time_ranges.is_empty());
         let time_range = &time_ranges[0];
-        
+
         // Verify it uses middle segment calculation
         // For a 600 second video, with 18 second clip duration:
         // start = (600 - 18) / 2 = 291.0
-        assert_eq!(time_range.duration_seconds, 18.0, "Should use max clip duration (18s)");
-        assert_eq!(time_range.start_seconds, 291.0, "Should center the clip in the video");
-        
+        assert_eq!(
+            time_range.duration_seconds, 18.0,
+            "Should use max clip duration (18s)"
+        );
+        assert_eq!(
+            time_range.start_seconds, 291.0,
+            "Should center the clip in the video"
+        );
+
         // Test with a shorter video
         let short_duration = 120.0; // 2 minutes
-        let result_short = selector.select_clips(&video_path, short_duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
-        
-        assert!(result_short.is_ok(), "Should fall back to middle segment for short video");
-        
+        let result_short = selector.select_clips(
+            &video_path,
+            short_duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            1,
+        );
+
+        assert!(
+            result_short.is_ok(),
+            "Should fall back to middle segment for short video"
+        );
+
         let time_ranges_short = result_short.unwrap();
         assert!(!time_ranges_short.is_empty());
         let time_range_short = &time_ranges_short[0];
-        
+
         // For a 120 second video, with 18 second clip:
         // start = (120 - 18) / 2 = 51.0
         assert_eq!(time_range_short.duration_seconds, 18.0);
         assert_eq!(time_range_short.start_seconds, 51.0);
-        
+
         // Test with a very short video (< 18 seconds)
         let very_short_duration = 7.0; // 7 seconds
-        let result_very_short = selector.select_clips(&video_path, very_short_duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
-        
-        assert!(result_very_short.is_ok(), "Should fall back to middle segment for very short video");
-        
+        let result_very_short = selector.select_clips(
+            &video_path,
+            very_short_duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            1,
+        );
+
+        assert!(
+            result_very_short.is_ok(),
+            "Should fall back to middle segment for very short video"
+        );
+
         let time_ranges_very_short = result_very_short.unwrap();
         assert!(!time_ranges_very_short.is_empty());
         let time_range_very_short = &time_ranges_very_short[0];
-        
+
         // For a 7 second video, clip duration should be capped at 7 seconds
         // start = (7 - 7) / 2 = 0
-        assert_eq!(time_range_very_short.duration_seconds, 7.0, "Should use full video duration");
-        assert_eq!(time_range_very_short.start_seconds, 0.0, "Should start at beginning");
+        assert_eq!(
+            time_range_very_short.duration_seconds, 7.0,
+            "Should use full video duration"
+        );
+        assert_eq!(
+            time_range_very_short.start_seconds, 0.0,
+            "Should start at beginning"
+        );
     }
 
     #[test]
@@ -1384,10 +1820,10 @@ mod tests {
         // Test that first occurrence is selected when multiple segments have similar intensity
         // Validates Requirement 4.3
         use crate::ffmpeg::AudioSegment;
-        
+
         // Create a mock scenario where we have multiple segments with similar intensity
         // We'll test the sorting behavior directly since we can't easily mock FFmpeg output
-        
+
         // Create segments with similar intensities (within 0.1 dBFS of each other)
         // In dBFS, higher (less negative) values are louder
         let mut segments = vec![
@@ -1412,28 +1848,41 @@ mod tests {
                 intensity: -15.1, // Tied for loudest (but appears later)
             },
         ];
-        
+
         // Sort segments by intensity (highest/loudest first)
         // This mimics what analyze_audio_intensity does
         segments.sort_by(|a, b| b.intensity.partial_cmp(&a.intensity).unwrap());
-        
+
         // After sorting, the segments with intensity -15.1 should be first
         // But we need to verify which one comes first when there's a tie
-        
+
         // The first segment should be one with intensity -15.1
-        assert_eq!(segments[0].intensity, -15.1, "First segment should have highest intensity");
-        
+        assert_eq!(
+            segments[0].intensity, -15.1,
+            "First segment should have highest intensity"
+        );
+
         // When there's a tie in intensity, Rust's stable sort preserves the original order
         // So the segment that appeared first in the original list should remain first
-        assert_eq!(segments[0].start_time, 10.0, 
-            "When multiple segments have the same intensity, the first occurrence should be selected");
-        
+        assert_eq!(
+            segments[0].start_time, 10.0,
+            "When multiple segments have the same intensity, the first occurrence should be selected"
+        );
+
         // The second segment with -15.1 intensity should come after
         // Find the second occurrence of -15.1 intensity
-        let second_loudest_index = segments.iter().position(|s| s.intensity == -15.1 && s.start_time == 70.0);
-        assert!(second_loudest_index.is_some(), "Second segment with -15.1 intensity should exist");
-        assert!(second_loudest_index.unwrap() > 0, "Second tied segment should come after the first");
-        
+        let second_loudest_index = segments
+            .iter()
+            .position(|s| s.intensity == -15.1 && s.start_time == 70.0);
+        assert!(
+            second_loudest_index.is_some(),
+            "Second segment with -15.1 intensity should exist"
+        );
+        assert!(
+            second_loudest_index.unwrap() > 0,
+            "Second tied segment should come after the first"
+        );
+
         // Test with exact tie scenario (all segments have identical intensity)
         let mut tied_segments = vec![
             AudioSegment {
@@ -1452,18 +1901,24 @@ mod tests {
                 intensity: -20.0,
             },
         ];
-        
+
         // Sort by intensity
         tied_segments.sort_by(|a, b| b.intensity.partial_cmp(&a.intensity).unwrap());
-        
+
         // With stable sort, the original order should be preserved
         // So the first segment (start_time: 100.0) should remain first
-        assert_eq!(tied_segments[0].start_time, 100.0,
-            "With identical intensities, the first occurrence in the original list should be selected");
-        assert_eq!(tied_segments[1].start_time, 50.0,
-            "Second segment should maintain original order");
-        assert_eq!(tied_segments[2].start_time, 25.0,
-            "Third segment should maintain original order");
+        assert_eq!(
+            tied_segments[0].start_time, 100.0,
+            "With identical intensities, the first occurrence in the original list should be selected"
+        );
+        assert_eq!(
+            tied_segments[1].start_time, 50.0,
+            "Second segment should maintain original order"
+        );
+        assert_eq!(
+            tied_segments[2].start_time, 25.0,
+            "Third segment should maintain original order"
+        );
     }
 
     // Unit tests for IntenseAudioSelector with multiple clips
@@ -1478,23 +1933,33 @@ mod tests {
 
         let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
         let selector = IntenseAudioSelector::new(ffmpeg_executor);
-        
+
         // Use a non-existent video path - will fall back to middle segment
         let video_path = PathBuf::from("/nonexistent/video.mp4");
         let duration = 600.0; // 10 minutes
-        
-        let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
+
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            1,
+        );
         assert!(result.is_ok(), "Single clip selection should succeed");
-        
+
         let clips = result.unwrap();
-        assert_eq!(clips.len(), 1, "Should generate exactly 1 clip when clip_count=1");
-        
+        assert_eq!(
+            clips.len(),
+            1,
+            "Should generate exactly 1 clip when clip_count=1"
+        );
+
         let clip = &clips[0];
-        
+
         // Verify clip duration is valid
         assert!(clip.duration_seconds >= MIN_CLIP_DURATION);
         assert!(clip.duration_seconds <= MAX_CLIP_DURATION);
-        
+
         // Verify clip is within video bounds
         assert!(clip.start_seconds >= 0.0);
         assert!(clip.start_seconds + clip.duration_seconds <= duration);
@@ -1505,7 +1970,7 @@ mod tests {
         // Test multiple clip selection with mock audio data
         // Requirements 2.1, 3.1, 7.2
         use crate::ffmpeg::AudioSegment;
-        
+
         // Create mock audio segments with varying intensities
         // Higher (less negative) values are louder
         let segments = vec![
@@ -1530,22 +1995,37 @@ mod tests {
                 intensity: -20.0, // Fourth loudest
             },
         ];
-        
+
         // Verify segments are sorted by intensity (highest first)
         let mut sorted_segments = segments.clone();
         sorted_segments.sort_by(|a, b| b.intensity.partial_cmp(&a.intensity).unwrap());
-        
-        assert_eq!(sorted_segments[0].intensity, -10.0, "First segment should be loudest");
-        assert_eq!(sorted_segments[1].intensity, -12.0, "Second segment should be second loudest");
-        assert_eq!(sorted_segments[2].intensity, -15.0, "Third segment should be third loudest");
-        
+
+        assert_eq!(
+            sorted_segments[0].intensity, -10.0,
+            "First segment should be loudest"
+        );
+        assert_eq!(
+            sorted_segments[1].intensity, -12.0,
+            "Second segment should be second loudest"
+        );
+        assert_eq!(
+            sorted_segments[2].intensity, -15.0,
+            "Third segment should be third loudest"
+        );
+
         // Verify all segments are non-overlapping
         for i in 0..sorted_segments.len() {
             for j in (i + 1)..sorted_segments.len() {
                 let seg1_end = sorted_segments[i].start_time + sorted_segments[i].duration;
                 let seg2_start = sorted_segments[j].start_time;
-                assert!(seg1_end <= seg2_start || sorted_segments[j].start_time + sorted_segments[j].duration <= sorted_segments[i].start_time,
-                    "Segments {} and {} should not overlap", i, j);
+                assert!(
+                    seg1_end <= seg2_start
+                        || sorted_segments[j].start_time + sorted_segments[j].duration
+                            <= sorted_segments[i].start_time,
+                    "Segments {} and {} should not overlap",
+                    i,
+                    j
+                );
             }
         }
     }
@@ -1555,7 +2035,7 @@ mod tests {
         // Test peak selection with overlapping candidates
         // Requirement 3.1
         use crate::ffmpeg::AudioSegment;
-        
+
         // Create mock audio segments where some peaks would overlap
         let segments = vec![
             AudioSegment {
@@ -1579,11 +2059,11 @@ mod tests {
                 intensity: -15.0, // Fourth loudest
             },
         ];
-        
+
         // Sort by intensity (highest first)
         let mut sorted_segments = segments.clone();
         sorted_segments.sort_by(|a, b| b.intensity.partial_cmp(&a.intensity).unwrap());
-        
+
         // Simulate selection logic: pick top N non-overlapping segments
         let mut selected = Vec::new();
         for segment in sorted_segments {
@@ -1593,29 +2073,46 @@ mod tests {
                 let sel_end = sel.start_time + sel.duration;
                 !(seg_end <= sel.start_time || sel_end <= segment.start_time)
             });
-            
+
             if !overlaps {
                 selected.push(segment);
             }
-            
+
             if selected.len() >= 3 {
                 break;
             }
         }
-        
+
         // Should select segments at 50.0, 150.0, and 250.0 (skipping 55.0 due to overlap)
-        assert_eq!(selected.len(), 3, "Should select 3 non-overlapping segments");
-        assert_eq!(selected[0].start_time, 50.0, "First selected should be at 50.0");
-        assert_eq!(selected[1].start_time, 150.0, "Second selected should be at 150.0");
-        assert_eq!(selected[2].start_time, 250.0, "Third selected should be at 250.0");
-        
+        assert_eq!(
+            selected.len(),
+            3,
+            "Should select 3 non-overlapping segments"
+        );
+        assert_eq!(
+            selected[0].start_time, 50.0,
+            "First selected should be at 50.0"
+        );
+        assert_eq!(
+            selected[1].start_time, 150.0,
+            "Second selected should be at 150.0"
+        );
+        assert_eq!(
+            selected[2].start_time, 250.0,
+            "Third selected should be at 250.0"
+        );
+
         // Verify all selected segments are non-overlapping
         for i in 0..selected.len() {
             for j in (i + 1)..selected.len() {
                 let seg1_end = selected[i].start_time + selected[i].duration;
                 let seg2_start = selected[j].start_time;
-                assert!(seg1_end <= seg2_start,
-                    "Selected segments {} and {} should not overlap", i, j);
+                assert!(
+                    seg1_end <= seg2_start,
+                    "Selected segments {} and {} should not overlap",
+                    i,
+                    j
+                );
             }
         }
     }
@@ -1629,25 +2126,40 @@ mod tests {
 
         let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
         let selector = IntenseAudioSelector::new(ffmpeg_executor);
-        
+
         // Use a short video duration that can only fit 1 clip
         let video_path = PathBuf::from("/nonexistent/short_video.mp4");
         let duration = 30.0; // 30 seconds
-        
+
         // Request 4 clips but video can only fit 2
-        let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 4);
-        assert!(result.is_ok(), "Should succeed even when video is too short for all clips");
-        
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            4,
+        );
+        assert!(
+            result.is_ok(),
+            "Should succeed even when video is too short for all clips"
+        );
+
         let clips = result.unwrap();
-        
+
         // Should generate fewer clips than requested (or fall back to middle segment)
         assert!(clips.len() <= 4, "Should generate at most 4 clips");
         assert!(clips.len() >= 1, "Should generate at least 1 clip");
-        
+
         // Verify all clips have valid durations
         for clip in &clips {
-            assert!(clip.duration_seconds > 0.0, "Clip duration should be positive");
-            assert!(clip.duration_seconds <= duration, "Clip duration should not exceed video duration");
+            assert!(
+                clip.duration_seconds > 0.0,
+                "Clip duration should be positive"
+            );
+            assert!(
+                clip.duration_seconds <= duration,
+                "Clip duration should not exceed video duration"
+            );
         }
     }
 
@@ -1660,16 +2172,28 @@ mod tests {
 
         let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
         let selector = IntenseAudioSelector::new(ffmpeg_executor);
-        
+
         let video_path = PathBuf::from("/nonexistent/very_short.mp4");
         let duration = 5.0; // 5 seconds - too short for minimum clip duration
-        
-        let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 2);
-        assert!(result.is_ok(), "Should succeed even when video is too short");
-        
+
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            2,
+        );
+        assert!(
+            result.is_ok(),
+            "Should succeed even when video is too short"
+        );
+
         let clips = result.unwrap();
         // Should return empty vector or fall back to middle segment
-        assert!(clips.len() <= 1, "Should generate at most 1 clip for very short video");
+        assert!(
+            clips.len() <= 1,
+            "Should generate at most 1 clip for very short video"
+        );
     }
 
     #[test]
@@ -1677,7 +2201,7 @@ mod tests {
         // Test that clips are returned in chronological order
         // Requirement 7.4
         use crate::ffmpeg::AudioSegment;
-        
+
         // Create mock segments in random order
         let mut segments = vec![
             AudioSegment {
@@ -1696,32 +2220,49 @@ mod tests {
                 intensity: -15.0, // Third loudest
             },
         ];
-        
+
         // Sort by intensity (highest first)
         segments.sort_by(|a, b| b.intensity.partial_cmp(&a.intensity).unwrap());
-        
+
         // Simulate creating TimeRanges from these segments
-        let mut clips: Vec<TimeRange> = segments.iter().map(|seg| {
-            TimeRange {
-                start_seconds: seg.start_time,
-                duration_seconds: 15.0, // Use a fixed duration for testing
-            }
-        }).collect();
-        
+        let mut clips: Vec<TimeRange> = segments
+            .iter()
+            .map(|seg| {
+                TimeRange {
+                    start_seconds: seg.start_time,
+                    duration_seconds: 15.0, // Use a fixed duration for testing
+                }
+            })
+            .collect();
+
         // Sort by start time (as IntenseAudioSelector does)
         clips.sort_by(|a, b| a.start_seconds.partial_cmp(&b.start_seconds).unwrap());
-        
+
         // Verify chronological ordering
         assert_eq!(clips.len(), 3, "Should have 3 clips");
-        assert_eq!(clips[0].start_seconds, 50.0, "First clip should start at 50.0");
-        assert_eq!(clips[1].start_seconds, 150.0, "Second clip should start at 150.0");
-        assert_eq!(clips[2].start_seconds, 250.0, "Third clip should start at 250.0");
-        
+        assert_eq!(
+            clips[0].start_seconds, 50.0,
+            "First clip should start at 50.0"
+        );
+        assert_eq!(
+            clips[1].start_seconds, 150.0,
+            "Second clip should start at 150.0"
+        );
+        assert_eq!(
+            clips[2].start_seconds, 250.0,
+            "Third clip should start at 250.0"
+        );
+
         // Verify ordering
         for i in 0..(clips.len() - 1) {
-            assert!(clips[i].start_seconds < clips[i + 1].start_seconds,
+            assert!(
+                clips[i].start_seconds < clips[i + 1].start_seconds,
                 "Clip {} (start: {}) should come before clip {} (start: {})",
-                i, clips[i].start_seconds, i + 1, clips[i + 1].start_seconds);
+                i,
+                clips[i].start_seconds,
+                i + 1,
+                clips[i + 1].start_seconds
+            );
         }
     }
 
@@ -1734,10 +2275,10 @@ mod tests {
             outro_percent in 0.0..=50.0f64,
         ) {
             use crate::ffmpeg::AudioSegment;
-            
+
             // Calculate exclusion zone boundaries
             let zones = ExclusionZones::new(duration, intro_percent, outro_percent);
-            
+
             // Create mock audio segments across the video duration
             let num_segments = (duration / 7.5).ceil() as usize;
             let segments: Vec<AudioSegment> = (0..num_segments)
@@ -1751,7 +2292,7 @@ mod tests {
                     }
                 })
                 .collect();
-            
+
             // Filter segments by exclusion zones (mimics IntenseAudioSelector logic)
             let filtered_segments: Vec<_> = segments.into_iter()
                 .filter(|seg| {
@@ -1759,11 +2300,11 @@ mod tests {
                     zones.contains_segment(seg.start_time, segment_end)
                 })
                 .collect();
-            
+
             // Property: All filtered segments must respect exclusion zones
             for segment in filtered_segments.iter() {
                 let segment_end = segment.start_time + segment.duration;
-                
+
                 prop_assert!(zones.contains_segment(segment.start_time, segment_end),
                     "Segment [{}, {}) should be within exclusion zones [{}, {})",
                     segment.start_time, segment_end, zones.intro_boundary, zones.outro_boundary);
@@ -1773,8 +2314,6 @@ mod tests {
 
     // Tests for ActionSelector
 
-
-
     #[test]
     fn test_action_selector_no_motion_fallback() {
         // Test fallback to middle segment when video has no motion
@@ -1783,37 +2322,52 @@ mod tests {
 
         // Create an FFmpegExecutor
         let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
-        
+
         // Create ActionSelector
         let selector = ActionSelector::new(ffmpeg_executor);
-        
+
         // Use a non-existent video path - this will cause motion analysis to fail
         // which simulates a video with no motion
         let video_path = PathBuf::from("/nonexistent/video_no_motion.mp4");
         let duration = 600.0; // 10 minutes
-        
+
         // The selector should fall back to middle segment when motion analysis fails
-        let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
-        
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            1,
+        );
+
         // The result should be Ok (fallback to middle segment)
-        assert!(result.is_ok(), "Should fall back to middle segment when no motion detected");
-        
+        assert!(
+            result.is_ok(),
+            "Should fall back to middle segment when no motion detected"
+        );
+
         let time_ranges = result.unwrap();
         assert!(!time_ranges.is_empty());
         let time_range = &time_ranges[0];
-        
+
         // Verify it uses middle segment calculation
         // For a 600 second video, with 18 second clip duration:
         // start = (600 - 18) / 2 = 291.0
-        assert_eq!(time_range.duration_seconds, 18.0, "Should use max clip duration (18s)");
-        assert_eq!(time_range.start_seconds, 291.0, "Should center the clip in the video");
+        assert_eq!(
+            time_range.duration_seconds, 18.0,
+            "Should use max clip duration (18s)"
+        );
+        assert_eq!(
+            time_range.start_seconds, 291.0,
+            "Should center the clip in the video"
+        );
     }
 
     #[test]
     fn test_action_selector_motion_segment_tie_breaking() {
         // Test that first occurrence is selected when multiple segments have identical motion scores
         use crate::ffmpeg::MotionSegment;
-        
+
         // Create segments with identical motion scores
         let mut segments = vec![
             MotionSegment {
@@ -1832,19 +2386,25 @@ mod tests {
                 motion_score: 5.0,
             },
         ];
-        
+
         // Sort by motion score (highest first)
         // This mimics what analyze_motion_intensity does
         segments.sort_by(|a, b| b.motion_score.partial_cmp(&a.motion_score).unwrap());
-        
+
         // With stable sort, the original order should be preserved
         // So the first segment (start_time: 100.0) should remain first
-        assert_eq!(segments[0].start_time, 100.0,
-            "With identical motion scores, the first occurrence in the original list should be selected");
-        assert_eq!(segments[1].start_time, 50.0,
-            "Second segment should maintain original order");
-        assert_eq!(segments[2].start_time, 25.0,
-            "Third segment should maintain original order");
+        assert_eq!(
+            segments[0].start_time, 100.0,
+            "With identical motion scores, the first occurrence in the original list should be selected"
+        );
+        assert_eq!(
+            segments[1].start_time, 50.0,
+            "Second segment should maintain original order"
+        );
+        assert_eq!(
+            segments[2].start_time, 25.0,
+            "Third segment should maintain original order"
+        );
     }
 
     // Feature: action-based-clip-selection, Property 1: Highest Motion Score Selection
@@ -1855,7 +2415,7 @@ mod tests {
             scores in prop::collection::vec(0.1..10.0f64, 2..10),
         ) {
             use crate::ffmpeg::MotionSegment;
-            
+
             // Generate motion segments with random scores
             let mut segments: Vec<MotionSegment> = scores.iter().enumerate()
                 .map(|(i, &score)| MotionSegment {
@@ -1865,19 +2425,19 @@ mod tests {
                 })
                 .take(num_segments)
                 .collect();
-            
+
             // Find the highest score before sorting
             let max_score = segments.iter()
                 .map(|s| s.motion_score)
                 .fold(f64::NEG_INFINITY, f64::max);
-            
+
             // Sort by motion score (highest first) - mimics analyze_motion_intensity
             segments.sort_by(|a, b| b.motion_score.partial_cmp(&a.motion_score).unwrap());
-            
+
             // Property: The first segment should have the highest motion score
             prop_assert_eq!(segments[0].motion_score, max_score,
                 "First segment should have the highest motion score");
-            
+
             // Property: All subsequent segments should have scores <= first segment
             for segment in segments.iter().skip(1) {
                 prop_assert!(segment.motion_score <= segments[0].motion_score,
@@ -1894,7 +2454,7 @@ mod tests {
             identical_score in 1.0..10.0f64,
         ) {
             use crate::ffmpeg::MotionSegment;
-            
+
             // Generate segments with identical scores
             let mut segments: Vec<MotionSegment> = (0..num_segments)
                 .map(|i| MotionSegment {
@@ -1903,21 +2463,21 @@ mod tests {
                     motion_score: identical_score,
                 })
                 .collect();
-            
+
             // Record the original order (start times)
             let original_order: Vec<f64> = segments.iter().map(|s| s.start_time).collect();
-            
+
             // Sort by motion score (highest first) - mimics analyze_motion_intensity
             // Rust's sort_by is stable, so equal elements maintain their original order
             segments.sort_by(|a, b| b.motion_score.partial_cmp(&a.motion_score).unwrap());
-            
+
             // Property: When all scores are identical, the original order should be preserved
             for (i, segment) in segments.iter().enumerate() {
                 prop_assert_eq!(segment.start_time, original_order[i],
                     "Segment at position {} should maintain original order (start_time: {})",
                     i, original_order[i]);
             }
-            
+
             // Property: The first segment should be the one that appeared first originally
             prop_assert_eq!(segments[0].start_time, 0.0,
                 "First segment should be the one that appeared first in the original list");
@@ -1933,10 +2493,10 @@ mod tests {
             outro_percent in 0.0..=50.0f64,
         ) {
             use crate::ffmpeg::MotionSegment;
-            
+
             // Calculate exclusion zone boundaries
             let zones = ExclusionZones::new(duration, intro_percent, outro_percent);
-            
+
             // Create mock motion segments across the video duration
             let num_segments = (duration / 12.5).ceil() as usize;
             let segments: Vec<MotionSegment> = (0..num_segments)
@@ -1950,7 +2510,7 @@ mod tests {
                     }
                 })
                 .collect();
-            
+
             // Filter segments by exclusion zones (mimics ActionSelector logic)
             let filtered_segments: Vec<_> = segments.into_iter()
                 .filter(|seg| {
@@ -1958,11 +2518,11 @@ mod tests {
                     zones.contains_segment(seg.start_time, segment_end)
                 })
                 .collect();
-            
+
             // Property: All filtered segments must respect exclusion zones
             for segment in filtered_segments.iter() {
                 let segment_end = segment.start_time + segment.duration;
-                
+
                 prop_assert!(zones.contains_segment(segment.start_time, segment_end),
                     "Segment [{}, {}) should be within exclusion zones [{}, {})",
                     segment.start_time, segment_end, zones.intro_boundary, zones.outro_boundary);
@@ -1977,13 +2537,13 @@ mod tests {
             duration in 415.0..3600.0f64,
         ) {
             use crate::ffmpeg::MotionSegment;
-            
+
             // Create a scenario where the highest-scoring segment violates exclusion zones
             // Set intro exclusion to 10% and outro exclusion to 40%
             let intro_percent = 10.0;
             let outro_percent = 40.0;
             let zones = ExclusionZones::new(duration, intro_percent, outro_percent);
-            
+
             // Create segments where the highest score is in the intro zone
             let mut segments = vec![
                 // Highest score in intro zone (should be filtered out)
@@ -2005,10 +2565,10 @@ mod tests {
                     motion_score: 60.0,
                 },
             ];
-            
+
             // Sort by motion score (highest first)
             segments.sort_by(|a, b| b.motion_score.partial_cmp(&a.motion_score).unwrap());
-            
+
             // Filter by exclusion zones
             let filtered_segments: Vec<_> = segments.into_iter()
                 .filter(|seg| {
@@ -2016,12 +2576,12 @@ mod tests {
                     zones.contains_segment(seg.start_time, segment_end)
                 })
                 .collect();
-            
+
             // Property: The first filtered segment should be the next best (second highest score)
             prop_assert!(!filtered_segments.is_empty(), "Should have at least one valid segment");
             prop_assert_eq!(filtered_segments[0].motion_score, 80.0,
                 "First valid segment should have score 80.0 (next best after filtered out 100.0)");
-            
+
             // Property: The selected segment should respect exclusion zones
             let selected = &filtered_segments[0];
             let selected_end = selected.start_time + selected.duration;
@@ -2038,37 +2598,37 @@ mod tests {
         ) {
             use crate::cli::Resolution;
             use std::path::PathBuf;
-            
+
             const MIN_CLIP_DURATION: f64 = 12.0;
             const MAX_CLIP_DURATION: f64 = 18.0;
-            
+
             // Create an FFmpegExecutor and ActionSelector
             let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
             let selector = ActionSelector::new(ffmpeg_executor);
-            
+
             // Use a non-existent video path (will fall back to middle segment)
             let video_path = PathBuf::from("/nonexistent/video.mp4");
-            
+
             // Test with default exclusion zones
             let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
-            
+
             prop_assert!(result.is_ok(), "Selection should succeed");
-            
+
             let time_ranges = result.unwrap();
             prop_assert!(!time_ranges.is_empty(), "Should return at least one clip");
             let time_range = &time_ranges[0];
-            
+
             // Property: Duration should be between MIN and MAX (or video duration if shorter)
             if duration >= MIN_CLIP_DURATION {
                 prop_assert!(time_range.duration_seconds >= MIN_CLIP_DURATION,
                     "Clip duration {} should be >= {} for video duration {}",
                     time_range.duration_seconds, MIN_CLIP_DURATION, duration);
             }
-            
+
             prop_assert!(time_range.duration_seconds <= MAX_CLIP_DURATION.min(duration),
                 "Clip duration {} should be <= {} (or video duration {})",
                 time_range.duration_seconds, MAX_CLIP_DURATION, duration);
-            
+
             // Property: Duration should never exceed video duration
             prop_assert!(time_range.duration_seconds <= duration,
                 "Clip duration {} should not exceed video duration {}",
@@ -2086,29 +2646,29 @@ mod tests {
         ) {
             use crate::cli::Resolution;
             use std::path::PathBuf;
-            
+
             // Create an FFmpegExecutor and ActionSelector
             let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
             let selector = ActionSelector::new(ffmpeg_executor);
-            
+
             // Use a non-existent video path (will fall back to middle segment)
             let video_path = PathBuf::from("/nonexistent/video.mp4");
-            
+
             // Test with various exclusion zones
             let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, 1);
-            
+
             prop_assert!(result.is_ok(), "Selection should succeed");
-            
+
             let time_ranges = result.unwrap();
             prop_assert!(!time_ranges.is_empty(), "Should return at least one clip");
             let time_range = &time_ranges[0];
-            
+
             // Property: start + duration must not exceed video duration
             let end_time = time_range.start_seconds + time_range.duration_seconds;
             prop_assert!(end_time <= duration,
                 "End time {} (start {} + duration {}) should not exceed video duration {}",
                 end_time, time_range.start_seconds, time_range.duration_seconds, duration);
-            
+
             // Property: start should be non-negative
             prop_assert!(time_range.start_seconds >= 0.0,
                 "Start time {} should be non-negative", time_range.start_seconds);
@@ -2125,31 +2685,31 @@ mod tests {
         ) {
             use crate::cli::Resolution;
             use std::path::PathBuf;
-            
+
             // Create an FFmpegExecutor and ActionSelector
             let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
             let selector = ActionSelector::new(ffmpeg_executor);
-            
+
             // Use a non-existent video path (will fall back to middle segment)
             let video_path = PathBuf::from("/nonexistent/video.mp4");
-            
+
             // Test with various exclusion zones
             let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, 1);
-            
+
             prop_assert!(result.is_ok(), "Selection should succeed for valid inputs");
-            
+
             let time_ranges = result.unwrap();
             prop_assert!(!time_ranges.is_empty(), "Should return at least one clip");
             let time_range = &time_ranges[0];
-            
+
             // Property: start_seconds >= 0.0
             prop_assert!(time_range.start_seconds >= 0.0,
                 "start_seconds {} should be >= 0.0", time_range.start_seconds);
-            
+
             // Property: duration_seconds > 0.0
             prop_assert!(time_range.duration_seconds > 0.0,
                 "duration_seconds {} should be > 0.0", time_range.duration_seconds);
-            
+
             // Property: end <= video_duration
             let end_time = time_range.start_seconds + time_range.duration_seconds;
             prop_assert!(end_time <= duration,
@@ -2165,13 +2725,13 @@ mod tests {
         ) {
             // Test that middle_segment produces consistent results regardless of selector
             let config = ClipConfig::default();
-            
+
             let result = config.middle_segment(duration);
-            
+
             prop_assert!(result.is_ok(), "middle_segment should succeed");
-            
+
             let time_range = result.unwrap();
-            
+
             // Property: Result should be valid
             prop_assert!(time_range.start_seconds >= 0.0, "start_seconds should be >= 0");
             prop_assert!(time_range.duration_seconds > 0.0, "duration_seconds should be > 0");
@@ -2188,20 +2748,20 @@ mod tests {
         ) {
             // Simulate the scaling logic from analyze_motion_intensity
             const MAX_ANALYSIS_DURATION: f64 = 300.0; // 5 minutes
-            
+
             let analysis_duration = full_duration.min(MAX_ANALYSIS_DURATION);
             let scale_factor = full_duration / analysis_duration;
-            
+
             // Create a segment at a specific time in the analyzed portion
             let analyzed_time = 100.0; // 100 seconds into the analyzed portion
-            
+
             // Property: When scaled to full duration, the timestamp should be proportional
             let scaled_time = analyzed_time * scale_factor;
-            
+
             // Verify the scaling formula
             prop_assert_eq!(scaled_time, analyzed_time * (full_duration / analysis_duration),
                 "Scaled time should equal analyzed_time * (full_duration / analysis_duration)");
-            
+
             // Property: For videos <= 5 minutes, no scaling should occur (scale_factor = 1.0)
             if full_duration <= MAX_ANALYSIS_DURATION {
                 prop_assert_eq!(scale_factor, 1.0,
@@ -2209,7 +2769,7 @@ mod tests {
                 prop_assert_eq!(scaled_time, analyzed_time,
                     "Scaled time should equal analyzed time when no scaling needed");
             }
-            
+
             // Property: For videos > 5 minutes, scaling should occur (scale_factor > 1.0)
             if full_duration > MAX_ANALYSIS_DURATION {
                 prop_assert!(scale_factor > 1.0,
@@ -2217,7 +2777,7 @@ mod tests {
                 prop_assert!(scaled_time > analyzed_time,
                     "Scaled time should be > analyzed time when scaling is applied");
             }
-            
+
             // Property: Scaled time should never exceed full duration
             prop_assert!(scaled_time <= full_duration,
                 "Scaled time {} should not exceed full duration {}",
@@ -2234,43 +2794,43 @@ mod tests {
         ) {
             use crate::cli::Resolution;
             use std::path::PathBuf;
-            
+
             // Create a single ActionSelector instance
             let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
             let selector = ActionSelector::new(ffmpeg_executor);
-            
+
             // Process first video (non-existent, will fall back to middle segment)
             let video_path1 = PathBuf::from("/nonexistent/video1.mp4");
             let result1 = selector.select_clips(&video_path1, duration1, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
-            
+
             prop_assert!(result1.is_ok(), "First selection should succeed");
             let time_ranges1 = result1.unwrap();
             prop_assert!(!time_ranges1.is_empty(), "Should return at least one clip");
             let time_range1 = &time_ranges1[0];
-            
+
             // Process second video (non-existent, will fall back to middle segment)
             let video_path2 = PathBuf::from("/nonexistent/video2.mp4");
             let result2 = selector.select_clips(&video_path2, duration2, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
-            
+
             prop_assert!(result2.is_ok(), "Second selection should succeed");
             let time_ranges2 = result2.unwrap();
             prop_assert!(!time_ranges2.is_empty(), "Should return at least one clip");
             let time_range2 = &time_ranges2[0];
-            
+
             // Process the second video again with the same selector
             let result2_again = selector.select_clips(&video_path2, duration2, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
-            
+
             prop_assert!(result2_again.is_ok(), "Second selection (repeated) should succeed");
             let time_ranges2_again = result2_again.unwrap();
             prop_assert!(!time_ranges2_again.is_empty(), "Should return at least one clip");
             let time_range2_again = &time_ranges2_again[0];
-            
+
             // Property: Processing the same video twice should produce the same result
             prop_assert_eq!(time_range2.start_seconds, time_range2_again.start_seconds,
                 "Same video should produce same start_seconds on repeated processing");
             prop_assert_eq!(time_range2.duration_seconds, time_range2_again.duration_seconds,
                 "Same video should produce same duration_seconds on repeated processing");
-            
+
             // Property: Results should be independent of previous processing
             // If durations are different, results should be different
             if (duration1 - duration2).abs() > 1.0 {
@@ -2278,7 +2838,7 @@ mod tests {
                 // (unless both happen to center at the same position, which is unlikely)
                 let results_differ = time_range1.start_seconds != time_range2.start_seconds
                     || time_range1.duration_seconds != time_range2.duration_seconds;
-                
+
                 // This property is probabilistic but should hold in most cases
                 // We're verifying that the selector doesn't cache state from video1 when processing video2
                 prop_assert!(results_differ || (duration1 - duration2).abs() < 10.0,

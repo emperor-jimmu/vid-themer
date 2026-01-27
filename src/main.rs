@@ -1,36 +1,36 @@
 // CLI entry point and application orchestration
 
 mod cli;
-mod scanner;
-mod selector;
+mod error;
 mod ffmpeg;
+mod logger;
 mod processor;
 mod progress;
-mod error;
-mod logger;
+mod scanner;
+mod selector;
 
 use clap::Parser;
 use cli::{CliArgs, SelectionStrategy};
-use scanner::VideoScanner;
-use selector::{ClipSelector, RandomSelector, IntenseAudioSelector, ActionSelector};
+use error::AppError;
 use ffmpeg::FFmpegExecutor;
+use logger::FailureLogger;
 use processor::VideoProcessor;
 use progress::ProgressReporter;
-use logger::FailureLogger;
-use error::AppError;
-use std::process;
+use scanner::VideoScanner;
+use selector::{ActionSelector, ClipSelector, IntenseAudioSelector, RandomSelector};
 use std::path::Path;
+use std::process;
 
 /// Validate that the provided directory path exists and is a directory
 fn validate_directory(path: &Path) -> Result<(), AppError> {
     if !path.exists() {
         return Err(AppError::DirectoryNotFound(path.to_path_buf()));
     }
-    
+
     if !path.is_dir() {
         return Err(AppError::DirectoryNotFound(path.to_path_buf()));
     }
-    
+
     Ok(())
 }
 
@@ -49,10 +49,10 @@ fn exit_on_error<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) -
 fn main() {
     // Parse CLI arguments
     let args = CliArgs::parse();
-    
+
     // Validate directory exists (exit with error code 1 if not)
     exit_on_error(validate_directory(&args.directory), "validating directory");
-    
+
     // Check FFmpeg availability (exit with error if not found)
     if FFmpegExecutor::check_availability().is_err() {
         eprintln!("Error: FFmpeg not found in PATH");
@@ -60,41 +60,47 @@ fn main() {
         eprintln!("Visit https://ffmpeg.org/download.html for installation instructions.");
         process::exit(1);
     }
-    
+
     // Create VideoScanner and scan for videos
     let scanner = VideoScanner::new(args.directory.clone());
     let scan_result = exit_on_error(scanner.scan(), "scanning directory");
-    
+
     // Exit early if no videos found
     if scan_result.videos.is_empty() {
         if !scan_result.skipped_dirs.is_empty() {
-            println!("All videos in {} already have backdrop clips.", args.directory.display());
-            println!("Skipped {} director{} with existing backdrops.", 
+            println!(
+                "All videos in {} already have backdrop clips.",
+                args.directory.display()
+            );
+            println!(
+                "Skipped {} director{} with existing backdrops.",
                 scan_result.skipped_dirs.len(),
-                if scan_result.skipped_dirs.len() == 1 { "y" } else { "ies" }
+                if scan_result.skipped_dirs.len() == 1 {
+                    "y"
+                } else {
+                    "ies"
+                }
             );
         } else {
             println!("No videos found in {}", args.directory.display());
         }
         return;
     }
-    
+
     let videos = scan_result.videos;
-    
+
     // Create FFmpegExecutor with resolution and audio settings
     let ffmpeg_executor = FFmpegExecutor::new(args.resolution.clone(), args.include_audio);
-    
+
     // Create appropriate ClipSelector based on strategy flag
     let selector: Box<dyn ClipSelector> = match args.strategy {
         SelectionStrategy::Random => Box::new(RandomSelector),
         SelectionStrategy::IntenseAudio => {
             Box::new(IntenseAudioSelector::new(ffmpeg_executor.clone()))
         }
-        SelectionStrategy::Action => {
-            Box::new(ActionSelector::new(ffmpeg_executor.clone()))
-        }
+        SelectionStrategy::Action => Box::new(ActionSelector::new(ffmpeg_executor.clone())),
     };
-    
+
     // Create VideoProcessor with selector and executor
     let processor = VideoProcessor::new(
         selector,
@@ -103,7 +109,7 @@ fn main() {
         args.outro_exclusion_percent,
         args.clip_count,
     );
-    
+
     // Create ProgressReporter with logger
     let logger = match FailureLogger::new(&args.directory) {
         Ok(logger) => logger,
@@ -113,32 +119,31 @@ fn main() {
             // Continue without logger
             let mut reporter = ProgressReporter::new();
             reporter.start(videos.len());
-            
+
             for video in &videos {
                 let result = processor.process_video(video);
                 reporter.update(&result);
             }
-            
+
             reporter.finish();
             return;
         }
     };
-    
+
     let mut reporter = ProgressReporter::with_logger(logger);
-    
+
     // Start progress reporting
     reporter.start(videos.len());
-    
+
     // Process each video with progress updates
     for video in &videos {
         let result = processor.process_video(video);
         reporter.update(&result);
     }
-    
+
     // Display final summary
     reporter.finish();
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -149,12 +154,12 @@ mod tests {
     fn test_directory_not_found_error() {
         // Test error handling when directory doesn't exist
         let non_existent_path = PathBuf::from("/this/path/definitely/does/not/exist/12345");
-        
+
         let result = validate_directory(&non_existent_path);
-        
+
         assert!(result.is_err());
         let err = result.unwrap_err();
-        
+
         // Verify it's the correct error type
         match err {
             AppError::DirectoryNotFound(path) => {
@@ -169,12 +174,12 @@ mod tests {
         // Test error handling when path exists but is not a directory
         // Use Cargo.toml as a file that definitely exists
         let file_path = PathBuf::from("Cargo.toml");
-        
+
         let result = validate_directory(&file_path);
-        
+
         assert!(result.is_err());
         let err = result.unwrap_err();
-        
+
         // Verify it's the correct error type
         match err {
             AppError::DirectoryNotFound(path) => {
@@ -189,9 +194,9 @@ mod tests {
         // Test that valid directory passes validation
         // Use src directory which should exist
         let valid_path = PathBuf::from("src");
-        
+
         let result = validate_directory(&valid_path);
-        
+
         assert!(result.is_ok());
     }
 }
