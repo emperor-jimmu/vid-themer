@@ -284,17 +284,17 @@ impl FFmpegExecutor {
             vec!["-an".to_string()]
         } else {
             // Include audio with AAC codec
-            // Apply loudness normalization (EBU R128) then reduce volume by 30% (0.7)
+            // Apply loudness normalization (EBU R128) then reduce volume by 40% (0.6)
             // Downmix to stereo to handle complex channel layouts (e.g., 5.1.2 Dolby Atmos)
             vec![
                 "-af".to_string(),
-                "loudnorm=I=-16:TP=-1.5:LRA=11,volume=0.7".to_string(),
+                "loudnorm=I=-16:TP=-1.5:LRA=11,volume=0.6".to_string(),
                 "-c:a".to_string(),
                 "aac".to_string(),
                 "-b:a".to_string(),
                 "128k".to_string(), // Explicit bitrate for consistency
                 "-ac".to_string(),
-                "2".to_string(), // Force stereo output
+                "2".to_string(), // Force stereo output (2.0)
             ]
         }
     }
@@ -431,14 +431,21 @@ impl FFmpegExecutor {
             }
         } else {
             // Software encoding with libx264
+            // H.264 (AVC) with High Profile, Level 4.1 for maximum compatibility
             args.extend(vec![
                 "-c:v".to_string(),
                 "libx264".to_string(),
                 "-preset".to_string(),
                 "fast".to_string(),
-                // CRF for quality/size balance (26 = smaller files, still good quality)
+                // CRF for quality/size balance (29 = smaller files, still good quality)
                 "-crf".to_string(),
                 constants::SOFTWARE_CRF.to_string(),
+                // H.264 Profile: High (best compression, widely supported)
+                "-profile:v".to_string(),
+                "high".to_string(),
+                // H.264 Level: 4.1 (supports up to 1080p @ 30fps, excellent compatibility)
+                "-level:v".to_string(),
+                "4.1".to_string(),
             ]);
         }
 
