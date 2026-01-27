@@ -284,11 +284,11 @@ impl FFmpegExecutor {
             vec!["-an".to_string()]
         } else {
             // Include audio with AAC codec
-            // Apply loudness normalization (EBU R128) then reduce volume
+            // Apply loudness normalization (EBU R128) then reduce volume by 30% (0.7)
             // Downmix to stereo to handle complex channel layouts (e.g., 5.1.2 Dolby Atmos)
             vec![
                 "-af".to_string(),
-                "loudnorm=I=-16:TP=-1.5:LRA=11,volume=0.8".to_string(),
+                "loudnorm=I=-16:TP=-1.5:LRA=11,volume=0.7".to_string(),
                 "-c:a".to_string(),
                 "aac".to_string(),
                 "-b:a".to_string(),
