@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 // Constants for output directory and file naming
 const BACKDROPS_DIR: &str = "backdrops";
+#[allow(dead_code)]
 const BACKDROP_FILE: &str = "backdrop.mp4";
 
 pub struct VideoProcessor {
@@ -196,6 +197,7 @@ impl VideoProcessor {
     /// Create the backdrops subdirectory and return the full output path
     /// Returns the path to backdrops/backdrop.mp4 relative to the video's parent directory
     /// This method is kept for backward compatibility with existing tests
+    #[allow(dead_code)]
     fn create_output_directory(&self, video: &VideoFile) -> Result<PathBuf, ProcessError> {
         let backdrops_dir = self.create_backdrops_directory(video)?;
         Ok(backdrops_dir.join(BACKDROP_FILE))
@@ -234,6 +236,7 @@ pub enum ProcessError {
     ClipExtractionFailed(String),
 
     #[error("No valid clips could be selected")]
+    #[allow(dead_code)]
     NoValidClips,
 }
 
@@ -1231,6 +1234,7 @@ mod tests {
     // Unit tests for multiple clip naming (Task 6.2)
 
     // Mock selector that returns multiple clips
+    #[allow(dead_code)]
     struct MultiClipMockSelector {
         clip_count: u8,
     }

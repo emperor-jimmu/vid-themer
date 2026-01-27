@@ -34,6 +34,7 @@ impl Default for ClipConfig {
 
 impl ClipConfig {
     /// Get a random duration within the configured range
+    #[allow(dead_code)]
     pub fn random_duration(&self) -> f64 {
         let mut rng = rand::thread_rng();
         rng.gen_range(self.min_duration..=self.max_duration)
