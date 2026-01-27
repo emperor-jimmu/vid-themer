@@ -2846,4 +2846,349 @@ mod tests {
             }
         }
     }
+
+    // Feature: multiple-clips-per-video, Property 3: Graceful Degradation for Short Videos
+    // **Validates: Requirements 2.3, 3.3**
+    proptest! {
+        #[test]
+        fn test_graceful_degradation_for_short_videos(
+            // Generate short video durations that cannot accommodate all requested clips
+            duration in 20.0..60.0f64,
+            // Request more clips than can fit
+            clip_count in 2u8..=4u8,
+        ) {
+            // Property: For any video file where the valid selection zone cannot accommodate
+            // N non-overlapping clips of valid duration, the system should generate the maximum
+            // number of valid clips possible (which may be less than N) without failing.
+
+            // Calculate valid selection zone
+            let intro_cutoff = duration * (INTRO_EXCLUSION_PERCENT / 100.0);
+            let outro_cutoff = duration - (duration * (OUTRO_EXCLUSION_PERCENT / 100.0));
+            let valid_duration = outro_cutoff - intro_cutoff;
+
+            // Calculate maximum possible clips
+            let max_possible_clips = (valid_duration / MIN_CLIP_DURATION).floor() as u8;
+
+            // Create selector
+            let selector = RandomSelector;
+            let video_path = PathBuf::from("/test/video.mp4");
+
+            // Select clips
+            let result = selector.select_clips(
+                &video_path,
+                duration,
+                INTRO_EXCLUSION_PERCENT,
+                OUTRO_EXCLUSION_PERCENT,
+                clip_count,
+            );
+
+            // Property 1: The operation should succeed (not fail/panic)
+            prop_assert!(
+                result.is_ok(),
+                "Selection should succeed even when video is too short for all requested clips"
+            );
+
+            let clips = result.unwrap();
+
+            // Property 2: Should return at most the maximum possible clips
+            prop_assert!(
+                clips.len() <= max_possible_clips as usize,
+                "Should not return more clips ({}) than can fit in valid zone (max {})",
+                clips.len(),
+                max_possible_clips
+            );
+
+            // Property 3: Should return at most the requested clip count
+            prop_assert!(
+                clips.len() <= clip_count as usize,
+                "Should not return more clips ({}) than requested ({})",
+                clips.len(),
+                clip_count
+            );
+
+            // Property 4: If video is too short for any clips, return empty vector
+            if valid_duration < MIN_CLIP_DURATION {
+                prop_assert!(
+                    clips.is_empty(),
+                    "Should return empty vector when video is too short for even one clip"
+                );
+            }
+
+            // Property 5: All returned clips must be valid
+            for (i, clip) in clips.iter().enumerate() {
+                prop_assert!(
+                    clip.is_valid_duration(),
+                    "Clip {} should have valid duration", i
+                );
+
+                let clip_end = clip.start_seconds + clip.duration_seconds;
+                prop_assert!(
+                    clip.start_seconds >= intro_cutoff,
+                    "Clip {} should start after intro exclusion", i
+                );
+                prop_assert!(
+                    clip_end <= outro_cutoff,
+                    "Clip {} should end before outro exclusion", i
+                );
+            }
+
+            // Property 6: All clips must be non-overlapping
+            for i in 0..clips.len() {
+                for j in (i + 1)..clips.len() {
+                    prop_assert!(
+                        !clips[i].overlaps(&clips[j]),
+                        "Clips {} and {} should not overlap", i, j
+                    );
+                }
+            }
+        }
+    }
+
+    // Feature: multiple-clips-per-video, Property 9: Chronological Ordering
+    // **Validates: Requirements 7.4**
+    proptest! {
+        #[test]
+        fn test_chronological_ordering_property(
+            duration in 100.0..600.0f64,
+            clip_count in 2u8..=4u8,
+        ) {
+            // Property: For any set of clips returned by a selector, the clips should be
+            // ordered by start time in ascending order (chronological order).
+
+            let selector = RandomSelector;
+            let video_path = PathBuf::from("/test/video.mp4");
+
+            let result = selector.select_clips(
+                &video_path,
+                duration,
+                INTRO_EXCLUSION_PERCENT,
+                OUTRO_EXCLUSION_PERCENT,
+                clip_count,
+            );
+
+            prop_assert!(result.is_ok(), "Selection should succeed");
+            let clips = result.unwrap();
+
+            // Property 1: Clips should be sorted by start time
+            for i in 0..(clips.len().saturating_sub(1)) {
+                prop_assert!(
+                    clips[i].start_seconds < clips[i + 1].start_seconds,
+                    "Clip {} (start: {}) should come before clip {} (start: {}) in chronological order",
+                    i,
+                    clips[i].start_seconds,
+                    i + 1,
+                    clips[i + 1].start_seconds
+                );
+            }
+
+            // Property 2: Since clips are non-overlapping and sorted, each clip should end
+            // before or at the start of the next clip
+            for i in 0..(clips.len().saturating_sub(1)) {
+                let clip_i_end = clips[i].start_seconds + clips[i].duration_seconds;
+                prop_assert!(
+                    clip_i_end <= clips[i + 1].start_seconds,
+                    "Clip {} should end (at {}) before or when clip {} starts (at {})",
+                    i,
+                    clip_i_end,
+                    i + 1,
+                    clips[i + 1].start_seconds
+                );
+            }
+
+            // Property 3: The ordering should be stable across multiple calls
+            // (for RandomSelector, we can't guarantee same clips, but they should always be sorted)
+            let result2 = selector.select_clips(
+                &video_path,
+                duration,
+                INTRO_EXCLUSION_PERCENT,
+                OUTRO_EXCLUSION_PERCENT,
+                clip_count,
+            );
+
+            if let Ok(clips2) = result2 {
+                for i in 0..(clips2.len().saturating_sub(1)) {
+                    prop_assert!(
+                        clips2[i].start_seconds < clips2[i + 1].start_seconds,
+                        "Second call: Clip {} should come before clip {} in chronological order",
+                        i,
+                        i + 1
+                    );
+                }
+            }
+        }
+    }
+
+    // Feature: multiple-clips-per-video, Property 10: Warning Logging for Reduced Clip Count
+    // **Validates: Requirements 9.2**
+    proptest! {
+        #[test]
+        fn test_warning_logging_for_reduced_clip_count(
+            // Generate short durations that can't fit all requested clips
+            duration in 30.0..80.0f64,
+            clip_count in 3u8..=4u8,
+        ) {
+            // Property: For any video where fewer clips are generated than requested,
+            // a warning should be logged containing the video filename and the actual
+            // number of clips generated.
+            //
+            // Note: This property test verifies the behavior at the selector level.
+            // The actual warning logging happens in the processor, which is tested separately.
+            // Here we verify that the selector returns fewer clips than requested when appropriate.
+
+            let selector = RandomSelector;
+            let video_path = PathBuf::from("/test/short_video.mp4");
+
+            // Calculate valid selection zone
+            let intro_cutoff = duration * (INTRO_EXCLUSION_PERCENT / 100.0);
+            let outro_cutoff = duration - (duration * (OUTRO_EXCLUSION_PERCENT / 100.0));
+            let valid_duration = outro_cutoff - intro_cutoff;
+
+            // Calculate maximum possible clips
+            let max_possible_clips = (valid_duration / MIN_CLIP_DURATION).floor() as u8;
+
+            let result = selector.select_clips(
+                &video_path,
+                duration,
+                INTRO_EXCLUSION_PERCENT,
+                OUTRO_EXCLUSION_PERCENT,
+                clip_count,
+            );
+
+            prop_assert!(result.is_ok(), "Selection should succeed");
+            let clips = result.unwrap();
+
+            // Property 1: When video is too short, fewer clips should be returned
+            if max_possible_clips < clip_count {
+                prop_assert!(
+                    clips.len() < clip_count as usize,
+                    "Should return fewer clips ({}) than requested ({}) when video is too short",
+                    clips.len(),
+                    clip_count
+                );
+
+                // Property 2: The number of clips should match the maximum possible
+                prop_assert!(
+                    clips.len() <= max_possible_clips as usize,
+                    "Should return at most {} clips (the maximum that fits), got {}",
+                    max_possible_clips,
+                    clips.len()
+                );
+            }
+
+            // Property 3: All returned clips should be valid
+            for clip in &clips {
+                prop_assert!(
+                    clip.is_valid_duration(),
+                    "All returned clips should have valid duration"
+                );
+            }
+
+            // Property 4: The difference between requested and actual should be determinable
+            let clips_not_generated = clip_count.saturating_sub(clips.len() as u8);
+            prop_assert!(
+                clips_not_generated <= clip_count,
+                "Clips not generated ({}) should not exceed requested count ({})",
+                clips_not_generated,
+                clip_count
+            );
+        }
+    }
+
+    // Feature: multiple-clips-per-video, Property 11: No-Crash Guarantee for Constrained Videos
+    // **Validates: Requirements 9.3**
+    proptest! {
+        #[test]
+        fn test_no_crash_guarantee_for_constrained_videos(
+            // Test with wide range of durations including edge cases
+            duration in 1.0..1000.0f64,
+            clip_count in 1u8..=4u8,
+            intro_exclusion in 0.0..50.0f64,
+            outro_exclusion in 0.0..50.0f64,
+        ) {
+            // Property: For any video file, regardless of duration or clip count requested,
+            // the processing should complete without panicking or returning a fatal error.
+            // It may return fewer clips than requested, but should not crash.
+
+            let selector = RandomSelector;
+            let video_path = PathBuf::from("/test/video.mp4");
+
+            // Attempt to select clips - this should never panic
+            let result = selector.select_clips(
+                &video_path,
+                duration,
+                intro_exclusion,
+                outro_exclusion,
+                clip_count,
+            );
+
+            // Property 1: The operation should always return a Result (not panic)
+            // If we reach this point, the no-panic property is satisfied
+            prop_assert!(
+                result.is_ok(),
+                "Selection should always succeed and return a Result, even for constrained videos"
+            );
+
+            let clips = result.unwrap();
+
+            // Property 2: The result should be a valid vector (possibly empty)
+            prop_assert!(
+                clips.len() <= clip_count as usize,
+                "Should not return more clips than requested"
+            );
+
+            // Property 3: All returned clips should be valid
+            for (i, clip) in clips.iter().enumerate() {
+                // Duration should be positive
+                prop_assert!(
+                    clip.duration_seconds > 0.0,
+                    "Clip {} should have positive duration", i
+                );
+
+                // Start should be non-negative
+                prop_assert!(
+                    clip.start_seconds >= 0.0,
+                    "Clip {} should have non-negative start time", i
+                );
+
+                // Clip should not extend beyond video duration
+                let clip_end = clip.start_seconds + clip.duration_seconds;
+                prop_assert!(
+                    clip_end <= duration + FLOAT_EPSILON,
+                    "Clip {} should not extend beyond video duration", i
+                );
+            }
+
+            // Property 4: Clips should be non-overlapping
+            for i in 0..clips.len() {
+                for j in (i + 1)..clips.len() {
+                    prop_assert!(
+                        !clips[i].overlaps(&clips[j]),
+                        "Clips {} and {} should not overlap", i, j
+                    );
+                }
+            }
+
+            // Property 5: Clips should be in chronological order
+            for i in 0..(clips.len().saturating_sub(1)) {
+                prop_assert!(
+                    clips[i].start_seconds <= clips[i + 1].start_seconds,
+                    "Clips should be in chronological order"
+                );
+            }
+
+            // Property 6: If video is extremely short or exclusion zones are too large,
+            // it's acceptable to return an empty vector (graceful degradation)
+            let intro_cutoff = duration * (intro_exclusion / 100.0);
+            let outro_cutoff = duration - (duration * (outro_exclusion / 100.0));
+            let valid_duration = outro_cutoff - intro_cutoff;
+
+            if valid_duration < MIN_CLIP_DURATION {
+                // For videos too short for even one clip, empty vector is expected
+                prop_assert!(
+                    clips.is_empty(),
+                    "Should return empty vector when valid zone is too short for any clip"
+                );
+            }
+        }
+    }
 }

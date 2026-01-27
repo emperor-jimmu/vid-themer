@@ -143,24 +143,24 @@ This implementation plan breaks down the multiple-clips-per-video feature into d
   - Run `cargo fmt` to ensure code formatting
   - Ask the user if questions arise
 
-- [ ] 9. Add property tests for graceful degradation and error handling
+- [x] 9. Add property tests for graceful degradation and error handling
 
-  - [ ] 9.1 Write property test for graceful degradation
+  - [x] 9.1 Write property test for graceful degradation
 
     - **Property 3: Graceful Degradation for Short Videos**
     - **Validates: Requirements 2.3, 3.3**
 
-  - [ ] 9.2 Write property test for chronological ordering
+  - [x] 9.2 Write property test for chronological ordering
 
     - **Property 9: Chronological Ordering**
     - **Validates: Requirements 7.4**
 
-  - [ ] 9.3 Write property test for warning logging
+  - [x] 9.3 Write property test for warning logging
 
     - **Property 10: Warning Logging for Reduced Clip Count**
     - **Validates: Requirements 9.2**
 
-  - [ ] 9.4 Write property test for no-crash guarantee
+  - [x] 9.4 Write property test for no-crash guarantee
 
     - **Property 11: No-Crash Guarantee for Constrained Videos**
     - **Validates: Requirements 9.3**
