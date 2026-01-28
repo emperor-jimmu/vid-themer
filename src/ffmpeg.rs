@@ -524,15 +524,16 @@ impl FFmpegExecutor {
 
     /// Apply fade effect to an already extracted clip (second pass)
     /// This is more reliable than applying fade during extraction
+    /// Applies fade-in (0.5s) at start and fade-out (1s) at end
     fn apply_fade_effect(
         &self,
         input_path: &Path,
         output_path: &Path,
         duration: f64,
     ) -> Result<(), FFmpegError> {
-        let fade_start = duration - 1.0;
-        if fade_start <= 0.0 {
-            // Clip too short for fade, just rename
+        let fade_out_start = duration - 1.0;
+        if fade_out_start <= 0.5 {
+            // Clip too short for both fades, just rename
             std::fs::rename(input_path, output_path).map_err(|e| {
                 FFmpegError::ExecutionFailed(format!("Failed to rename file: {}", e))
             })?;
@@ -543,9 +544,9 @@ impl FFmpegExecutor {
             "-i".to_string(),
             input_path.to_string_lossy().to_string(),
             "-vf".to_string(),
-            format!("fade=type=out:duration=1:start_time={}", fade_start),
+            format!("fade=type=in:duration=0.5:start_time=0,fade=type=out:duration=1:start_time={}", fade_out_start),
             "-af".to_string(),
-            format!("afade=type=out:duration=1:start_time={}", fade_start),
+            format!("afade=type=in:duration=0.5:start_time=0,afade=type=out:duration=1:start_time={}", fade_out_start),
             "-c:v".to_string(),
             "libx264".to_string(),
             "-preset".to_string(),
@@ -1780,7 +1781,7 @@ mod tests {
         assert!(args.contains(&"-preset".to_string()));
         assert!(args.contains(&"fast".to_string()));
         assert!(args.contains(&"-g".to_string()));
-        assert!(args.contains(&"30".to_string()));
+        assert!(args.contains(&"72".to_string()));
         assert!(args.contains(&"-keyint_min".to_string()));
         // Pixel format is now handled in filter chain, not as codec option
         assert!(args.contains(&"-vf".to_string()));
