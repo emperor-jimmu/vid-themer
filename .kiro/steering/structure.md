@@ -125,8 +125,11 @@ fn test_video_file_discovery(...) { }
 No configuration files - all settings via CLI arguments:
 
 - Directory path (required positional)
-- `--strategy` / `-s`: random | intense-audio (default: random)
+- `--strategy` / `-s`: random | intense-audio | action (default: random)
 - `--resolution` / `-r`: 720p | 1080p (default: 1080p)
 - `--audio` / `-a`: true | false (default: true)
-- `--intro-exclusion`: percentage of video duration to exclude from start (0-100, default: 1.0)
+- `--clip-count` / `-c`: number of clips per video, 1-4 (default: 1)
+- `--intro-exclusion`: percentage of video duration to exclude from start (0-100, default: 2.0)
 - `--outro-exclusion`: percentage of video duration to exclude from end (0-100, default: 40.0)
+- `--min-duration`: minimum clip duration in seconds (default: 10.0)
+- `--max-duration`: maximum clip duration in seconds (default: 15.0)

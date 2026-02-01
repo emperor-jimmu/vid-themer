@@ -50,6 +50,12 @@ fn main() {
     // Parse CLI arguments
     let args = CliArgs::parse();
 
+    // Validate duration range
+    if let Err(e) = args.validate_duration_range() {
+        eprintln!("Error: {}", e);
+        process::exit(1);
+    }
+
     // Validate directory exists (exit with error code 1 if not)
     exit_on_error(validate_directory(&args.directory), "validating directory");
 
@@ -101,6 +107,12 @@ fn main() {
         SelectionStrategy::Action => Box::new(ActionSelector::new(ffmpeg_executor.clone())),
     };
 
+    // Create ClipConfig from CLI arguments
+    let clip_config = selector::ClipConfig {
+        min_duration: args.min_duration,
+        max_duration: args.max_duration,
+    };
+
     // Create VideoProcessor with selector and executor
     let processor = VideoProcessor::new(
         selector,
@@ -108,6 +120,7 @@ fn main() {
         args.intro_exclusion_percent,
         args.outro_exclusion_percent,
         args.clip_count,
+        clip_config,
     );
 
     // Create ProgressReporter with logger
