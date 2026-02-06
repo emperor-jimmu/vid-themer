@@ -123,7 +123,7 @@ fn main() {
         args.outro_exclusion_percent,
         args.clip_count,
         clip_config,
-    );
+    ));
 
     // Create ProgressReporter with logger
     let logger = match FailureLogger::new(&args.directory) {

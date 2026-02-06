@@ -6,6 +6,18 @@ use std::path::Path;
 
 use super::constants::{analysis, audio, color, encoding, fade, muxer, seeking};
 
+/// Configuration for building FFmpeg extract commands
+pub struct ExtractConfig<'a> {
+    pub video_path: &'a Path,
+    pub time_range: &'a TimeRange,
+    pub output_path: &'a Path,
+    pub source_resolution: (u32, u32),
+    pub codec: &'a str,
+    pub target_resolution: Resolution,
+    pub include_audio: bool,
+    pub use_hw_accel: bool,
+}
+
 /// Build audio-related FFmpeg arguments based on configuration
 pub fn build_audio_args(include_audio: bool) -> Vec<String> {
     if !include_audio {
@@ -213,29 +225,20 @@ pub fn build_seeking_args(
 }
 
 /// Build FFmpeg command for extracting a clip
-pub fn build_extract_command(
-    video_path: &Path,
-    time_range: &TimeRange,
-    output_path: &Path,
-    source_resolution: (u32, u32),
-    codec: &str,
-    target_resolution: Resolution,
-    include_audio: bool,
-    use_hw_accel: bool,
-) -> Vec<String> {
+pub fn build_extract_command(config: &ExtractConfig) -> Vec<String> {
     let mut args = vec![
         "-err_detect".to_string(),
         "ignore_err".to_string(),
     ];
 
     // Build seeking arguments
-    let (before_input, after_input) = build_seeking_args(time_range, codec);
+    let (before_input, after_input) = build_seeking_args(config.time_range, config.codec);
     args.extend(before_input);
 
     // Input file
     args.extend(vec![
         "-i".to_string(),
-        video_path.to_string_lossy().to_string(),
+        config.video_path.to_string_lossy().to_string(),
     ]);
 
     // Accurate seek (after input)
@@ -250,7 +253,7 @@ pub fn build_extract_command(
     // Duration and stream mapping
     args.extend(vec![
         "-t".to_string(),
-        time_range.duration_seconds.to_string(),
+        config.time_range.duration_seconds.to_string(),
         "-map".to_string(),
         "0:v:0".to_string(),
         "-map".to_string(),
@@ -260,7 +263,7 @@ pub fn build_extract_command(
     ]);
 
     // Video codec
-    args.extend(build_video_codec_args(use_hw_accel));
+    args.extend(build_video_codec_args(config.use_hw_accel));
 
     // Pixel format and GOP settings
     args.extend(vec![
@@ -271,11 +274,11 @@ pub fn build_extract_command(
     args.extend(build_color_args());
 
     // Video filters
-    let filters = build_video_filters(source_resolution, target_resolution, codec);
+    let filters = build_video_filters(config.source_resolution, config.target_resolution.clone(), config.codec);
     args.extend(vec!["-vf".to_string(), filters]);
 
     // Audio
-    args.extend(build_audio_args(include_audio));
+    args.extend(build_audio_args(config.include_audio));
 
     // Muxer options
     args.extend(vec![
@@ -286,7 +289,7 @@ pub fn build_extract_command(
     // Output
     args.extend(vec![
         "-y".to_string(),
-        output_path.to_string_lossy().to_string(),
+        config.output_path.to_string_lossy().to_string(),
     ]);
 
     args

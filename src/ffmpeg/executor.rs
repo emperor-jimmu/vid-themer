@@ -68,16 +68,18 @@ impl FFmpegExecutor {
 
         let temp_path = output_path.with_extension("tmp.mp4");
 
-        let args = command_builder::build_extract_command(
+        let config = command_builder::ExtractConfig {
             video_path,
             time_range,
-            &temp_path,
+            output_path: &temp_path,
             source_resolution,
             codec,
-            self.resolution.clone(),
-            self.include_audio,
-            self.use_hw_accel,
-        );
+            target_resolution: self.resolution.clone(),
+            include_audio: self.include_audio,
+            use_hw_accel: self.use_hw_accel,
+        };
+
+        let args = command_builder::build_extract_command(&config);
 
         let output = Command::new("ffmpeg").args(&args).output().map_err(|e| {
             FFmpegError::ExecutionFailed(format!(
@@ -140,16 +142,18 @@ impl FFmpegExecutor {
             "1.0".to_string(),
         ];
 
-        let standard_args = command_builder::build_extract_command(
+        let config = command_builder::ExtractConfig {
             video_path,
             time_range,
             output_path,
             source_resolution,
             codec,
-            self.resolution.clone(),
-            self.include_audio,
-            self.use_hw_accel,
-        );
+            target_resolution: self.resolution.clone(),
+            include_audio: self.include_audio,
+            use_hw_accel: self.use_hw_accel,
+        };
+
+        let standard_args = command_builder::build_extract_command(&config);
 
         args.extend(standard_args.into_iter().skip(2));
 
