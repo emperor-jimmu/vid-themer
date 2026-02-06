@@ -367,9 +367,9 @@ impl ClipSelector for IntenseAudioSelector {
                     clip_count
                 };
 
-                // If no clips can be generated, return empty vector
+                // If no clips can be generated within exclusion zones, fall back to middle segment
                 if actual_clip_count == 0 || valid_duration < config.min_duration {
-                    return Ok(vec![]);
+                    return Ok(vec![config.middle_segment(duration)?]);
                 }
 
                 // Calculate exclusion zone boundaries
@@ -506,9 +506,9 @@ impl ClipSelector for ActionSelector {
                     clip_count
                 };
 
-                // If no clips can be generated, return empty vector
+                // If no clips can be generated within exclusion zones, fall back to middle segment
                 if actual_clip_count == 0 || valid_duration < config.min_duration {
-                    return Ok(vec![]);
+                    return Ok(vec![config.middle_segment(duration)?]);
                 }
 
                 // Calculate exclusion zone boundaries
