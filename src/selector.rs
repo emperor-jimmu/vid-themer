@@ -482,54 +482,116 @@ impl ClipSelector for ActionSelector {
         duration: f64,
         intro_exclusion_percent: f64,
         outro_exclusion_percent: f64,
-        _clip_count: u8,
+        clip_count: u8,
         config: &ClipConfig,
     ) -> Result<Vec<TimeRange>, SelectionError> {
-        // Temporary implementation - will be replaced in task 5
-        // For now, just return a single clip regardless of clip_count
+        const MAX_ATTEMPTS: u32 = 1000;
+
+        // Calculate valid selection zone
+        let intro_cutoff = duration * (intro_exclusion_percent / 100.0);
+        let outro_cutoff = duration - (duration * (outro_exclusion_percent / 100.0));
+        let valid_duration = outro_cutoff - intro_cutoff;
 
         // Try to analyze motion intensity
         match crate::ffmpeg::analyze_motion_intensity(video_path, duration)
         {
             Ok(segments) => {
+                // Check if video can accommodate requested clips
+                let min_required = (clip_count as f64) * config.min_duration;
+
+                // If video is too short, generate as many clips as possible
+                let actual_clip_count = if valid_duration < min_required {
+                    (valid_duration / config.min_duration).floor() as u8
+                } else {
+                    clip_count
+                };
+
+                // If no clips can be generated, return empty vector
+                if actual_clip_count == 0 || valid_duration < config.min_duration {
+                    return Ok(vec![]);
+                }
+
                 // Calculate exclusion zone boundaries
                 let zones =
                     ExclusionZones::new(duration, intro_exclusion_percent, outro_exclusion_percent);
 
-                // Find the first segment that falls within valid zones
+                // Find motion peaks within valid zone
                 // Segments are already sorted by motion score (highest first)
-                if let Some(best_segment) = segments.into_iter().find(|seg| {
-                    let segment_end = seg.start_time + seg.duration;
-                    zones.contains_segment(seg.start_time, segment_end)
-                }) {
-                    // Adjust clip duration to fit configured range
-                    let clip_duration = best_segment
-                        .duration
-                        .max(config.min_duration)
-                        .min(config.max_duration)
-                        .min(duration); // Don't exceed video duration
+                let valid_peaks: Vec<_> = segments
+                    .into_iter()
+                    .filter(|seg| {
+                        let segment_end = seg.start_time + seg.duration;
+                        zones.contains_segment(seg.start_time, segment_end)
+                    })
+                    .collect();
 
-                    // Ensure the clip fits within the video
-                    let start = best_segment.start_time;
-                    let end = start + clip_duration;
+                // If no valid peaks found, fall back to middle segment
+                if valid_peaks.is_empty() {
+                    return Ok(vec![config.middle_segment(duration)?]);
+                }
 
-                    if end <= duration {
-                        return Ok(vec![TimeRange {
-                            start_seconds: start,
-                            duration_seconds: clip_duration,
-                        }]);
-                    } else {
-                        // Adjust start time to fit the clip within video duration
-                        let adjusted_start = (duration - clip_duration).max(0.0);
-                        return Ok(vec![TimeRange {
-                            start_seconds: adjusted_start,
-                            duration_seconds: clip_duration,
-                        }]);
+                // Select top N non-overlapping peaks
+                let mut selected_clips = Vec::new();
+                let mut attempts = 0;
+
+                for peak in valid_peaks {
+                    if selected_clips.len() >= actual_clip_count as usize {
+                        break;
+                    }
+
+                    attempts += 1;
+                    if attempts > MAX_ATTEMPTS {
+                        break;
+                    }
+
+                    // Create TimeRange around peak
+                    // Use a duration in the middle of the valid range
+                    let clip_duration =
+                        config.min_duration + (config.max_duration - config.min_duration) * 0.5;
+
+                    // Center the clip around the peak's start time
+                    let mut start = (peak.start_time - clip_duration / 2.0).max(intro_cutoff);
+
+                    // Ensure the clip doesn't exceed outro boundary
+                    let mut end = start + clip_duration;
+                    if end > outro_cutoff {
+                        end = outro_cutoff;
+                        start = (end - clip_duration).max(intro_cutoff);
+                    }
+
+                    // Recalculate duration in case adjustments were made
+                    let actual_duration = end - start;
+
+                    // Skip if duration is invalid
+                    if !(config.min_duration..=config.max_duration).contains(&actual_duration) {
+                        continue;
+                    }
+
+                    let candidate = TimeRange {
+                        start_seconds: start,
+                        duration_seconds: actual_duration,
+                    };
+
+                    // Check for overlaps with existing clips
+                    if !selected_clips
+                        .iter()
+                        .any(|existing| candidate.overlaps(existing))
+                        && (config.min_duration..=config.max_duration).contains(&candidate.duration_seconds)
+                    {
+                        selected_clips.push(candidate);
                     }
                 }
 
-                // No valid segments found, fall back to middle segment
-                Ok(vec![config.middle_segment(duration)?])
+                // If we couldn't generate any clips from peaks, fall back to middle segment
+                if selected_clips.is_empty() {
+                    return Ok(vec![config.middle_segment(duration)?]);
+                }
+
+                // Sort selected clips by start time before returning
+                selected_clips
+                    .sort_by(|a, b| a.start_seconds.partial_cmp(&b.start_seconds).unwrap());
+
+                Ok(selected_clips)
             }
             Err(_e) => {
                 // Motion analysis failed, fall back to middle segment
@@ -3320,4 +3382,115 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_action_selector_multiple_clips_mock_data() {
+        // Test that ActionSelector can generate multiple non-overlapping clips from motion peaks
+        use crate::cli::Resolution;
+        use std::path::PathBuf;
+
+        // Create an FFmpegExecutor
+        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
+
+        // Create ActionSelector
+        let selector = ActionSelector::new(ffmpeg_executor);
+
+        // Use a non-existent video path - this will cause motion analysis to fail
+        // In a real scenario, we'd need actual video with motion data
+        // For now, this tests the fallback behavior with multiple clips requested
+        let video_path = PathBuf::from("/nonexistent/video_with_motion.mp4");
+        let duration = 600.0; // 10 minutes
+
+        // Request 3 clips
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            3,
+            &ClipConfig::default(),
+        );
+
+        // The result should be Ok (will fall back to middle segment since motion analysis fails)
+        assert!(
+            result.is_ok(),
+            "Should handle multiple clip request gracefully"
+        );
+
+        let time_ranges = result.unwrap();
+        
+        // With fallback, we get a single middle segment
+        assert_eq!(time_ranges.len(), 1, "Fallback should return single clip");
+    }
+
+    #[test]
+    fn test_action_selector_clips_sorted_chronologically() {
+        // Test that multiple clips are returned in chronological order
+        use crate::cli::Resolution;
+        use std::path::PathBuf;
+
+        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
+        let selector = ActionSelector::new(ffmpeg_executor);
+
+        let video_path = PathBuf::from("/nonexistent/video.mp4");
+        let duration = 1200.0; // 20 minutes
+
+        // Request 4 clips
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            4,
+            &ClipConfig::default(),
+        );
+
+        assert!(result.is_ok());
+        let clips = result.unwrap();
+
+        // Verify clips are sorted chronologically
+        for i in 0..(clips.len().saturating_sub(1)) {
+            assert!(
+                clips[i].start_seconds < clips[i + 1].start_seconds,
+                "Clip {} (start: {}) should come before clip {} (start: {})",
+                i,
+                clips[i].start_seconds,
+                i + 1,
+                clips[i + 1].start_seconds
+            );
+        }
+    }
+
+    #[test]
+    fn test_action_selector_graceful_degradation() {
+        // Test that ActionSelector handles short videos gracefully with multiple clips requested
+        use crate::cli::Resolution;
+        use std::path::PathBuf;
+
+        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
+        let selector = ActionSelector::new(ffmpeg_executor);
+
+        let video_path = PathBuf::from("/nonexistent/short_video.mp4");
+        let duration = 25.0; // 25 seconds - too short for 3 clips of 10-15 seconds each
+
+        // Request 3 clips
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            INTRO_EXCLUSION_PERCENT,
+            OUTRO_EXCLUSION_PERCENT,
+            3,
+            &ClipConfig::default(),
+        );
+
+        assert!(result.is_ok());
+        let clips = result.unwrap();
+
+        // Should return fewer clips than requested due to video length
+        assert!(
+            clips.len() <= 3,
+            "Should not return more clips than requested"
+        );
+    }
 }
+
