@@ -234,19 +234,24 @@ fn analyze_audio_intensity_fallback(
 }
 
 /// Analyze motion intensity using scene detection
+/// 
+/// This function samples frames at regular intervals and analyzes them for motion/action.
+/// Uses a lower frame rate for faster processing while still capturing motion patterns.
 pub fn analyze_motion_intensity(
     video_path: &Path,
     duration: f64,
 ) -> Result<Vec<MotionSegment>, FFmpegError> {
     let analysis_duration = duration.min(analysis::MAX_ANALYSIS_DURATION);
 
+    // Sample at 0.2 fps (1 frame every 5 seconds) for faster processing
+    // Use scdet with a low threshold to capture more motion data
     let args = vec![
         "-i".to_string(),
         video_path.to_string_lossy().to_string(),
         "-t".to_string(),
         analysis_duration.to_string(),
         "-vf".to_string(),
-        "select=gt(scene\\,0.3),showinfo".to_string(),
+        "fps=0.2,scdet=threshold=5.0:sc_pass=1".to_string(),
         "-f".to_string(),
         "null".to_string(),
         "-".to_string(),
@@ -263,12 +268,11 @@ pub fn analyze_motion_intensity(
 
     let mut measurements: Vec<(f64, f64)> = Vec::new();
 
+    // Parse scdet output: look for scene change detection messages
     for line in stderr.lines() {
-        if line.contains("Parsed_showinfo")
-            && line.contains("pts_time:")
-            && line.contains("scene:")
-            && let Some(time) = extract_value_after(line, "pts_time:")
-                && let Some(score) = extract_value_after(line, "scene:") {
+        if line.contains("lavfi.scd.time:")
+            && let Some(time) = extract_value_after(line, "lavfi.scd.time:")
+                && let Some(score) = extract_value_after(line, "lavfi.scd.score:") {
                     measurements.push((time, score));
                 }
     }
