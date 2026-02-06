@@ -10,6 +10,7 @@ pub const MIN_CLIP_DURATION: f64 = 10.0;
 pub const MAX_CLIP_DURATION: f64 = 15.0;
 
 /// Configuration for clip duration constraints
+#[derive(Clone)]
 pub struct ClipConfig {
     pub min_duration: f64,
     pub max_duration: f64,
@@ -166,6 +167,7 @@ pub trait ClipSelector: Send + Sync {
     /// * `intro_exclusion_percent` - Percentage of video duration to exclude from start (0-100)
     /// * `outro_exclusion_percent` - Percentage of video duration to exclude from end (0-100)
     /// * `clip_count` - Number of clips to generate (1-4)
+    /// * `config` - Clip duration configuration (min/max bounds)
     ///
     /// # Returns
     /// Vector of TimeRange objects representing non-overlapping clip segments,
@@ -175,7 +177,7 @@ pub trait ClipSelector: Send + Sync {
     /// # Behavior
     /// - All returned clips must be non-overlapping
     /// - All clips must fall within the valid selection zone (after intro, before outro)
-    /// - All clips must have durations between MIN_CLIP_DURATION and MAX_CLIP_DURATION
+    /// - All clips must have durations between config.min_duration and config.max_duration
     /// - Clips are returned in chronological order (sorted by start time)
     /// - If the requested clip_count cannot be satisfied, returns as many valid clips as possible
     fn select_clips(
@@ -185,6 +187,7 @@ pub trait ClipSelector: Send + Sync {
         intro_exclusion_percent: f64,
         outro_exclusion_percent: f64,
         clip_count: u8,
+        config: &ClipConfig,
     ) -> Result<Vec<TimeRange>, SelectionError>;
 }
 
@@ -198,6 +201,7 @@ impl ClipSelector for RandomSelector {
         intro_exclusion_percent: f64,
         outro_exclusion_percent: f64,
         clip_count: u8,
+        config: &ClipConfig,
     ) -> Result<Vec<TimeRange>, SelectionError> {
         const MAX_ATTEMPTS: u32 = 1000;
 
@@ -207,17 +211,17 @@ impl ClipSelector for RandomSelector {
         let valid_duration = outro_cutoff - intro_cutoff;
 
         // Check if video can accommodate requested clips
-        let min_required = (clip_count as f64) * MIN_CLIP_DURATION;
+        let min_required = (clip_count as f64) * config.min_duration;
 
         // If video is too short, generate as many clips as possible
         let actual_clip_count = if valid_duration < min_required {
-            (valid_duration / MIN_CLIP_DURATION).floor() as u8
+            (valid_duration / config.min_duration).floor() as u8
         } else {
             clip_count
         };
 
         // If no clips can be generated, return empty vector
-        if actual_clip_count == 0 || valid_duration < MIN_CLIP_DURATION {
+        if actual_clip_count == 0 || valid_duration < config.min_duration {
             return Ok(vec![]);
         }
 
@@ -231,7 +235,7 @@ impl ClipSelector for RandomSelector {
             attempts += 1;
 
             // Generate random clip duration between min and max
-            let clip_duration = rng.gen_range(MIN_CLIP_DURATION..=MAX_CLIP_DURATION);
+            let clip_duration = rng.gen_range(config.min_duration..=config.max_duration);
 
             // Find available gaps between existing clips
             let available_gaps = self.find_available_gaps(
@@ -340,9 +344,9 @@ impl ClipSelector for IntenseAudioSelector {
         intro_exclusion_percent: f64,
         outro_exclusion_percent: f64,
         clip_count: u8,
+        config: &ClipConfig,
     ) -> Result<Vec<TimeRange>, SelectionError> {
         const MAX_ATTEMPTS: u32 = 1000;
-        let config = ClipConfig::default();
 
         // Calculate valid selection zone
         let intro_cutoff = duration * (intro_exclusion_percent / 100.0);
@@ -354,17 +358,17 @@ impl ClipSelector for IntenseAudioSelector {
         {
             Ok(segments) => {
                 // Check if video can accommodate requested clips
-                let min_required = (clip_count as f64) * MIN_CLIP_DURATION;
+                let min_required = (clip_count as f64) * config.min_duration;
 
                 // If video is too short, generate as many clips as possible
                 let actual_clip_count = if valid_duration < min_required {
-                    (valid_duration / MIN_CLIP_DURATION).floor() as u8
+                    (valid_duration / config.min_duration).floor() as u8
                 } else {
                     clip_count
                 };
 
                 // If no clips can be generated, return empty vector
-                if actual_clip_count == 0 || valid_duration < MIN_CLIP_DURATION {
+                if actual_clip_count == 0 || valid_duration < config.min_duration {
                     return Ok(vec![]);
                 }
 
@@ -404,7 +408,7 @@ impl ClipSelector for IntenseAudioSelector {
                     // Create TimeRange around peak
                     // Use a duration in the middle of the valid range
                     let clip_duration =
-                        MIN_CLIP_DURATION + (MAX_CLIP_DURATION - MIN_CLIP_DURATION) * 0.5;
+                        config.min_duration + (config.max_duration - config.min_duration) * 0.5;
 
                     // Center the clip around the peak's start time
                     let mut start = (peak.start_time - clip_duration / 2.0).max(intro_cutoff);
@@ -420,7 +424,7 @@ impl ClipSelector for IntenseAudioSelector {
                     let actual_duration = end - start;
 
                     // Skip if duration is invalid
-                    if !(MIN_CLIP_DURATION..=MAX_CLIP_DURATION).contains(&actual_duration) {
+                    if !(config.min_duration..=config.max_duration).contains(&actual_duration) {
                         continue;
                     }
 
@@ -433,7 +437,7 @@ impl ClipSelector for IntenseAudioSelector {
                     if !selected_clips
                         .iter()
                         .any(|existing| candidate.overlaps(existing))
-                        && candidate.is_valid_duration()
+                        && (config.min_duration..=config.max_duration).contains(&candidate.duration_seconds)
                     {
                         selected_clips.push(candidate);
                     }
@@ -479,10 +483,10 @@ impl ClipSelector for ActionSelector {
         intro_exclusion_percent: f64,
         outro_exclusion_percent: f64,
         _clip_count: u8,
+        config: &ClipConfig,
     ) -> Result<Vec<TimeRange>, SelectionError> {
         // Temporary implementation - will be replaced in task 5
         // For now, just return a single clip regardless of clip_count
-        let config = ClipConfig::default();
 
         // Try to analyze motion intensity
         match crate::ffmpeg::analyze_motion_intensity(video_path, duration)
@@ -498,7 +502,7 @@ impl ClipSelector for ActionSelector {
                     let segment_end = seg.start_time + seg.duration;
                     zones.contains_segment(seg.start_time, segment_end)
                 }) {
-                    // Adjust clip duration to fit 10-15 second range
+                    // Adjust clip duration to fit configured range
                     let clip_duration = best_segment
                         .duration
                         .max(config.min_duration)
@@ -1058,7 +1062,7 @@ mod tests {
             let intro_exclusion = duration * (INTRO_EXCLUSION_PERCENT / 100.0);
             let outro_exclusion = duration * (OUTRO_EXCLUSION_PERCENT / 100.0);
 
-            let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
+            let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
             prop_assert!(result.is_ok(), "Selection should succeed for valid duration");
 
             let time_ranges = result.unwrap();
@@ -1100,6 +1104,7 @@ mod tests {
             INTRO_EXCLUSION_PERCENT,
             OUTRO_EXCLUSION_PERCENT,
             1,
+            &ClipConfig::default(),
         );
         assert!(result.is_ok());
 
@@ -1134,6 +1139,7 @@ mod tests {
             INTRO_EXCLUSION_PERCENT,
             OUTRO_EXCLUSION_PERCENT,
             1,
+            &ClipConfig::default(),
         );
         assert!(result.is_ok());
 
@@ -1158,6 +1164,7 @@ mod tests {
             INTRO_EXCLUSION_PERCENT,
             OUTRO_EXCLUSION_PERCENT,
             1,
+            &ClipConfig::default(),
         );
         assert!(result.is_ok());
 
@@ -1184,8 +1191,9 @@ mod tests {
                 duration,
                 INTRO_EXCLUSION_PERCENT,
                 OUTRO_EXCLUSION_PERCENT,
-                1,
-            );
+            1,
+            &ClipConfig::default(),
+        );
             assert!(result.is_ok());
             let time_ranges = result.unwrap();
             assert!(!time_ranges.is_empty());
@@ -1220,6 +1228,7 @@ mod tests {
             INTRO_EXCLUSION_PERCENT,
             OUTRO_EXCLUSION_PERCENT,
             1,
+            &ClipConfig::default(),
         );
         assert!(result.is_ok(), "Single clip selection should succeed");
 
@@ -1264,6 +1273,7 @@ mod tests {
             INTRO_EXCLUSION_PERCENT,
             OUTRO_EXCLUSION_PERCENT,
             2,
+            &ClipConfig::default(),
         );
         assert!(result.is_ok(), "Two clip selection should succeed");
 
@@ -1304,6 +1314,7 @@ mod tests {
             INTRO_EXCLUSION_PERCENT,
             OUTRO_EXCLUSION_PERCENT,
             3,
+            &ClipConfig::default(),
         );
         assert!(result.is_ok(), "Three clip selection should succeed");
 
@@ -1355,6 +1366,7 @@ mod tests {
             INTRO_EXCLUSION_PERCENT,
             OUTRO_EXCLUSION_PERCENT,
             4,
+            &ClipConfig::default(),
         );
         assert!(result.is_ok(), "Four clip selection should succeed");
 
@@ -1407,6 +1419,7 @@ mod tests {
             INTRO_EXCLUSION_PERCENT,
             OUTRO_EXCLUSION_PERCENT,
             4,
+            &ClipConfig::default(),
         );
         assert!(
             result.is_ok(),
@@ -1458,6 +1471,7 @@ mod tests {
             INTRO_EXCLUSION_PERCENT,
             OUTRO_EXCLUSION_PERCENT,
             2,
+            &ClipConfig::default(),
         );
         assert!(
             result.is_ok(),
@@ -1483,7 +1497,7 @@ mod tests {
         let intro_percent = 5.0; // 5% intro exclusion
         let outro_percent = 30.0; // 30% outro exclusion
 
-        let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, 3);
+        let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, 3, &ClipConfig::default());
         assert!(result.is_ok(), "Selection should succeed");
 
         let clips = result.unwrap();
@@ -1529,8 +1543,9 @@ mod tests {
                 duration,
                 INTRO_EXCLUSION_PERCENT,
                 OUTRO_EXCLUSION_PERCENT,
-                3,
-            );
+            3,
+            &ClipConfig::default(),
+        );
             assert!(result.is_ok(), "Selection should succeed");
 
             let clips = result.unwrap();
@@ -1563,7 +1578,7 @@ mod tests {
             // Run selection multiple times (10 iterations)
             let mut start_times = Vec::new();
             for _ in 0..10 {
-                let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
+                let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
                 prop_assert!(result.is_ok(), "Selection should succeed");
                 let time_ranges = result.unwrap();
                 prop_assert!(!time_ranges.is_empty(), "Should return at least one clip");
@@ -1604,7 +1619,7 @@ mod tests {
             // Calculate minimum required duration for N clips
             let min_required = (clip_count as f64) * MIN_CLIP_DURATION;
 
-            let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, clip_count);
+            let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, clip_count, &ClipConfig::default());
             prop_assert!(result.is_ok(), "Selection should succeed");
 
             let clips = result.unwrap();
@@ -1691,7 +1706,7 @@ mod tests {
             let intro_cutoff = duration * (intro_percent / 100.0);
             let outro_cutoff = duration - (duration * (outro_percent / 100.0));
 
-            let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, clip_count);
+            let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, clip_count, &ClipConfig::default());
             prop_assert!(result.is_ok(), "Selection should succeed");
 
             let clips = result.unwrap();
@@ -1732,7 +1747,7 @@ mod tests {
             let selector = RandomSelector;
             let video_path = PathBuf::from("test.mp4");
 
-            let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, clip_count);
+            let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, clip_count, &ClipConfig::default());
             prop_assert!(result.is_ok(), "Selection should succeed");
 
             let clips = result.unwrap();
@@ -1838,6 +1853,7 @@ mod tests {
             INTRO_EXCLUSION_PERCENT,
             OUTRO_EXCLUSION_PERCENT,
             1,
+            &ClipConfig::default(),
         );
 
         // The result should be Ok (fallback to middle segment)
@@ -1870,6 +1886,7 @@ mod tests {
             INTRO_EXCLUSION_PERCENT,
             OUTRO_EXCLUSION_PERCENT,
             1,
+            &ClipConfig::default(),
         );
 
         assert!(
@@ -1894,6 +1911,7 @@ mod tests {
             INTRO_EXCLUSION_PERCENT,
             OUTRO_EXCLUSION_PERCENT,
             1,
+            &ClipConfig::default(),
         );
 
         assert!(
@@ -2046,6 +2064,7 @@ mod tests {
             INTRO_EXCLUSION_PERCENT,
             OUTRO_EXCLUSION_PERCENT,
             1,
+            &ClipConfig::default(),
         );
         assert!(result.is_ok(), "Single clip selection should succeed");
 
@@ -2240,6 +2259,7 @@ mod tests {
             INTRO_EXCLUSION_PERCENT,
             OUTRO_EXCLUSION_PERCENT,
             4,
+            &ClipConfig::default(),
         );
         assert!(
             result.is_ok(),
@@ -2284,6 +2304,7 @@ mod tests {
             INTRO_EXCLUSION_PERCENT,
             OUTRO_EXCLUSION_PERCENT,
             2,
+            &ClipConfig::default(),
         );
         assert!(
             result.is_ok(),
@@ -2440,6 +2461,7 @@ mod tests {
             INTRO_EXCLUSION_PERCENT,
             OUTRO_EXCLUSION_PERCENT,
             1,
+            &ClipConfig::default(),
         );
 
         // The result should be Ok (fallback to middle segment)
@@ -2712,7 +2734,7 @@ mod tests {
             let video_path = PathBuf::from("/nonexistent/video.mp4");
 
             // Test with default exclusion zones
-            let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
+            let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
 
             prop_assert!(result.is_ok(), "Selection should succeed");
 
@@ -2757,7 +2779,7 @@ mod tests {
             let video_path = PathBuf::from("/nonexistent/video.mp4");
 
             // Test with various exclusion zones
-            let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, 1);
+            let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, 1, &ClipConfig::default());
 
             prop_assert!(result.is_ok(), "Selection should succeed");
 
@@ -2796,7 +2818,7 @@ mod tests {
             let video_path = PathBuf::from("/nonexistent/video.mp4");
 
             // Test with various exclusion zones
-            let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, 1);
+            let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, 1, &ClipConfig::default());
 
             prop_assert!(result.is_ok(), "Selection should succeed for valid inputs");
 
@@ -2903,7 +2925,7 @@ mod tests {
 
             // Process first video (non-existent, will fall back to middle segment)
             let video_path1 = PathBuf::from("/nonexistent/video1.mp4");
-            let result1 = selector.select_clips(&video_path1, duration1, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
+            let result1 = selector.select_clips(&video_path1, duration1, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
 
             prop_assert!(result1.is_ok(), "First selection should succeed");
             let time_ranges1 = result1.unwrap();
@@ -2912,7 +2934,7 @@ mod tests {
 
             // Process second video (non-existent, will fall back to middle segment)
             let video_path2 = PathBuf::from("/nonexistent/video2.mp4");
-            let result2 = selector.select_clips(&video_path2, duration2, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
+            let result2 = selector.select_clips(&video_path2, duration2, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
 
             prop_assert!(result2.is_ok(), "Second selection should succeed");
             let time_ranges2 = result2.unwrap();
@@ -2920,7 +2942,7 @@ mod tests {
             let time_range2 = &time_ranges2[0];
 
             // Process the second video again with the same selector
-            let result2_again = selector.select_clips(&video_path2, duration2, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1);
+            let result2_again = selector.select_clips(&video_path2, duration2, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
 
             prop_assert!(result2_again.is_ok(), "Second selection (repeated) should succeed");
             let time_ranges2_again = result2_again.unwrap();
@@ -2982,6 +3004,7 @@ mod tests {
                 INTRO_EXCLUSION_PERCENT,
                 OUTRO_EXCLUSION_PERCENT,
                 clip_count,
+                &ClipConfig::default(),
             );
 
             // Property 1: The operation should succeed (not fail/panic)
@@ -3066,6 +3089,7 @@ mod tests {
                 INTRO_EXCLUSION_PERCENT,
                 OUTRO_EXCLUSION_PERCENT,
                 clip_count,
+                &ClipConfig::default(),
             );
 
             prop_assert!(result.is_ok(), "Selection should succeed");
@@ -3105,6 +3129,7 @@ mod tests {
                 INTRO_EXCLUSION_PERCENT,
                 OUTRO_EXCLUSION_PERCENT,
                 clip_count,
+                &ClipConfig::default(),
             );
 
             if let Ok(clips2) = result2 {
@@ -3154,6 +3179,7 @@ mod tests {
                 INTRO_EXCLUSION_PERCENT,
                 OUTRO_EXCLUSION_PERCENT,
                 clip_count,
+                &ClipConfig::default(),
             );
 
             prop_assert!(result.is_ok(), "Selection should succeed");
@@ -3221,6 +3247,7 @@ mod tests {
                 intro_exclusion,
                 outro_exclusion,
                 clip_count,
+                &ClipConfig::default(),
             );
 
             // Property 1: The operation should always return a Result (not panic)

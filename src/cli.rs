@@ -35,6 +35,27 @@ pub struct CliArgs {
     /// Number of clips to generate per video (1-4)
     #[arg(short = 'c', long = "clip-count", default_value = "1", value_parser = validate_clip_count)]
     pub clip_count: u8,
+
+    /// Minimum clip duration in seconds
+    #[arg(long = "min-duration", default_value_t = 10.0, value_parser = validate_duration)]
+    pub min_duration: f64,
+
+    /// Maximum clip duration in seconds
+    #[arg(long = "max-duration", default_value_t = 15.0, value_parser = validate_duration)]
+    pub max_duration: f64,
+}
+
+fn validate_duration(s: &str) -> Result<f64, String> {
+    let value: f64 = s
+        .parse()
+        .map_err(|_| format!("'{}' is not a valid number", s))?;
+    if value <= 0.0 {
+        return Err(format!("duration must be greater than 0, got {}", value));
+    }
+    if value > 300.0 {
+        return Err(format!("duration must be 300 seconds or less, got {}", value));
+    }
+    Ok(value)
 }
 
 fn validate_percentage(s: &str) -> Result<f64, String> {
@@ -60,6 +81,19 @@ fn validate_clip_count(s: &str) -> Result<u8, String> {
     }
 
     Ok(count)
+}
+
+impl CliArgs {
+    /// Validate that min_duration <= max_duration
+    pub fn validate_duration_range(&self) -> Result<(), String> {
+        if self.min_duration > self.max_duration {
+            return Err(format!(
+                "min-duration ({}) cannot be greater than max-duration ({})",
+                self.min_duration, self.max_duration
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -393,6 +427,154 @@ mod tests {
         assert!(help.contains("--audio"));
         assert!(help.contains("--intro-exclusion"));
         assert!(help.contains("--outro-exclusion"));
+        assert!(help.contains("--min-duration"));
+        assert!(help.contains("--max-duration"));
+    }
+
+    // Tests for min-duration and max-duration parameters
+
+    #[test]
+    fn test_min_duration_default() {
+        // Test that min-duration defaults to 10.0
+        let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path"]);
+        assert_eq!(args.min_duration, 10.0);
+    }
+
+    #[test]
+    fn test_max_duration_default() {
+        // Test that max-duration defaults to 15.0
+        let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path"]);
+        assert_eq!(args.max_duration, 15.0);
+    }
+
+    #[test]
+    fn test_min_duration_custom() {
+        // Test custom min-duration value
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--min-duration",
+            "5.0",
+        ]);
+        assert_eq!(args.min_duration, 5.0);
+    }
+
+    #[test]
+    fn test_max_duration_custom() {
+        // Test custom max-duration value
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--max-duration",
+            "20.0",
+        ]);
+        assert_eq!(args.max_duration, 20.0);
+    }
+
+    #[test]
+    fn test_duration_range_equal() {
+        // Test that min and max can be equal (fixed duration)
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--min-duration",
+            "10.0",
+            "--max-duration",
+            "10.0",
+        ]);
+        assert_eq!(args.min_duration, 10.0);
+        assert_eq!(args.max_duration, 10.0);
+        assert!(args.validate_duration_range().is_ok());
+    }
+
+    #[test]
+    fn test_duration_range_valid() {
+        // Test that min < max is valid
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--min-duration",
+            "8.0",
+            "--max-duration",
+            "12.0",
+        ]);
+        assert!(args.validate_duration_range().is_ok());
+    }
+
+    #[test]
+    fn test_duration_range_invalid() {
+        // Test that min > max is invalid
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--min-duration",
+            "15.0",
+            "--max-duration",
+            "10.0",
+        ]);
+        let result = args.validate_duration_range();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("cannot be greater than"));
+    }
+
+    #[test]
+    fn test_min_duration_invalid_zero() {
+        // Test that zero min-duration produces an error
+        let result = CliArgs::try_parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--min-duration",
+            "0",
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_min_duration_invalid_negative() {
+        // Test that negative min-duration produces an error
+        let result = CliArgs::try_parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--min-duration",
+            "-5.0",
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_max_duration_invalid_over_limit() {
+        // Test that max-duration over 300 produces an error
+        let result = CliArgs::try_parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--max-duration",
+            "301.0",
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_duration_with_other_flags() {
+        // Test duration parameters combined with other flags
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--min-duration",
+            "8.0",
+            "--max-duration",
+            "12.0",
+            "-s",
+            "intense-audio",
+            "-r",
+            "720p",
+            "-c",
+            "2",
+        ]);
+        assert_eq!(args.min_duration, 8.0);
+        assert_eq!(args.max_duration, 12.0);
+        assert!(matches!(args.strategy, SelectionStrategy::IntenseAudio));
+        assert!(matches!(args.resolution, Resolution::Hd720));
+        assert_eq!(args.clip_count, 2);
     }
 
     #[test]

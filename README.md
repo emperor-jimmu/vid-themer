@@ -1,11 +1,13 @@
 # Video Clip Extractor
 
-A command-line tool that recursively scans directories for video files and automatically extracts short thematic clips (10-15 seconds) from each video. Perfect for creating preview thumbnails or theme videos for media libraries.
+A command-line tool that recursively scans directories for video files and automatically extracts short thematic clips from each video. Perfect for creating preview thumbnails or theme videos for media libraries.
 
 ## Features
 
 - **Recursive Directory Scanning** - Automatically discovers video files in nested directories
 - **Intelligent Clip Selection** - Choose between random or audio-intensity-based extraction strategies
+- **Configurable Clip Duration** - Set minimum and maximum clip duration (default: 10-15 seconds)
+- **Multiple Clips Per Video** - Generate 1-4 clips from each video
 - **Configurable Exclusion Zones** - Control intro/outro exclusion as percentages of video duration
 - **Smart Resolution Handling** - Scales videos down to target resolution without upscaling
 - **Organized Output** - Creates `backdrops/backdrop.mp4` subdirectories next to source videos
@@ -50,13 +52,16 @@ Arguments:
 
 Options:
   -s, --strategy <STRATEGY>              Clip selection strategy [default: random]
-                                         [possible values: random, intense-audio]
+                                         [possible values: random, intense-audio, action]
   -r, --resolution <RESOLUTION>          Target resolution for extracted clips [default: 1080p]
                                          [possible values: 720p, 1080p]
   -a, --audio <AUDIO>                    Include audio in extracted clips [default: true]
                                          [possible values: true, false]
-      --intro-exclusion <PERCENT>        Intro exclusion zone as percentage of video duration (0-100) [default: 1.0]
+  -c, --clip-count <COUNT>               Number of clips to generate per video (1-4) [default: 1]
+      --intro-exclusion <PERCENT>        Intro exclusion zone as percentage of video duration (0-100) [default: 2.0]
       --outro-exclusion <PERCENT>        Outro exclusion zone as percentage of video duration (0-100) [default: 40.0]
+      --min-duration <SECONDS>           Minimum clip duration in seconds [default: 10.0]
+      --max-duration <SECONDS>           Maximum clip duration in seconds [default: 15.0]
   -h, --help                             Print help
   -V, --version                          Print version
 ```
@@ -64,37 +69,62 @@ Options:
 ### Examples
 
 Extract clips using random selection at 1080p with audio:
+
 ```bash
 video-clip-extractor ~/Videos
 ```
 
 Extract clips using audio intensity analysis at 720p:
+
 ```bash
 video-clip-extractor ~/Videos --strategy intense-audio --resolution 720p
 ```
 
 Extract silent clips:
+
 ```bash
 video-clip-extractor ~/Videos --audio false
 ```
 
 Customize exclusion zones (skip first 5% and last 30%):
+
 ```bash
 video-clip-extractor ~/Videos --intro-exclusion 5 --outro-exclusion 30
 ```
 
 No exclusion zones (select from entire video):
+
 ```bash
 video-clip-extractor ~/Videos --intro-exclusion 0 --outro-exclusion 0
+```
+
+Generate exactly 10-second clips:
+
+```bash
+video-clip-extractor ~/Videos --min-duration 10 --max-duration 10
+```
+
+Generate clips between 5 and 20 seconds:
+
+```bash
+video-clip-extractor ~/Videos --min-duration 5 --max-duration 20
+```
+
+Generate multiple clips per video:
+
+```bash
+video-clip-extractor ~/Videos --clip-count 3
 ```
 
 ## Selection Strategies
 
 ### Random Strategy (Default)
-Selects a random 10-15 second segment from the video. By default, excludes the first 1% (intro) and last 40% (outro) of the video to skip opening credits and end credits. These exclusion zones are configurable via CLI parameters.
+
+Selects random segments from the video with configurable duration (default: 10-15 seconds). By default, excludes the first 2% (intro) and last 40% (outro) of the video to skip opening credits and end credits. These exclusion zones and clip durations are configurable via CLI parameters.
 
 ### Intense Audio Strategy
-Analyzes audio levels throughout the video and selects the segment with the highest audio intensity, ideal for action scenes or dramatic moments. Note: Exclusion zones do not apply to this strategy as it selects based on audio analysis.
+
+Analyzes audio levels throughout the video and selects segments with the highest audio intensity, ideal for action scenes or dramatic moments. Respects exclusion zones and duration constraints.
 
 ## Output Structure
 
@@ -119,7 +149,7 @@ For each video file, the tool creates a subdirectory with the extracted clip:
 When processing failures occur, the tool creates a detailed log file in the root directory:
 
 - **Log File**: `video_clip_extractor_failures.log`
-- **Contents**: 
+- **Contents**:
   - Video file path that failed
   - Error message
   - FFmpeg stderr output (when applicable)
