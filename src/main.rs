@@ -16,10 +16,12 @@ use ffmpeg::FFmpegExecutor;
 use logger::FailureLogger;
 use processor::VideoProcessor;
 use progress::ProgressReporter;
+use rayon::prelude::*;
 use scanner::VideoScanner;
 use selector::{ActionSelector, ClipSelector, IntenseAudioSelector, RandomSelector};
 use std::path::Path;
 use std::process;
+use std::sync::{Arc, Mutex};
 
 /// Validate that the provided directory path exists and is a directory
 fn validate_directory(path: &Path) -> Result<(), AppError> {
@@ -102,13 +104,13 @@ fn main() {
     };
 
     // Create VideoProcessor with selector and executor
-    let processor = VideoProcessor::new(
+    let processor = Arc::new(VideoProcessor::new(
         selector,
         ffmpeg_executor,
         args.intro_exclusion_percent,
         args.outro_exclusion_percent,
         args.clip_count,
-    );
+    ));
 
     // Create ProgressReporter with logger
     let logger = match FailureLogger::new(&args.directory) {
@@ -116,16 +118,35 @@ fn main() {
         Err(e) => {
             eprintln!("Warning: Failed to create failure log: {}", e);
             eprintln!("Continuing without failure logging...");
-            // Continue without logger
+            
+            // Continue without logger using parallel processing
             let mut reporter = ProgressReporter::new();
             reporter.start(videos.len());
+            let reporter = Arc::new(Mutex::new(reporter));
 
-            for video in &videos {
+            // Configure rayon thread pool
+            let num_cpus = std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4);
+            let thread_count = (num_cpus * 3 / 4).max(1);
+
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(thread_count)
+                .build_global()
+                .unwrap_or_else(|e| {
+                    eprintln!("Warning: Failed to configure thread pool: {}", e);
+                });
+
+            videos.par_iter().for_each(|video| {
                 let result = processor.process_video(video);
-                reporter.update(&result);
-            }
+                if let Ok(mut reporter) = reporter.lock() {
+                    reporter.update(&result);
+                }
+            });
 
-            reporter.finish();
+            if let Ok(reporter) = reporter.lock() {
+                reporter.finish();
+            }
             return;
         }
     };
@@ -135,14 +156,38 @@ fn main() {
     // Start progress reporting
     reporter.start(videos.len());
 
-    // Process each video with progress updates
-    for video in &videos {
+    // Wrap reporter in Arc<Mutex<>> for thread-safe access
+    let reporter = Arc::new(Mutex::new(reporter));
+
+    // Configure rayon thread pool based on CPU cores
+    // Use 75% of available cores to avoid resource exhaustion
+    let num_cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4); // Default to 4 if detection fails
+    let thread_count = (num_cpus * 3 / 4).max(1); // At least 1 thread
+
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(thread_count)
+        .build_global()
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: Failed to configure thread pool: {}", e);
+            eprintln!("Continuing with default thread pool...");
+        });
+
+    // Process videos in parallel with progress updates
+    videos.par_iter().for_each(|video| {
         let result = processor.process_video(video);
-        reporter.update(&result);
-    }
+        
+        // Lock the reporter to update progress
+        if let Ok(mut reporter) = reporter.lock() {
+            reporter.update(&result);
+        }
+    });
 
     // Display final summary
-    reporter.finish();
+    if let Ok(reporter) = reporter.lock() {
+        reporter.finish();
+    }
 }
 
 #[cfg(test)]

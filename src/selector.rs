@@ -3,14 +3,6 @@
 use rand::Rng;
 use std::path::Path;
 
-/// Default intro exclusion percentage (1% of video duration)
-#[allow(dead_code)]
-pub const INTRO_EXCLUSION_PERCENT: f64 = 1.0;
-
-/// Default outro exclusion percentage (40% of video duration)
-#[allow(dead_code)]
-pub const OUTRO_EXCLUSION_PERCENT: f64 = 40.0;
-
 /// Minimum clip duration in seconds
 pub const MIN_CLIP_DURATION: f64 = 10.0;
 
@@ -165,7 +157,7 @@ impl ExclusionZones {
 /// Implementations of this trait provide different strategies for selecting
 /// one or more non-overlapping clip segments from a video file. All clips
 /// must respect exclusion zones (intro/outro) and duration constraints.
-pub trait ClipSelector {
+pub trait ClipSelector: Send + Sync {
     /// Select multiple non-overlapping clip segments from a video.
     ///
     /// # Arguments
@@ -332,13 +324,11 @@ impl RandomSelector {
     }
 }
 
-pub struct IntenseAudioSelector {
-    ffmpeg_executor: crate::ffmpeg::FFmpegExecutor,
-}
+pub struct IntenseAudioSelector;
 
 impl IntenseAudioSelector {
-    pub fn new(ffmpeg_executor: crate::ffmpeg::FFmpegExecutor) -> Self {
-        Self { ffmpeg_executor }
+    pub fn new(_ffmpeg_executor: crate::ffmpeg::FFmpegExecutor) -> Self {
+        Self
     }
 }
 
@@ -360,9 +350,7 @@ impl ClipSelector for IntenseAudioSelector {
         let valid_duration = outro_cutoff - intro_cutoff;
 
         // Try to analyze audio intensity
-        match self
-            .ffmpeg_executor
-            .analyze_audio_intensity(video_path, duration)
+        match crate::ffmpeg::analyze_audio_intensity(video_path, duration)
         {
             Ok(segments) => {
                 // Check if video can accommodate requested clips
@@ -475,13 +463,11 @@ impl ClipSelector for IntenseAudioSelector {
     }
 }
 
-pub struct ActionSelector {
-    ffmpeg_executor: crate::ffmpeg::FFmpegExecutor,
-}
+pub struct ActionSelector;
 
 impl ActionSelector {
-    pub fn new(ffmpeg_executor: crate::ffmpeg::FFmpegExecutor) -> Self {
-        Self { ffmpeg_executor }
+    pub fn new(_ffmpeg_executor: crate::ffmpeg::FFmpegExecutor) -> Self {
+        Self
     }
 }
 
@@ -499,9 +485,7 @@ impl ClipSelector for ActionSelector {
         let config = ClipConfig::default();
 
         // Try to analyze motion intensity
-        match self
-            .ffmpeg_executor
-            .analyze_motion_intensity(video_path, duration)
+        match crate::ffmpeg::analyze_motion_intensity(video_path, duration)
         {
             Ok(segments) => {
                 // Calculate exclusion zone boundaries
@@ -574,6 +558,8 @@ mod tests {
     // Test constants
     const MIN_TEST_DURATION: f64 = 415.0; // Minimum duration for exclusion zone tests
     const FLOAT_EPSILON: f64 = 0.1; // Tolerance for floating-point comparisons
+    const INTRO_EXCLUSION_PERCENT: f64 = 1.0; // Default intro exclusion for tests
+    const OUTRO_EXCLUSION_PERCENT: f64 = 40.0; // Default outro exclusion for tests
 
     // Unit tests for TimeRange methods
     // Requirements: 3.1, 5.1
@@ -1935,7 +1921,7 @@ mod tests {
     fn test_intense_audio_selector_tie_breaking() {
         // Test that first occurrence is selected when multiple segments have similar intensity
         // Validates Requirement 4.3
-        use crate::ffmpeg::AudioSegment;
+        use crate::ffmpeg::analysis::AudioSegment;
 
         // Create a mock scenario where we have multiple segments with similar intensity
         // We'll test the sorting behavior directly since we can't easily mock FFmpeg output
@@ -2085,7 +2071,7 @@ mod tests {
     fn test_intense_audio_selector_multiple_clips_mock_data() {
         // Test multiple clip selection with mock audio data
         // Requirements 2.1, 3.1, 7.2
-        use crate::ffmpeg::AudioSegment;
+        use crate::ffmpeg::analysis::AudioSegment;
 
         // Create mock audio segments with varying intensities
         // Higher (less negative) values are louder
@@ -2150,7 +2136,7 @@ mod tests {
     fn test_intense_audio_selector_peak_selection_overlapping() {
         // Test peak selection with overlapping candidates
         // Requirement 3.1
-        use crate::ffmpeg::AudioSegment;
+        use crate::ffmpeg::analysis::AudioSegment;
 
         // Create mock audio segments where some peaks would overlap
         let segments = vec![
@@ -2316,7 +2302,7 @@ mod tests {
     fn test_intense_audio_selector_clips_sorted_chronologically() {
         // Test that clips are returned in chronological order
         // Requirement 7.4
-        use crate::ffmpeg::AudioSegment;
+        use crate::ffmpeg::analysis::AudioSegment;
 
         // Create mock segments in random order
         let mut segments = vec![
@@ -2390,7 +2376,7 @@ mod tests {
             intro_percent in 0.0..=10.0f64,
             outro_percent in 0.0..=50.0f64,
         ) {
-            use crate::ffmpeg::AudioSegment;
+            use crate::ffmpeg::analysis::AudioSegment;
 
             // Calculate exclusion zone boundaries
             let zones = ExclusionZones::new(duration, intro_percent, outro_percent);
@@ -2482,7 +2468,7 @@ mod tests {
     #[test]
     fn test_action_selector_motion_segment_tie_breaking() {
         // Test that first occurrence is selected when multiple segments have identical motion scores
-        use crate::ffmpeg::MotionSegment;
+        use crate::ffmpeg::analysis::MotionSegment;
 
         // Create segments with identical motion scores
         let mut segments = vec![
@@ -2530,7 +2516,7 @@ mod tests {
             num_segments in 2..10usize,
             scores in prop::collection::vec(0.1..10.0f64, 2..10),
         ) {
-            use crate::ffmpeg::MotionSegment;
+            use crate::ffmpeg::analysis::MotionSegment;
 
             // Generate motion segments with random scores
             let mut segments: Vec<MotionSegment> = scores.iter().enumerate()
@@ -2569,7 +2555,7 @@ mod tests {
             num_segments in 3..10usize,
             identical_score in 1.0..10.0f64,
         ) {
-            use crate::ffmpeg::MotionSegment;
+            use crate::ffmpeg::analysis::MotionSegment;
 
             // Generate segments with identical scores
             let mut segments: Vec<MotionSegment> = (0..num_segments)
@@ -2608,7 +2594,7 @@ mod tests {
             intro_percent in 0.0..=10.0f64,
             outro_percent in 0.0..=50.0f64,
         ) {
-            use crate::ffmpeg::MotionSegment;
+            use crate::ffmpeg::analysis::MotionSegment;
 
             // Calculate exclusion zone boundaries
             let zones = ExclusionZones::new(duration, intro_percent, outro_percent);
@@ -2652,7 +2638,7 @@ mod tests {
         fn test_action_next_best_segment_selection(
             duration in 415.0..3600.0f64,
         ) {
-            use crate::ffmpeg::MotionSegment;
+            use crate::ffmpeg::analysis::MotionSegment;
 
             // Create a scenario where the highest-scoring segment violates exclusion zones
             // Set intro exclusion to 10% and outro exclusion to 40%
