@@ -60,8 +60,8 @@ pub mod audio {
     /// Channel count (2 = stereo)
     pub const CHANNELS: &str = "2";
 
-    /// Volume reduction factor (0.4 = 40%)
-    pub const VOLUME_REDUCTION: f32 = 0.4;
+    /// Volume reduction factor (0.25 = 25%)
+    pub const VOLUME_REDUCTION: f32 = 0.25;
 
     /// Loudness normalization target (EBU R128)
     pub const LOUDNESS_TARGET: &str = "-16";
@@ -110,7 +110,7 @@ pub mod muxer {
 /// Fade effect settings
 pub mod fade {
     /// Fade-in duration in seconds
-    pub const FADE_IN_DURATION: f64 = 0.5;
+    pub const FADE_IN_DURATION: f64 = 1.0;
 
     /// Fade-out duration in seconds
     pub const FADE_OUT_DURATION: f64 = 1.0;
