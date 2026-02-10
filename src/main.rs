@@ -16,7 +16,6 @@ use ffmpeg::FFmpegExecutor;
 use logger::FailureLogger;
 use processor::VideoProcessor;
 use progress::ProgressReporter;
-use rayon::prelude::*;
 use scanner::VideoScanner;
 use selector::{ActionSelector, ClipSelector, IntenseAudioSelector, RandomSelector};
 use std::path::Path;
@@ -150,46 +149,33 @@ fn main() {
     // Start progress reporting
     reporter.start(videos.len());
 
-    // Wrap reporter in Arc<Mutex<>> for thread-safe access
+    // Wrap reporter in Arc<Mutex<>> for thread-safe access (used by FFmpeg callbacks)
     let reporter = Arc::new(Mutex::new(reporter));
 
-    // Configure rayon thread pool based on CPU cores
-    // Use 75% of available cores to avoid resource exhaustion
-    // Cap at 8 threads since FFmpeg operations are I/O-bound and FFmpeg spawns its own threads
-    let num_cpus = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4); // Default to 4 if detection fails
-    let thread_count = (num_cpus * 3 / 4).clamp(1, 8); // At least 1, at most 8 threads
-
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(thread_count)
-        .build_global()
-        .unwrap_or_else(|e| {
-            eprintln!("Warning: Failed to configure thread pool: {}", e);
-            eprintln!("Continuing with default thread pool...");
-        });
-
-    // Process videos in parallel with progress updates
-    videos.par_iter().for_each(|video| {
-        // Print the video header first (with lock)
+    // Process videos sequentially to avoid output interleaving
+    // Note: FFmpeg itself is multi-threaded, so this doesn't significantly impact performance
+    for video in &videos {
+        // Start video processing
         if let Ok(mut reporter) = reporter.lock() {
             reporter.start_video(&video.path);
         }
 
-        // Create a closure that captures the reporter for per-clip progress
+        // Create a closure that locks and prints clip progress
+        let reporter_clone = Arc::clone(&reporter);
         let clip_progress = |clip_num: usize, total_clips: usize, filename: &str| {
-            if let Ok(reporter) = reporter.lock() {
+            if let Ok(reporter) = reporter_clone.lock() {
                 reporter.update_clip_progress(clip_num, total_clips, filename);
             }
         };
 
+        // Process video (FFmpeg operations are still multi-threaded internally)
         let result = processor.process_video(video, clip_progress);
 
-        // Lock the reporter to update final status
+        // Update final status
         if let Ok(mut reporter) = reporter.lock() {
             reporter.update(&result);
         }
-    });
+    }
 
     // Display final summary
     if let Ok(reporter) = reporter.lock() {
