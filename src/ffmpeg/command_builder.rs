@@ -13,6 +13,8 @@ pub struct ExtractConfig<'a> {
     pub output_path: &'a Path,
     pub source_resolution: (u32, u32),
     pub codec: &'a str,
+    pub color_transfer: Option<&'a str>,
+    pub pix_fmt: Option<&'a str>,
     pub target_resolution: Resolution,
     pub include_audio: bool,
     pub use_hw_accel: bool,
@@ -149,21 +151,37 @@ pub fn build_video_filters(
     source_resolution: (u32, u32),
     target_resolution: Resolution,
     codec: &str,
+    color_transfer: Option<&str>,
+    pix_fmt: Option<&str>,
 ) -> String {
     let mut filters = Vec::new();
 
-    // Check if source is HDR
-    let is_hdr = codec.contains("hevc") || codec.contains("h265") || codec.contains("vp9");
+    // Detect HDR based on color transfer characteristics and pixel format
+    // HDR indicators: smpte2084 (PQ/HDR10), arib-std-b67 (HLG), or 10-bit pixel formats
+    let is_hdr = if let Some(transfer) = color_transfer {
+        transfer == "smpte2084" || transfer == "arib-std-b67"
+    } else if let Some(fmt) = pix_fmt {
+        // Check for 10-bit formats which often indicate HDR
+        fmt.contains("10le") || fmt.contains("10be")
+    } else {
+        // Fallback: assume HEVC/VP9 might be HDR
+        codec.contains("hevc") || codec.contains("h265") || codec.contains("vp9")
+    };
 
     if is_hdr {
-        // HDR to SDR tone mapping
-        filters.push("zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p".to_string());
+        // HDR to SDR tone mapping using simplified approach from FFmpeg documentation
+        // Reference: https://ffmpeg.org/ffmpeg-filters.html#tonemap
+        // This uses the recommended filter chain: zscale(linear) -> tonemap -> zscale(bt709) -> format
+        filters.push("zscale=transfer=linear".to_string());
+        filters.push("tonemap=tonemap=hable:desat=0".to_string());
+        filters.push("zscale=transfer=bt709:primaries=bt709:matrix=bt709:range=limited".to_string());
+        filters.push(format!("format={}", encoding::PIX_FMT));
     } else {
-        // For SDR sources, ensure proper format
+        // For SDR sources, just ensure proper pixel format
         filters.push(format!("format={}", encoding::PIX_FMT));
     }
 
-    // Add scale filter if needed
+    // Add scale filter if needed (downscaling only, no upscaling)
     if let Some(scale_filter) = calculate_scale_filter(source_resolution, target_resolution) {
         filters.push(scale_filter);
     }
@@ -266,6 +284,8 @@ pub fn build_extract_command(config: &ExtractConfig) -> Vec<String> {
         config.source_resolution,
         config.target_resolution.clone(),
         config.codec,
+        config.color_transfer,
+        config.pix_fmt,
     );
     args.extend(vec!["-vf".to_string(), filters]);
 

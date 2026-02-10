@@ -74,6 +74,8 @@ impl FFmpegExecutor {
             output_path: &temp_path,
             source_resolution,
             codec,
+            color_transfer: metadata.color_transfer.as_deref(),
+            pix_fmt: metadata.pix_fmt.as_deref(),
             target_resolution: self.resolution.clone(),
             include_audio: self.include_audio,
             use_hw_accel: self.use_hw_accel,
@@ -133,6 +135,9 @@ impl FFmpegExecutor {
         source_resolution: (u32, u32),
         codec: &str,
     ) -> Result<(), FFmpegError> {
+        // Get metadata for color information
+        let metadata = self.get_video_metadata(video_path)?;
+        
         let mut args = vec![
             "-err_detect".to_string(),
             "ignore_err".to_string(),
@@ -148,6 +153,8 @@ impl FFmpegExecutor {
             output_path,
             source_resolution,
             codec,
+            color_transfer: metadata.color_transfer.as_deref(),
+            pix_fmt: metadata.pix_fmt.as_deref(),
             target_resolution: self.resolution.clone(),
             include_audio: self.include_audio,
             use_hw_accel: self.use_hw_accel,

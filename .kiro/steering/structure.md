@@ -29,6 +29,7 @@ src/
 - `VideoFile` - Video file representation
 - Skip logic for directories with existing clips based on requested clip count
 - Counts existing clips (backdrop1.mp4, backdrop2.mp4, etc.) and skips directories that already have enough clips
+- Sorts discovered videos alphabetically by path for consistent processing order
 
 ### Selection Strategies (`selector.rs`)
 

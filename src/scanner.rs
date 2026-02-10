@@ -144,6 +144,9 @@ impl VideoScanner {
             }
         }
 
+        // Sort videos by path for consistent processing order
+        videos.sort_by(|a, b| a.path.cmp(&b.path));
+
         Ok(ScanResult {
             videos,
             skipped_dirs,
@@ -511,6 +514,40 @@ mod tests {
         let videos = scan_result.videos;
         assert_eq!(videos.len(), 1);
         assert_eq!(videos[0].path, video_path);
+
+        // Clean up
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_scanner_sorts_videos_alphabetically() {
+        // Test that scanner returns videos in alphabetical order by path
+        let temp_dir =
+            std::env::temp_dir().join(format!("video_scanner_sort_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create videos with names that would be out of order if not sorted
+        let video_c = temp_dir.join("c_video.mp4");
+        let video_a = temp_dir.join("a_video.mp4");
+        let video_b = temp_dir.join("b_video.mp4");
+
+        fs::File::create(&video_c).unwrap();
+        fs::File::create(&video_a).unwrap();
+        fs::File::create(&video_b).unwrap();
+
+        let scanner = VideoScanner::new(temp_dir.clone(), 1);
+        let result = scanner.scan();
+
+        assert!(result.is_ok());
+        let scan_result = result.unwrap();
+        let videos = scan_result.videos;
+        assert_eq!(videos.len(), 3);
+
+        // Verify videos are sorted alphabetically
+        assert_eq!(videos[0].path, video_a, "First video should be a_video.mp4");
+        assert_eq!(videos[1].path, video_b, "Second video should be b_video.mp4");
+        assert_eq!(videos[2].path, video_c, "Third video should be c_video.mp4");
 
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);

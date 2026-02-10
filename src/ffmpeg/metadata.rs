@@ -13,6 +13,8 @@ pub struct VideoMetadata {
     pub codec: String,
     pub width: u32,
     pub height: u32,
+    pub color_transfer: Option<String>,
+    pub pix_fmt: Option<String>,
 }
 
 /// FFprobe JSON output structure
@@ -28,6 +30,8 @@ struct FFprobeStream {
     codec_name: String,
     width: u32,
     height: u32,
+    color_transfer: Option<String>,
+    pix_fmt: Option<String>,
 }
 
 /// FFprobe format information
@@ -39,14 +43,14 @@ struct FFprobeFormat {
 /// Get all video metadata in a single ffprobe call (3x faster than separate calls)
 pub fn get_video_metadata(video_path: &Path) -> Result<VideoMetadata, FFmpegError> {
     // Execute ffprobe to get all metadata at once using JSON output
-    // Command: ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height:format=duration -of json <video>
+    // Command: ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height,color_transfer,pix_fmt:format=duration -of json <video>
     let output = Command::new("ffprobe")
         .arg("-v")
         .arg("error")
         .arg("-select_streams")
         .arg("v:0")
         .arg("-show_entries")
-        .arg("stream=codec_name,width,height:format=duration")
+        .arg("stream=codec_name,width,height,color_transfer,pix_fmt:format=duration")
         .arg("-of")
         .arg("json")
         .arg(video_path)
@@ -129,6 +133,8 @@ fn parse_metadata_json(json_str: &str, video_path: &Path) -> Result<VideoMetadat
         codec: stream.codec_name.clone(),
         width: stream.width,
         height: stream.height,
+        color_transfer: stream.color_transfer.clone(),
+        pix_fmt: stream.pix_fmt.clone(),
     })
 }
 

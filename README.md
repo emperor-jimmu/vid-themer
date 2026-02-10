@@ -4,7 +4,7 @@ A command-line tool that recursively scans directories for video files and autom
 
 ## Features
 
-- **Recursive Directory Scanning** - Automatically discovers video files in nested directories
+- **Recursive Directory Scanning** - Automatically discovers video files in nested directories (sorted alphabetically)
 - **Intelligent Clip Selection** - Choose between random or audio-intensity-based extraction strategies
 - **Configurable Clip Duration** - Set minimum and maximum clip duration (default: 10-15 seconds)
 - **Multiple Clips Per Video** - Generate 1-4 clips from each video with incremental generation support
