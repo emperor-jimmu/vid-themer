@@ -37,11 +37,11 @@ pub struct CliArgs {
     pub clip_count: u8,
 
     /// Minimum clip duration in seconds
-    #[arg(long = "min-duration", default_value_t = 10.0, value_parser = validate_duration)]
+    #[arg(long = "min-duration", default_value_t = 20.0, value_parser = validate_duration)]
     pub min_duration: f64,
 
     /// Maximum clip duration in seconds
-    #[arg(long = "max-duration", default_value_t = 15.0, value_parser = validate_duration)]
+    #[arg(long = "max-duration", default_value_t = 30.0, value_parser = validate_duration)]
     pub max_duration: f64,
 }
 
@@ -450,16 +450,16 @@ mod tests {
 
     #[test]
     fn test_min_duration_default() {
-        // Test that min-duration defaults to 10.0
+        // Test that min-duration defaults to 20.0
         let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path"]);
-        assert_eq!(args.min_duration, 10.0);
+        assert_eq!(args.min_duration, 20.0);
     }
 
     #[test]
     fn test_max_duration_default() {
-        // Test that max-duration defaults to 15.0
+        // Test that max-duration defaults to 30.0
         let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path"]);
-        assert_eq!(args.max_duration, 15.0);
+        assert_eq!(args.max_duration, 30.0);
     }
 
     #[test]

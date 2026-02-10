@@ -5,8 +5,8 @@ pub mod encoding {
     /// Target bitrate for hardware-accelerated encoding (5 Mbps)
     pub const HW_ACCEL_BITRATE: &str = "5M";
 
-    /// CRF value for software encoding (23 = higher quality for better direct play)
-    pub const CRF: &str = "23";
+    /// CRF value for software encoding (25 = balanced quality/size for preview clips)
+    pub const CRF: &str = "24";
 
     /// Encoding preset for libx264
     pub const PRESET: &str = "fast";
@@ -56,9 +56,6 @@ pub mod audio {
 
     /// Sample rate (48 kHz for maximum compatibility)
     pub const SAMPLE_RATE: &str = "48000";
-
-    /// Channel count (2 = stereo)
-    pub const CHANNELS: &str = "2";
 
     /// Volume reduction factor (0.25 = 25%)
     pub const VOLUME_REDUCTION: f32 = 0.25;

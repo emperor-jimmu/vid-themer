@@ -6,7 +6,7 @@ A command-line tool that recursively scans directories for video files and autom
 
 - **Recursive Directory Scanning** - Automatically discovers video files in nested directories (sorted alphabetically)
 - **Intelligent Clip Selection** - Choose between random or audio-intensity-based extraction strategies
-- **Configurable Clip Duration** - Set minimum and maximum clip duration (default: 10-15 seconds)
+- **Configurable Clip Duration** - Set minimum and maximum clip duration (default: 20-30 seconds)
 - **Multiple Clips Per Video** - Generate 1-4 clips from each video with incremental generation support
 - **Incremental Clip Generation** - Add more clips without regenerating existing ones
 - **Configurable Exclusion Zones** - Control intro/outro exclusion as percentages of video duration
@@ -61,8 +61,8 @@ Options:
   -c, --clip-count <COUNT>               Number of clips to generate per video (1-4) [default: 1]
       --intro-exclusion <PERCENT>        Intro exclusion zone as percentage of video duration (0-100) [default: 2.0]
       --outro-exclusion <PERCENT>        Outro exclusion zone as percentage of video duration (0-100) [default: 40.0]
-      --min-duration <SECONDS>           Minimum clip duration in seconds [default: 10.0]
-      --max-duration <SECONDS>           Maximum clip duration in seconds [default: 15.0]
+      --min-duration <SECONDS>           Minimum clip duration in seconds [default: 20.0]
+      --max-duration <SECONDS>           Maximum clip duration in seconds [default: 30.0]
   -h, --help                             Print help
   -V, --version                          Print version
 ```
@@ -125,7 +125,7 @@ video-clip-extractor ~/Videos --clip-count 3
 
 ### Random Strategy (Default)
 
-Selects random segments from the video with configurable duration (default: 10-15 seconds). By default, excludes the first 2% (intro) and last 40% (outro) of the video to skip opening credits and end credits. These exclusion zones and clip durations are configurable via CLI parameters.
+Selects random segments from the video with configurable duration (default: 20-30 seconds). By default, excludes the first 2% (intro) and last 40% (outro) of the video to skip opening credits and end credits. These exclusion zones and clip durations are configurable via CLI parameters.
 
 ### Intense Audio Strategy
 

@@ -27,12 +27,13 @@ pub fn build_audio_args(include_audio: bool) -> Vec<String> {
         vec!["-an".to_string()]
     } else {
         // Include audio with AAC codec
-        // Apply loudness normalization (EBU R128) then reduce volume
-        // Downmix to stereo to handle complex channel layouts (e.g., 5.1.2 Dolby Atmos)
+        // First decode to PCM (handles DTS/DTS-HD/TrueHD/etc.), then apply filters
+        // Downmix to stereo first to handle complex channel layouts (e.g., 5.1.2 Dolby Atmos, DTS:X)
+        // Then apply loudness normalization (EBU R128) and volume reduction
         vec![
             "-af".to_string(),
             format!(
-                "loudnorm=I={}:TP={}:LRA={},volume={}",
+                "aformat=sample_fmts=fltp:channel_layouts=stereo,loudnorm=I={}:TP={}:LRA={},volume={}",
                 audio::LOUDNESS_TARGET,
                 audio::TRUE_PEAK,
                 audio::LOUDNESS_RANGE,
@@ -44,8 +45,6 @@ pub fn build_audio_args(include_audio: bool) -> Vec<String> {
             audio::BITRATE.to_string(),
             "-ar".to_string(),
             audio::SAMPLE_RATE.to_string(),
-            "-ac".to_string(),
-            audio::CHANNELS.to_string(),
         ]
     }
 }

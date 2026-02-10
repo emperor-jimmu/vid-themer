@@ -142,5 +142,5 @@ No configuration files - all settings via CLI arguments:
 - `--clip-count` / `-c`: number of clips per video, 1-4 (default: 1)
 - `--intro-exclusion`: percentage of video duration to exclude from start (0-100, default: 2.0)
 - `--outro-exclusion`: percentage of video duration to exclude from end (0-100, default: 40.0)
-- `--min-duration`: minimum clip duration in seconds (default: 10.0)
-- `--max-duration`: maximum clip duration in seconds (default: 15.0)
+- `--min-duration`: minimum clip duration in seconds (default: 20.0)
+- `--max-duration`: maximum clip duration in seconds (default: 30.0)
