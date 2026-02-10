@@ -100,6 +100,9 @@ impl FFmpegExecutor {
                 || stderr.contains("concealing")
                 || stderr.contains("error while decoding")
                 || stderr.contains("missing picture in access unit")
+                || stderr.contains("Error submitting packet to decoder")
+                || stderr.contains("Error splitting the input into NAL units")
+                || stderr.contains("Invalid data found when processing input")
             {
                 return self.extract_clip_with_recovery(
                     video_path,
@@ -138,6 +141,7 @@ impl FFmpegExecutor {
         // Get metadata for color information
         let metadata = self.get_video_metadata(video_path)?;
         
+        // First attempt: Try with audio but with error tolerance
         let mut args = vec![
             "-err_detect".to_string(),
             "ignore_err".to_string(),
@@ -161,7 +165,6 @@ impl FFmpegExecutor {
         };
 
         let standard_args = command_builder::build_extract_command(&config);
-
         args.extend(standard_args.into_iter().skip(2));
 
         let output = Command::new("ffmpeg").args(&args).output().map_err(|e| {
@@ -174,8 +177,82 @@ impl FFmpegExecutor {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            
+            // If audio decoding failed, try without audio
+            if self.include_audio && (stderr.contains("Error submitting packet to decoder")
+                || stderr.contains("aac")
+                || stderr.contains("Could not open encoder before EOF"))
+            {
+                return self.extract_clip_without_audio(
+                    video_path,
+                    time_range,
+                    output_path,
+                    source_resolution,
+                    codec,
+                    &metadata,
+                );
+            }
+            
             return Err(FFmpegError::ExecutionFailed(format!(
                 "FFmpeg clip extraction failed even with recovery for '{}' at {:.2}s-{:.2}s: {}",
+                video_path.display(),
+                time_range.start_seconds,
+                time_range.start_seconds + time_range.duration_seconds,
+                stderr
+            )));
+        }
+
+        validate_output(output_path)?;
+        Ok(())
+    }
+
+    /// Extract clip without audio (last resort for corrupted audio streams)
+    fn extract_clip_without_audio(
+        &self,
+        video_path: &Path,
+        time_range: &TimeRange,
+        output_path: &Path,
+        source_resolution: (u32, u32),
+        codec: &str,
+        metadata: &VideoMetadata,
+    ) -> Result<(), FFmpegError> {
+        let mut args = vec![
+            "-err_detect".to_string(),
+            "ignore_err".to_string(),
+            "-fflags".to_string(),
+            "+genpts+igndts".to_string(),
+            "-max_error_rate".to_string(),
+            "1.0".to_string(),
+        ];
+
+        let config = command_builder::ExtractConfig {
+            video_path,
+            time_range,
+            output_path,
+            source_resolution,
+            codec,
+            color_transfer: metadata.color_transfer.as_deref(),
+            pix_fmt: metadata.pix_fmt.as_deref(),
+            target_resolution: self.resolution.clone(),
+            include_audio: false, // Force no audio
+            use_hw_accel: self.use_hw_accel,
+        };
+
+        let standard_args = command_builder::build_extract_command(&config);
+        args.extend(standard_args.into_iter().skip(2));
+
+        let output = Command::new("ffmpeg").args(&args).output().map_err(|e| {
+            FFmpegError::ExecutionFailed(format!(
+                "Failed to execute ffmpeg without audio for '{}': {}",
+                video_path.display(),
+                e
+            ))
+        })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(FFmpegError::ExecutionFailed(format!(
+                "FFmpeg clip extraction failed even without audio for '{}' at {:.2}s-{:.2}s: {}",
                 video_path.display(),
                 time_range.start_seconds,
                 time_range.start_seconds + time_range.duration_seconds,
