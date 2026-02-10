@@ -2,7 +2,6 @@
 // Tests that running with -c 3 after -c 2 generates only the missing clip
 
 use std::fs;
-use std::path::PathBuf;
 use std::process::Command;
 
 mod common;
@@ -20,7 +19,10 @@ fn test_incremental_clip_generation() {
 
     // Create a test video using the common helper
     let video_path = test_dir.join("test_video.mp4");
-    common::create_test_video(&video_path, 30.0).expect("Failed to create test video");
+    assert!(
+        common::create_test_video(&video_path, 30, 1920, 1080),
+        "Failed to create test video"
+    );
 
     // Step 1: Run with -c 2 to generate 2 clips
     let output = Command::new("cargo")
@@ -167,7 +169,10 @@ fn test_skip_when_enough_clips_exist() {
 
     // Create a test video
     let video_path = test_dir.join("test_video.mp4");
-    common::create_test_video(&video_path, 30.0).expect("Failed to create test video");
+    assert!(
+        common::create_test_video(&video_path, 30, 1920, 1080),
+        "Failed to create test video"
+    );
 
     // Manually create 2 backdrop files
     let backdrops_dir = test_dir.join("backdrops");

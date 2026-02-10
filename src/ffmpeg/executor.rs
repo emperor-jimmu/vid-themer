@@ -68,10 +68,88 @@ impl FFmpegExecutor {
 
         let temp_path = output_path.with_extension("tmp.mp4");
 
+        // First attempt: Standard extraction with hybrid seeking
+        match self.extract_clip_internal(
+            video_path,
+            time_range,
+            &temp_path,
+            source_resolution,
+            codec,
+            &metadata,
+            false, // use_conservative_seeking
+        ) {
+            Ok(_) => {
+                // Validate duration
+                if let Err(e) = validate_clip_duration(&temp_path, time_range.duration_seconds) {
+                    eprintln!(
+                        "Warning: Initial extraction produced incorrect duration for '{}': {}. Retrying with conservative seeking...",
+                        video_path.display(),
+                        e
+                    );
+                    let _ = std::fs::remove_file(&temp_path);
+                    
+                    // Retry with conservative seeking (no fast seek)
+                    self.extract_clip_internal(
+                        video_path,
+                        time_range,
+                        &temp_path,
+                        source_resolution,
+                        codec,
+                        &metadata,
+                        true, // use_conservative_seeking
+                    )?;
+                    
+                    validate_clip_duration(&temp_path, time_range.duration_seconds)?;
+                }
+                
+                apply_fade_effect(&temp_path, output_path, time_range.duration_seconds)?;
+                validate_output(output_path)?;
+                Ok(())
+            }
+            Err(e) => {
+                let stderr = e.stderr().map(|s| s.to_string());
+                let _ = std::fs::remove_file(&temp_path);
+
+                if stderr.as_ref().is_some_and(|s| {
+                    s.contains("corrupt")
+                        || s.contains("Invalid NAL unit")
+                        || s.contains("concealing")
+                        || s.contains("error while decoding")
+                        || s.contains("missing picture in access unit")
+                        || s.contains("Error submitting packet to decoder")
+                        || s.contains("Error splitting the input into NAL units")
+                        || s.contains("Invalid data found when processing input")
+                }) {
+                    return self.extract_clip_with_recovery(
+                        video_path,
+                        time_range,
+                        output_path,
+                        source_resolution,
+                        codec,
+                    );
+                }
+
+                Err(e)
+            }
+        }
+    }
+
+    /// Internal extraction method with configurable seeking strategy
+    #[allow(clippy::too_many_arguments)]
+    fn extract_clip_internal(
+        &self,
+        video_path: &Path,
+        time_range: &TimeRange,
+        output_path: &Path,
+        source_resolution: (u32, u32),
+        codec: &str,
+        metadata: &VideoMetadata,
+        use_conservative_seeking: bool,
+    ) -> Result<(), FFmpegError> {
         let config = command_builder::ExtractConfig {
             video_path,
             time_range,
-            output_path: &temp_path,
+            output_path,
             source_resolution,
             codec,
             color_transfer: metadata.color_transfer.as_deref(),
@@ -81,7 +159,41 @@ impl FFmpegExecutor {
             use_hw_accel: self.use_hw_accel,
         };
 
-        let args = command_builder::build_extract_command(&config);
+        let args = if use_conservative_seeking {
+            // Conservative seeking: only accurate seek, no fast seek
+            let mut args = vec!["-err_detect".to_string(), "ignore_err".to_string()];
+            
+            // Input file
+            args.extend(vec![
+                "-i".to_string(),
+                video_path.to_string_lossy().to_string(),
+            ]);
+            
+            // Accurate seek only
+            args.extend(vec![
+                "-ss".to_string(),
+                time_range.start_seconds.to_string(),
+            ]);
+            
+            // Build rest of command
+            args.extend(vec![
+                "-avoid_negative_ts".to_string(),
+                "make_zero".to_string(),
+                "-t".to_string(),
+                time_range.duration_seconds.to_string(),
+            ]);
+            
+            // Add remaining standard args (mapping, codec, filters, etc.)
+            let standard_args = command_builder::build_extract_command(&config);
+            // Skip the first parts we already added and add the rest
+            let skip_until = standard_args.iter().position(|s| s == "-map").unwrap_or(0);
+            args.extend(standard_args.into_iter().skip(skip_until));
+            
+            args
+        } else {
+            // Standard hybrid seeking
+            command_builder::build_extract_command(&config)
+        };
 
         let output = Command::new("ffmpeg").args(&args).output().map_err(|e| {
             FFmpegError::ExecutionFailed(format!(
@@ -93,26 +205,6 @@ impl FFmpegExecutor {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            let _ = std::fs::remove_file(&temp_path);
-
-            if stderr.contains("corrupt")
-                || stderr.contains("Invalid NAL unit")
-                || stderr.contains("concealing")
-                || stderr.contains("error while decoding")
-                || stderr.contains("missing picture in access unit")
-                || stderr.contains("Error submitting packet to decoder")
-                || stderr.contains("Error splitting the input into NAL units")
-                || stderr.contains("Invalid data found when processing input")
-            {
-                return self.extract_clip_with_recovery(
-                    video_path,
-                    time_range,
-                    output_path,
-                    source_resolution,
-                    codec,
-                );
-            }
-
             return Err(FFmpegError::ExecutionFailed(format!(
                 "FFmpeg clip extraction failed for '{}' at {:.2}s-{:.2}s: {}",
                 video_path.display(),
@@ -122,10 +214,7 @@ impl FFmpegExecutor {
             )));
         }
 
-        validate_output(&temp_path)?;
-        apply_fade_effect(&temp_path, output_path, time_range.duration_seconds)?;
         validate_output(output_path)?;
-
         Ok(())
     }
 
@@ -295,7 +384,7 @@ fn apply_fade_effect(
             || stderr.contains("Could not find codec parameters")
         {
             // Try to rename the temp file to output (skip fade)
-            if let Ok(_) = std::fs::rename(input_path, output_path) {
+            if std::fs::rename(input_path, output_path).is_ok() {
                 return Ok(());
             }
         }
@@ -332,6 +421,54 @@ fn validate_output(output_path: &Path) -> Result<(), FFmpegError> {
         return Err(FFmpegError::ExecutionFailed(format!(
             "Output file is too small ({} bytes), likely corrupted",
             metadata.len()
+        )));
+    }
+
+    Ok(())
+}
+
+/// Validate that the extracted clip has the expected duration
+/// Allows for a small tolerance (0.5 seconds) to account for keyframe alignment
+fn validate_clip_duration(output_path: &Path, expected_duration: f64) -> Result<(), FFmpegError> {
+    // Use ffprobe to get the actual duration of the extracted clip
+    let output = Command::new("ffprobe")
+        .args([
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            output_path.to_string_lossy().as_ref(),
+        ])
+        .output()
+        .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to run ffprobe: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(FFmpegError::ExecutionFailed(format!(
+            "ffprobe failed to get clip duration: {}",
+            stderr
+        )));
+    }
+
+    let duration_str = String::from_utf8_lossy(&output.stdout);
+    let actual_duration: f64 = duration_str
+        .trim()
+        .parse()
+        .map_err(|e| FFmpegError::ExecutionFailed(format!(
+            "Failed to parse clip duration '{}': {}",
+            duration_str.trim(),
+            e
+        )))?;
+
+    // Allow 0.5 second tolerance for keyframe alignment
+    const DURATION_TOLERANCE: f64 = 0.5;
+    let duration_diff = (actual_duration - expected_duration).abs();
+
+    if duration_diff > DURATION_TOLERANCE {
+        return Err(FFmpegError::ExecutionFailed(format!(
+            "Extracted clip duration ({:.2}s) differs significantly from expected ({:.2}s). \
+             This may indicate seeking issues or keyframe problems in the source video.",
+            actual_duration,
+            expected_duration
         )));
     }
 
