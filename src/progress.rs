@@ -77,6 +77,21 @@ impl ProgressReporter {
         }
     }
 
+    pub fn report_clip_progress(&self, filename: &str, clip_num: usize, total_clips: usize) {
+        let bar_width = 20;
+        let filled = (clip_num * bar_width) / total_clips;
+        let empty = bar_width - filled;
+        let bar = format!("[{}{}]", 
+            "X".repeat(filled).bright_green(),
+            " ".repeat(empty)
+        );
+        println!("  {} {} {}", 
+            filename.bright_cyan().bold(),
+            bar,
+            format!("{}/{}", clip_num, total_clips).bright_yellow()
+        );
+    }
+
     pub fn finish(&self) {
         println!(
             "{} {} successful, {} failed",
