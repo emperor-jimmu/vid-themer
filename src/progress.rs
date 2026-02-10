@@ -42,68 +42,56 @@ impl ProgressReporter {
         );
     }
 
-    /// Print the video processing header
-    /// This should be called before starting to extract clips
-    pub fn start_video(&mut self, video_path: &std::path::Path) {
-        self.current += 1;
-        println!(
-            "{} Processing: {}",
-            format!("[{}/{}]", self.current, self.total)
-                .bright_blue()
-                .bold(),
-            video_path.display().to_string().bright_white()
-        );
-    }
-
     /// Report progress for a single clip extraction
     /// This is called during video processing as each clip completes
     /// Must be called while holding the reporter lock to prevent interleaving
-    pub fn update_clip_progress(&self, clip_num: usize, total_clips: usize, filename: &str) {
-        let bar_width = 20;
+    pub fn update_clip_progress(&self, clip_num: usize, total_clips: usize, filename: &str, video_path: &std::path::Path) {
+        // On first clip, print the header
+        if clip_num == 1 {
+            println!(
+                "{} Processing: {}",
+                format!("[{}/{}]", self.current, self.total)
+                    .bright_blue()
+                    .bold(),
+                video_path.display().to_string().bright_white()
+            );
+        }
+        
+        let bar_width = 13;
         let filled = (clip_num * bar_width) / total_clips;
         let empty = bar_width - filled;
         let bar = format!(
             "[{}{}]",
-            "=".repeat(filled).bright_purple(),
+            "=".repeat(filled).bright_green(),
             " ".repeat(empty)
         );
-        println!(
-            "  {} {} {}",
+        
+        // Use \r to overwrite the previous line
+        print!(
+            "\r  {} {} {}",
             filename.bright_cyan().bold(),
             bar,
             format!("{}/{}", clip_num, total_clips).bright_yellow()
         );
+        
+        // Flush to ensure immediate display
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+        
+        // On last clip, print newline to move to next line
+        if clip_num == total_clips {
+            println!();
+        }
     }
 
     pub fn update(&mut self, result: &ProcessResult) {
-        // Note: start_video() should have been called before processing started
-        // so we don't increment current here or print the header
-
+        // Note: current counter is already incremented before processing
         // Buffer all output for this video completion to print atomically
         let mut output = String::new();
 
         if result.success {
             self.successful += 1;
-            if result.clips_generated == 1 {
-                output.push_str(&format!(
-                    "  {} {}\n",
-                    "->".bright_green(),
-                    result.output_path.display().to_string().bright_cyan()
-                ));
-            } else {
-                // For multiple clips, just show the summary (individual clips already printed in real-time)
-                output.push_str(&format!(
-                    "  {} Generated {} clips in {}\n",
-                    "->".bright_green(),
-                    result.clips_generated.to_string().bright_yellow().bold(),
-                    result
-                        .output_path
-                        .parent()
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_else(|| "backdrops/".to_string())
-                        .bright_cyan()
-                ));
-            }
+            // No summary needed - individual clips already printed in real-time
         } else {
             self.failed += 1;
             if let Some(error) = &result.error_message {
@@ -238,8 +226,8 @@ mod tests {
                     )
                 };
 
-                // Start video processing (prints header and increments counter)
-                reporter.start_video(&result.video_path);
+                // Increment current counter (simulating video processing start)
+                reporter.current += 1;
                 
                 // Update the reporter with result
                 reporter.update(&result);
@@ -395,7 +383,7 @@ mod tests {
             None,
         );
 
-        reporter.start_video(&result.video_path);
+        reporter.current += 1;
         reporter.update(&result);
 
         assert_eq!(reporter.current, 1);
@@ -421,7 +409,7 @@ mod tests {
                 None,
             );
 
-            reporter.start_video(&result.video_path);
+            reporter.current += 1;
             reporter.update(&result);
 
             assert_eq!(reporter.current, i + 1);
@@ -452,7 +440,7 @@ mod tests {
                 Some(format!("Error {}", i)),
             );
 
-            reporter.start_video(&result.video_path);
+            reporter.current += 1;
             reporter.update(&result);
 
             assert_eq!(reporter.current, i + 1);
@@ -481,7 +469,7 @@ mod tests {
             true,
             None,
         );
-        reporter.start_video(&result1.video_path);
+        reporter.current += 1;
         reporter.update(&result1);
         assert_eq!(reporter.current, 1);
         assert_eq!(reporter.successful, 1);
@@ -494,7 +482,7 @@ mod tests {
             false,
             Some("Error 2".to_string()),
         );
-        reporter.start_video(&result2.video_path);
+        reporter.current += 1;
         reporter.update(&result2);
         assert_eq!(reporter.current, 2);
         assert_eq!(reporter.successful, 1);
@@ -507,7 +495,7 @@ mod tests {
             true,
             None,
         );
-        reporter.start_video(&result3.video_path);
+        reporter.current += 1;
         reporter.update(&result3);
         assert_eq!(reporter.current, 3);
         assert_eq!(reporter.successful, 2);
@@ -520,7 +508,7 @@ mod tests {
             false,
             Some("Error 4".to_string()),
         );
-        reporter.start_video(&result4.video_path);
+        reporter.current += 1;
         reporter.update(&result4);
         assert_eq!(reporter.current, 4);
         assert_eq!(reporter.successful, 2);
@@ -545,7 +533,7 @@ mod tests {
                 None,
             );
 
-            reporter.start_video(&result.video_path);
+            reporter.current += 1;
             reporter.update(&result);
 
             // Current should never exceed total
@@ -644,7 +632,7 @@ mod tests {
                 );
 
                 // Start video processing and update the reporter
-                reporter.start_video(&result.video_path);
+                reporter.current += 1;
                 reporter.update(&result);
 
                 // Property 8: After update, successful count should increment
@@ -705,7 +693,7 @@ mod tests {
         assert_eq!(result.output_path.to_string_lossy(), output_path);
 
         // Start video and update the reporter
-        reporter.start_video(&result.video_path);
+        reporter.current += 1;
         reporter.update(&result);
 
         // Verify the reporter state
@@ -729,7 +717,7 @@ mod tests {
             None,
         );
 
-        reporter.start_video(&success_result.video_path);
+        reporter.current += 1;
         reporter.update(&success_result);
 
         // Verify success result has output path
@@ -746,7 +734,7 @@ mod tests {
             Some("Processing failed".to_string()),
         );
 
-        reporter.start_video(&failure_result.video_path);
+        reporter.current += 1;
         reporter.update(&failure_result);
 
         // Verify failure result has error message but may have empty output path
@@ -779,7 +767,7 @@ mod tests {
             // Store the output path for uniqueness check
             output_paths.push(result.output_path.clone());
 
-            reporter.start_video(&result.video_path);
+            reporter.current += 1;
             reporter.update(&result);
         }
 
@@ -814,7 +802,7 @@ mod tests {
                 true,
                 None,
             );
-            reporter.start_video(&result.video_path);
+            reporter.current += 1;
             reporter.update(&result);
         }
 
@@ -839,7 +827,7 @@ mod tests {
                 false,
                 Some(format!("Error {}", i)),
             );
-            reporter2.start_video(&result.video_path);
+            reporter2.current += 1;
             reporter2.update(&result);
         }
 
@@ -866,7 +854,7 @@ mod tests {
                 true,
                 None,
             );
-            reporter3.start_video(&result.video_path);
+            reporter3.current += 1;
             reporter3.update(&result);
         }
 
@@ -878,7 +866,7 @@ mod tests {
                 false,
                 Some(format!("Error {}", i)),
             );
-            reporter3.start_video(&result.video_path);
+            reporter3.current += 1;
             reporter3.update(&result);
         }
 
@@ -913,3 +901,4 @@ mod tests {
         assert_eq!(reporter4.failed, 0);
     }
 }
+

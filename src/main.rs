@@ -71,14 +71,21 @@ fn display_config_summary(args: &CliArgs) {
         format!("{} clips/vid", args.clip_count)
     };
     
+    let force_text = if args.force {
+        ", Force mode".to_string()
+    } else {
+        String::new()
+    };
+    
     println!(
-        "{} {}, {}-{} sec length, {}, {} mode",
+        "{} {}, {}-{} sec length, {}, {} mode{}",
         "Using".bright_white(),
         clip_text.bright_yellow().bold(),
         args.min_duration.to_string().bright_yellow().bold(),
         args.max_duration.to_string().bright_yellow().bold(),
         resolution_name.bright_yellow().bold(),
-        strategy_name.bright_yellow().bold()
+        strategy_name.bright_yellow().bold(),
+        force_text.bright_yellow().bold()
     );
     println!();
 }
@@ -114,7 +121,7 @@ fn main() {
     }
 
     // Create VideoScanner and scan for videos
-    let scanner = VideoScanner::new(args.directory.clone(), args.clip_count);
+    let scanner = VideoScanner::new(args.directory.clone(), args.clip_count, args.force);
     let scan_result = exit_on_error(scanner.scan(), "scanning directory");
 
     // Exit early if no videos found
@@ -167,6 +174,7 @@ fn main() {
         args.outro_exclusion_percent,
         args.clip_count,
         clip_config,
+        args.force,
     ));
 
     // Create ProgressReporter with logger
@@ -194,16 +202,17 @@ fn main() {
     // Process videos sequentially to avoid output interleaving
     // Note: FFmpeg itself is multi-threaded, so this doesn't significantly impact performance
     for video in &videos {
-        // Start video processing
+        // Increment current counter
         if let Ok(mut reporter) = reporter.lock() {
-            reporter.start_video(&video.path);
+            reporter.current += 1;
         }
 
         // Create a closure that locks and prints clip progress
         let reporter_clone = Arc::clone(&reporter);
-        let clip_progress = |clip_num: usize, total_clips: usize, filename: &str| {
+        let video_path = video.path.clone();
+        let clip_progress = move |clip_num: usize, total_clips: usize, filename: &str| {
             if let Ok(reporter) = reporter_clone.lock() {
-                reporter.update_clip_progress(clip_num, total_clips, filename);
+                reporter.update_clip_progress(clip_num, total_clips, filename, &video_path);
             }
         };
 

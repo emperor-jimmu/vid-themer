@@ -43,6 +43,10 @@ pub struct CliArgs {
     /// Maximum clip duration in seconds
     #[arg(long = "max-duration", default_value_t = 30.0, value_parser = validate_duration)]
     pub max_duration: f64,
+
+    /// Force regeneration of all clips, ignoring existing clips
+    #[arg(short = 'f', long = "force", action = clap::ArgAction::SetTrue, default_value_t = false)]
+    pub force: bool,
 }
 
 fn validate_duration(s: &str) -> Result<f64, String> {

@@ -11,6 +11,7 @@ const BACKDROP_FILE: &str = "backdrop.mp4";
 pub struct VideoScanner {
     pub root_path: PathBuf,
     pub requested_clip_count: u8,
+    pub force: bool,
 }
 
 pub struct VideoFile {
@@ -24,10 +25,11 @@ pub struct ScanResult {
 }
 
 impl VideoScanner {
-    pub fn new(root_path: PathBuf, requested_clip_count: u8) -> Self {
+    pub fn new(root_path: PathBuf, requested_clip_count: u8, force: bool) -> Self {
         Self {
             root_path,
             requested_clip_count,
+            force,
         }
     }
 
@@ -36,6 +38,11 @@ impl VideoScanner {
         // Skip if it's a backdrops directory
         if dir.file_name().and_then(|n| n.to_str()) == Some(BACKDROPS_DIR) {
             return true;
+        }
+
+        // If force mode is enabled, never skip directories based on existing clips
+        if self.force {
+            return false;
         }
 
         // Check if it already has enough valid backdrop files (non-zero size)
@@ -227,7 +234,7 @@ mod tests {
             let expected_videos = create_video_files(&created_dirs, files_per_dir).unwrap();
 
             // Create the scanner (with default clip_count of 1 for testing)
-            let scanner = VideoScanner::new(temp_dir.clone(), 1);
+            let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
 
             // Scan for videos
             let result = scanner.scan();
@@ -325,7 +332,7 @@ mod tests {
             }
 
             // Create the scanner (with default clip_count of 1 for testing)
-            let scanner = VideoScanner::new(temp_dir.clone(), 1);
+            let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
 
             // Scan for videos
             let result = scanner.scan();
@@ -428,7 +435,7 @@ mod tests {
             }
 
             // Create the scanner (with default clip_count of 1 for testing)
-            let scanner = VideoScanner::new(temp_dir.clone(), 1);
+            let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
 
             // Scan for videos - this should NOT produce errors despite non-video files
             let result = scanner.scan();
@@ -506,7 +513,7 @@ mod tests {
         let video_path = temp_dir.join("test.mp4");
         fs::File::create(&video_path).unwrap();
 
-        let scanner = VideoScanner::new(temp_dir.clone(), 1);
+        let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
         let result = scanner.scan();
 
         assert!(result.is_ok());
@@ -536,7 +543,7 @@ mod tests {
         fs::File::create(&video_a).unwrap();
         fs::File::create(&video_b).unwrap();
 
-        let scanner = VideoScanner::new(temp_dir.clone(), 1);
+        let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
         let result = scanner.scan();
 
         assert!(result.is_ok());
@@ -574,7 +581,7 @@ mod tests {
         fs::File::create(&video2).unwrap();
         fs::File::create(&video3).unwrap();
 
-        let scanner = VideoScanner::new(temp_dir.clone(), 1);
+        let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
         let result = scanner.scan();
 
         assert!(result.is_ok());
@@ -656,7 +663,7 @@ mod tests {
             }
 
             // Create the scanner (with default clip_count of 1 for testing)
-            let scanner = VideoScanner::new(temp_dir.clone(), 1);
+            let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
 
             // Scan for videos
             let result = scanner.scan();
@@ -722,3 +729,4 @@ mod tests {
         }
     }
 }
+
