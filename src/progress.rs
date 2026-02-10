@@ -64,7 +64,7 @@ impl ProgressReporter {
         let empty = bar_width - filled;
         let bar = format!(
             "[{}{}]",
-            "X".repeat(filled).bright_green(),
+            "=".repeat(filled).bright_purple(),
             " ".repeat(empty)
         );
         println!(

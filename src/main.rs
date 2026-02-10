@@ -47,6 +47,42 @@ fn exit_on_error<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) -
     }
 }
 
+/// Display configuration summary
+fn display_config_summary(args: &CliArgs) {
+    use colored::Colorize;
+    
+    let version = env!("CARGO_PKG_VERSION");
+    println!("{} {}", "Video Clip Extractor".bright_cyan().bold(), version.bright_yellow());
+    
+    let strategy_name = match args.strategy {
+        SelectionStrategy::Random => "Random",
+        SelectionStrategy::IntenseAudio => "Intense Audio",
+        SelectionStrategy::Action => "Action",
+    };
+    
+    let resolution_name = match args.resolution {
+        cli::Resolution::Hd720 => "720p",
+        cli::Resolution::Hd1080 => "1080p",
+    };
+    
+    let clip_text = if args.clip_count == 1 {
+        "1 clip/vid".to_string()
+    } else {
+        format!("{} clips/vid", args.clip_count)
+    };
+    
+    println!(
+        "{} {}, {}-{} sec length, {}, {} mode",
+        "Using".bright_white(),
+        clip_text.bright_yellow().bold(),
+        args.min_duration.to_string().bright_yellow().bold(),
+        args.max_duration.to_string().bright_yellow().bold(),
+        resolution_name.bright_yellow().bold(),
+        strategy_name.bright_yellow().bold()
+    );
+    println!();
+}
+
 fn main() {
     // Parse CLI arguments
     let args = CliArgs::parse();
@@ -65,6 +101,9 @@ fn main() {
 
     // Validate directory exists (exit with error code 1 if not)
     exit_on_error(validate_directory(&args.directory), "validating directory");
+
+    // Display configuration summary
+    display_config_summary(&args);
 
     // Check FFmpeg availability (exit with error if not found)
     if FFmpegExecutor::check_availability().is_err() {
