@@ -37,22 +37,26 @@ impl VideoScanner {
         // Check if it already has any valid backdrop files (non-zero size)
         let backdrops_dir = dir.join(BACKDROPS_DIR);
         if backdrops_dir.exists() && backdrops_dir.is_dir() {
-            // Check if there are any non-zero size .mp4 files in the backdrops directory
-            if let Ok(entries) = std::fs::read_dir(&backdrops_dir) {
-                for entry in entries.flatten() {
-                    if let Ok(metadata) = entry.metadata()
-                        && metadata.is_file()
-                        && metadata.len() > 0
-                        && let Some(ext) = entry.path().extension()
-                        && ext == "mp4"
-                    {
-                        return true; // Skip if any valid backdrop file exists
-                    }
-                }
-            }
+            return self.has_valid_backdrop_files(&backdrops_dir);
         }
 
         false
+    }
+
+    /// Check if a directory contains valid (non-zero size) backdrop files
+    fn has_valid_backdrop_files(&self, backdrops_dir: &Path) -> bool {
+        let Ok(entries) = std::fs::read_dir(backdrops_dir) else {
+            return false;
+        };
+
+        entries.flatten().any(|entry| {
+            let Ok(metadata) = entry.metadata() else {
+                return false;
+            };
+            metadata.is_file()
+                && metadata.len() > 0
+                && entry.path().extension().is_some_and(|ext| ext == "mp4")
+        })
     }
 
     /// Scan the root directory recursively for video files

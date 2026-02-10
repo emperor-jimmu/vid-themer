@@ -172,12 +172,9 @@ pub fn build_video_filters(
 }
 
 /// Build seeking arguments based on codec type
-pub fn build_seeking_args(
-    time_range: &TimeRange,
-    codec: &str,
-) -> (Vec<String>, Vec<String>) {
+pub fn build_seeking_args(time_range: &TimeRange, codec: &str) -> (Vec<String>, Vec<String>) {
     let is_hevc = codec == "hevc" || codec == "h265";
-    
+
     let fast_seek_offset = if is_hevc {
         seeking::HEVC_FAST_SEEK_OFFSET
     } else {
@@ -215,10 +212,7 @@ pub fn build_seeking_args(
     // Add accurate seek
     let accurate_seek_pos = time_range.start_seconds - fast_seek_pos;
     if accurate_seek_pos > 0.0 {
-        after_input.extend(vec![
-            "-ss".to_string(),
-            accurate_seek_pos.to_string(),
-        ]);
+        after_input.extend(vec!["-ss".to_string(), accurate_seek_pos.to_string()]);
     }
 
     (before_input, after_input)
@@ -226,10 +220,7 @@ pub fn build_seeking_args(
 
 /// Build FFmpeg command for extracting a clip
 pub fn build_extract_command(config: &ExtractConfig) -> Vec<String> {
-    let mut args = vec![
-        "-err_detect".to_string(),
-        "ignore_err".to_string(),
-    ];
+    let mut args = vec!["-err_detect".to_string(), "ignore_err".to_string()];
 
     // Build seeking arguments
     let (before_input, after_input) = build_seeking_args(config.time_range, config.codec);
@@ -266,25 +257,23 @@ pub fn build_extract_command(config: &ExtractConfig) -> Vec<String> {
     args.extend(build_video_codec_args(config.use_hw_accel));
 
     // Pixel format and GOP settings
-    args.extend(vec![
-        "-pix_fmt".to_string(),
-        encoding::PIX_FMT.to_string(),
-    ]);
+    args.extend(vec!["-pix_fmt".to_string(), encoding::PIX_FMT.to_string()]);
     args.extend(build_gop_args());
     args.extend(build_color_args());
 
     // Video filters
-    let filters = build_video_filters(config.source_resolution, config.target_resolution.clone(), config.codec);
+    let filters = build_video_filters(
+        config.source_resolution,
+        config.target_resolution.clone(),
+        config.codec,
+    );
     args.extend(vec!["-vf".to_string(), filters]);
 
     // Audio
     args.extend(build_audio_args(config.include_audio));
 
     // Muxer options
-    args.extend(vec![
-        "-movflags".to_string(),
-        muxer::MOVFLAGS.to_string(),
-    ]);
+    args.extend(vec!["-movflags".to_string(), muxer::MOVFLAGS.to_string()]);
 
     // Output
     args.extend(vec![
@@ -296,11 +285,7 @@ pub fn build_extract_command(config: &ExtractConfig) -> Vec<String> {
 }
 
 /// Build FFmpeg command for applying fade effects
-pub fn build_fade_command(
-    input_path: &Path,
-    output_path: &Path,
-    duration: f64,
-) -> Vec<String> {
+pub fn build_fade_command(input_path: &Path, output_path: &Path, duration: f64) -> Vec<String> {
     let fade_out_start = duration - fade::FADE_OUT_DURATION;
 
     vec![

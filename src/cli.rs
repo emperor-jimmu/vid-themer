@@ -53,7 +53,10 @@ fn validate_duration(s: &str) -> Result<f64, String> {
         return Err(format!("duration must be greater than 0, got {}", value));
     }
     if value > 300.0 {
-        return Err(format!("duration must be 300 seconds or less, got {}", value));
+        return Err(format!(
+            "duration must be 300 seconds or less, got {}",
+            value
+        ));
     }
     Ok(value)
 }
@@ -90,6 +93,18 @@ impl CliArgs {
             return Err(format!(
                 "min-duration ({}) cannot be greater than max-duration ({})",
                 self.min_duration, self.max_duration
+            ));
+        }
+        Ok(())
+    }
+
+    /// Validate that intro + outro exclusion zones don't exceed 100%
+    pub fn validate_exclusion_zones(&self) -> Result<(), String> {
+        let total_exclusion = self.intro_exclusion_percent + self.outro_exclusion_percent;
+        if total_exclusion >= 100.0 {
+            return Err(format!(
+                "intro-exclusion ({}) + outro-exclusion ({}) must be less than 100%, got {}%",
+                self.intro_exclusion_percent, self.outro_exclusion_percent, total_exclusion
             ));
         }
         Ok(())
@@ -520,12 +535,8 @@ mod tests {
     #[test]
     fn test_min_duration_invalid_zero() {
         // Test that zero min-duration produces an error
-        let result = CliArgs::try_parse_from(&[
-            "video-clip-extractor",
-            "/test/path",
-            "--min-duration",
-            "0",
-        ]);
+        let result =
+            CliArgs::try_parse_from(&["video-clip-extractor", "/test/path", "--min-duration", "0"]);
         assert!(result.is_err());
     }
 
@@ -706,6 +717,84 @@ mod tests {
         ]);
         assert_eq!(args.intro_exclusion_percent, 100.0);
         assert_eq!(args.outro_exclusion_percent, 100.0);
+    }
+
+    // Tests for exclusion zone validation (Task 5)
+
+    #[test]
+    fn test_exclusion_zones_valid() {
+        // Test that valid exclusion zones pass validation
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--intro-exclusion",
+            "10",
+            "--outro-exclusion",
+            "40",
+        ]);
+        assert!(args.validate_exclusion_zones().is_ok());
+    }
+
+    #[test]
+    fn test_exclusion_zones_exactly_100() {
+        // Test that exactly 100% total exclusion fails
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--intro-exclusion",
+            "60",
+            "--outro-exclusion",
+            "40",
+        ]);
+        let result = args.validate_exclusion_zones();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must be less than 100%"));
+    }
+
+    #[test]
+    fn test_exclusion_zones_over_100() {
+        // Test that over 100% total exclusion fails
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--intro-exclusion",
+            "70",
+            "--outro-exclusion",
+            "50",
+        ]);
+        let result = args.validate_exclusion_zones();
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err();
+        assert!(error_msg.contains("must be less than 100%"));
+        assert!(error_msg.contains("120%"));
+    }
+
+    #[test]
+    fn test_exclusion_zones_boundary_99() {
+        // Test that 99% total exclusion is valid (edge case)
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--intro-exclusion",
+            "49.5",
+            "--outro-exclusion",
+            "49.5",
+        ]);
+        assert!(args.validate_exclusion_zones().is_ok());
+    }
+
+    #[test]
+    fn test_exclusion_zones_zero() {
+        // Test that zero exclusion zones are valid
+        let args = CliArgs::parse_from(&[
+            "video-clip-extractor",
+            "/test/path",
+            "--intro-exclusion",
+            "0",
+            "--outro-exclusion",
+            "0",
+        ]);
+        assert!(args.validate_exclusion_zones().is_ok());
     }
 
     // Tests for clip_count parameter (Task 1.1)

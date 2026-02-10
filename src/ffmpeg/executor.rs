@@ -9,7 +9,7 @@ use crate::selector::TimeRange;
 use super::command_builder;
 use super::constants::fade;
 use super::error::FFmpegError;
-use super::metadata::{get_video_metadata, VideoMetadata};
+use super::metadata::{VideoMetadata, get_video_metadata};
 
 /// FFmpeg executor with configuration
 #[derive(Clone)]
@@ -188,19 +188,19 @@ fn apply_fade_effect(
     duration: f64,
 ) -> Result<(), FFmpegError> {
     let fade_out_start = duration - fade::FADE_OUT_DURATION;
-    
+
     if fade_out_start <= fade::FADE_IN_DURATION {
-        std::fs::rename(input_path, output_path).map_err(|e| {
-            FFmpegError::ExecutionFailed(format!("Failed to rename file: {}", e))
-        })?;
+        std::fs::rename(input_path, output_path)
+            .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to rename file: {}", e)))?;
         return Ok(());
     }
 
     let args = command_builder::build_fade_command(input_path, output_path, duration);
 
-    let output = Command::new("ffmpeg").args(&args).output().map_err(|e| {
-        FFmpegError::ExecutionFailed(format!("Failed to apply fade effect: {}", e))
-    })?;
+    let output = Command::new("ffmpeg")
+        .args(&args)
+        .output()
+        .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to apply fade effect: {}", e)))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

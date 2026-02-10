@@ -9,6 +9,8 @@ pub mod metadata;
 
 // Re-export commonly used types
 #[allow(unused_imports)]
-pub use analysis::{analyze_audio_intensity, analyze_motion_intensity, AudioSegment, MotionSegment};
+pub use analysis::{
+    AudioSegment, MotionSegment, analyze_audio_intensity, analyze_motion_intensity,
+};
 pub use error::FFmpegError;
 pub use executor::FFmpegExecutor;

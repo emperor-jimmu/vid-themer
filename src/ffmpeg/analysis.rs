@@ -125,9 +125,7 @@ pub fn analyze_audio_intensity(
         }
         #[allow(clippy::collapsible_if)]
         if line.contains("lavfi.astats.Overall.RMS_level") {
-            if let Some(level) =
-                extract_value_after(line, "lavfi.astats.Overall.RMS_level=")
-            {
+            if let Some(level) = extract_value_after(line, "lavfi.astats.Overall.RMS_level=") {
                 measurements.push((current_time, level));
             }
         }
@@ -234,7 +232,7 @@ fn analyze_audio_intensity_fallback(
 }
 
 /// Analyze motion intensity using scene detection
-/// 
+///
 /// This function samples frames at regular intervals and analyzes them for motion/action.
 /// Uses a lower frame rate for faster processing while still capturing motion patterns.
 pub fn analyze_motion_intensity(
@@ -272,9 +270,10 @@ pub fn analyze_motion_intensity(
     for line in stderr.lines() {
         if line.contains("lavfi.scd.time:")
             && let Some(time) = extract_value_after(line, "lavfi.scd.time:")
-                && let Some(score) = extract_value_after(line, "lavfi.scd.score:") {
-                    measurements.push((time, score));
-                }
+            && let Some(score) = extract_value_after(line, "lavfi.scd.score:")
+        {
+            measurements.push((time, score));
+        }
     }
 
     if measurements.is_empty() {

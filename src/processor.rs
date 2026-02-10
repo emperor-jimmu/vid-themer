@@ -136,12 +136,12 @@ impl VideoProcessor {
         // Step 4: Extract each clip with sequential naming
         let mut last_output_path = PathBuf::new();
         let mut clip_filenames = Vec::new();
-        
+
         for (index, time_range) in time_ranges.iter().enumerate() {
             let clip_num = index + 1;
             let output_filename = format!("backdrop{}.mp4", clip_num);
             clip_filenames.push(output_filename.clone());
-            
+
             let output_path = backdrops_dir.join(&output_filename);
             last_output_path = output_path.clone();
 
@@ -1504,8 +1504,14 @@ mod tests {
         assert_eq!(backdrops_dir.parent().unwrap(), &video_file.parent_dir);
 
         // Verify full path structure
-        let expected_full_path1 = video_file.parent_dir.join("backdrops").join("backdrop1.mp4");
-        let expected_full_path2 = video_file.parent_dir.join("backdrops").join("backdrop2.mp4");
+        let expected_full_path1 = video_file
+            .parent_dir
+            .join("backdrops")
+            .join("backdrop1.mp4");
+        let expected_full_path2 = video_file
+            .parent_dir
+            .join("backdrops")
+            .join("backdrop2.mp4");
 
         assert_eq!(expected_path1, expected_full_path1);
         assert_eq!(expected_path2, expected_full_path2);

@@ -162,7 +162,10 @@ mod tests {
 
         // Use realistic paths
         let video_path = temp_dir.join("test").join("video.mp4");
-        let output_path = temp_dir.join("test").join("backdrops").join("backdrop2.mp4");
+        let output_path = temp_dir
+            .join("test")
+            .join("backdrops")
+            .join("backdrop2.mp4");
 
         let result = ProcessResult {
             video_path: video_path.clone(),

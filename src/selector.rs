@@ -27,7 +27,7 @@ impl Default for ClipConfig {
 
 impl ClipConfig {
     /// Get a random duration within the configured range
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Public API method
     pub fn random_duration(&self) -> f64 {
         let mut rng = rand::thread_rng();
         rng.gen_range(self.min_duration..=self.max_duration)
@@ -79,7 +79,6 @@ impl TimeRange {
     /// let range3 = TimeRange { start_seconds: 15.0, duration_seconds: 5.0 };
     /// assert!(!range1.overlaps(&range3)); // Adjacent but not overlapping
     /// ```
-    #[allow(dead_code)]
     pub fn overlaps(&self, other: &TimeRange) -> bool {
         let self_end = self.start_seconds + self.duration_seconds;
         let other_end = other.start_seconds + other.duration_seconds;
@@ -100,7 +99,7 @@ impl TimeRange {
     /// let range = TimeRange { start_seconds: 10.0, duration_seconds: 15.0 };
     /// assert_eq!(range.duration(), 15.0);
     /// ```
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Public API method
     pub fn duration(&self) -> f64 {
         self.duration_seconds
     }
@@ -125,7 +124,7 @@ impl TimeRange {
     /// let too_long = TimeRange { start_seconds: 10.0, duration_seconds: 25.0 };
     /// assert!(!too_long.is_valid_duration());
     /// ```
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Public API method
     pub fn is_valid_duration(&self) -> bool {
         let duration = self.duration();
         (MIN_CLIP_DURATION..=MAX_CLIP_DURATION).contains(&duration)
@@ -228,6 +227,7 @@ impl ClipSelector for RandomSelector {
         let mut clips = Vec::new();
         let mut rng = rand::thread_rng();
         let mut attempts = 0;
+        let mut consecutive_empty_gaps = 0;
 
         // Implement loop to generate N random non-overlapping clips
         // Use a smarter approach: track available gaps and sample from them
@@ -238,17 +238,25 @@ impl ClipSelector for RandomSelector {
             let clip_duration = rng.gen_range(config.min_duration..=config.max_duration);
 
             // Find available gaps between existing clips
-            let available_gaps = self.find_available_gaps(
-                intro_cutoff,
-                outro_cutoff,
-                &clips,
-                clip_duration,
-            );
+            let available_gaps =
+                self.find_available_gaps(intro_cutoff, outro_cutoff, &clips, clip_duration);
 
             // If no gaps available, try with a shorter clip duration
             if available_gaps.is_empty() {
+                consecutive_empty_gaps += 1;
+                // Early exit if we consistently can't find gaps
+                if consecutive_empty_gaps > 50 {
+                    eprintln!(
+                        "Warning: Unable to find gaps for additional clips, returning {} of {} requested clips",
+                        clips.len(),
+                        clip_count
+                    );
+                    break;
+                }
                 continue;
             }
+
+            consecutive_empty_gaps = 0; // Reset on success
 
             // Randomly select a gap
             let gap_index = rng.gen_range(0..available_gaps.len());
@@ -267,6 +275,16 @@ impl ClipSelector for RandomSelector {
             if !clips.iter().any(|existing| candidate.overlaps(existing)) {
                 clips.push(candidate);
             }
+        }
+
+        // Log if we hit MAX_ATTEMPTS
+        if attempts >= MAX_ATTEMPTS && clips.len() < actual_clip_count as usize {
+            eprintln!(
+                "Warning: Reached MAX_ATTEMPTS ({}) while selecting clips, returning {} of {} requested clips",
+                MAX_ATTEMPTS,
+                clips.len(),
+                clip_count
+            );
         }
 
         // Sort clips by start time before returning
@@ -328,6 +346,165 @@ impl RandomSelector {
     }
 }
 
+/// Trait for intensity segments (audio or motion)
+trait IntensitySegment {
+    fn start_time(&self) -> f64;
+    fn duration(&self) -> f64;
+}
+
+impl IntensitySegment for crate::ffmpeg::AudioSegment {
+    fn start_time(&self) -> f64 {
+        self.start_time
+    }
+    fn duration(&self) -> f64 {
+        self.duration
+    }
+}
+
+impl IntensitySegment for crate::ffmpeg::MotionSegment {
+    fn start_time(&self) -> f64 {
+        self.start_time
+    }
+    fn duration(&self) -> f64 {
+        self.duration
+    }
+}
+
+/// Common implementation for selecting clips from intensity peaks (audio or motion)
+///
+/// This function extracts the shared logic between IntenseAudioSelector and ActionSelector,
+/// eliminating code duplication while maintaining the same behavior.
+fn select_clips_from_peaks<T: IntensitySegment>(
+    segments: Vec<T>,
+    duration: f64,
+    intro_exclusion_percent: f64,
+    outro_exclusion_percent: f64,
+    clip_count: u8,
+    config: &ClipConfig,
+) -> Result<Vec<TimeRange>, SelectionError> {
+    const MAX_ATTEMPTS: u32 = 1000;
+
+    // Calculate valid selection zone
+    let intro_cutoff = duration * (intro_exclusion_percent / 100.0);
+    let outro_cutoff = duration - (duration * (outro_exclusion_percent / 100.0));
+    let valid_duration = outro_cutoff - intro_cutoff;
+
+    // Check if video can accommodate requested clips
+    let min_required = (clip_count as f64) * config.min_duration;
+
+    // If video is too short, generate as many clips as possible
+    let actual_clip_count = if valid_duration < min_required {
+        (valid_duration / config.min_duration).floor() as u8
+    } else {
+        clip_count
+    };
+
+    // If no clips can be generated within exclusion zones, fall back to middle segment
+    if actual_clip_count == 0 || valid_duration < config.min_duration {
+        return Ok(vec![config.middle_segment(duration)?]);
+    }
+
+    // Calculate exclusion zone boundaries
+    let zones = ExclusionZones::new(duration, intro_exclusion_percent, outro_exclusion_percent);
+
+    // Find intensity peaks within valid zone
+    // Segments are already sorted by intensity (highest first)
+    let valid_peaks: Vec<_> = segments
+        .into_iter()
+        .filter(|seg| {
+            let segment_end = seg.start_time() + seg.duration();
+            zones.contains_segment(seg.start_time(), segment_end)
+        })
+        .collect();
+
+    // If no valid peaks found, fall back to middle segment
+    if valid_peaks.is_empty() {
+        return Ok(vec![config.middle_segment(duration)?]);
+    }
+
+    // Select top N non-overlapping peaks
+    let mut selected_clips = Vec::new();
+    let mut attempts = 0;
+    let mut consecutive_failures = 0;
+
+    for peak in valid_peaks {
+        if selected_clips.len() >= actual_clip_count as usize {
+            break;
+        }
+
+        attempts += 1;
+        if attempts > MAX_ATTEMPTS {
+            eprintln!(
+                "Warning: Reached MAX_ATTEMPTS ({}) while selecting clips, returning {} of {} requested clips",
+                MAX_ATTEMPTS,
+                selected_clips.len(),
+                clip_count
+            );
+            break;
+        }
+
+        // Early exit if we're consistently failing to find valid clips
+        if consecutive_failures > 50 {
+            eprintln!(
+                "Warning: Too many consecutive failures, returning {} of {} requested clips",
+                selected_clips.len(),
+                clip_count
+            );
+            break;
+        }
+
+        // Create TimeRange around peak
+        // Use a duration in the middle of the valid range
+        let clip_duration = config.min_duration + (config.max_duration - config.min_duration) * 0.5;
+
+        // Center the clip around the peak's start time
+        let mut start = (peak.start_time() - clip_duration / 2.0).max(intro_cutoff);
+
+        // Ensure the clip doesn't exceed outro boundary
+        let mut end = start + clip_duration;
+        if end > outro_cutoff {
+            end = outro_cutoff;
+            start = (end - clip_duration).max(intro_cutoff);
+        }
+
+        // Recalculate duration in case adjustments were made
+        let actual_duration = end - start;
+
+        // Skip if duration is invalid
+        if !(config.min_duration..=config.max_duration).contains(&actual_duration) {
+            consecutive_failures += 1;
+            continue;
+        }
+
+        let candidate = TimeRange {
+            start_seconds: start,
+            duration_seconds: actual_duration,
+        };
+
+        // Check for overlaps with existing clips
+        if !selected_clips
+            .iter()
+            .any(|existing| candidate.overlaps(existing))
+            && (config.min_duration..=config.max_duration).contains(&candidate.duration_seconds)
+        {
+            selected_clips.push(candidate);
+            consecutive_failures = 0; // Reset on success
+        } else {
+            consecutive_failures += 1;
+        }
+    }
+
+    // If we couldn't generate any clips from peaks, fall back to middle segment
+    if selected_clips.is_empty() {
+        return Ok(vec![config.middle_segment(duration)?]);
+    }
+
+    // Sort selected clips by start time before returning
+    selected_clips.sort_by(|a, b| a.start_seconds.partial_cmp(&b.start_seconds).unwrap());
+
+    Ok(selected_clips)
+}
+
 pub struct IntenseAudioSelector;
 
 impl IntenseAudioSelector {
@@ -346,117 +523,18 @@ impl ClipSelector for IntenseAudioSelector {
         clip_count: u8,
         config: &ClipConfig,
     ) -> Result<Vec<TimeRange>, SelectionError> {
-        const MAX_ATTEMPTS: u32 = 1000;
-
-        // Calculate valid selection zone
-        let intro_cutoff = duration * (intro_exclusion_percent / 100.0);
-        let outro_cutoff = duration - (duration * (outro_exclusion_percent / 100.0));
-        let valid_duration = outro_cutoff - intro_cutoff;
-
         // Try to analyze audio intensity
-        match crate::ffmpeg::analyze_audio_intensity(video_path, duration)
-        {
-            Ok(segments) => {
-                // Check if video can accommodate requested clips
-                let min_required = (clip_count as f64) * config.min_duration;
-
-                // If video is too short, generate as many clips as possible
-                let actual_clip_count = if valid_duration < min_required {
-                    (valid_duration / config.min_duration).floor() as u8
-                } else {
-                    clip_count
-                };
-
-                // If no clips can be generated within exclusion zones, fall back to middle segment
-                if actual_clip_count == 0 || valid_duration < config.min_duration {
-                    return Ok(vec![config.middle_segment(duration)?]);
-                }
-
-                // Calculate exclusion zone boundaries
-                let zones =
-                    ExclusionZones::new(duration, intro_exclusion_percent, outro_exclusion_percent);
-
-                // Find intensity peaks within valid zone
-                // Segments are already sorted by intensity (highest first)
-                let valid_peaks: Vec<_> = segments
-                    .into_iter()
-                    .filter(|seg| {
-                        let segment_end = seg.start_time + seg.duration;
-                        zones.contains_segment(seg.start_time, segment_end)
-                    })
-                    .collect();
-
-                // If no valid peaks found, fall back to middle segment
-                if valid_peaks.is_empty() {
-                    return Ok(vec![config.middle_segment(duration)?]);
-                }
-
-                // Select top N non-overlapping peaks
-                let mut selected_clips = Vec::new();
-                let mut attempts = 0;
-
-                for peak in valid_peaks {
-                    if selected_clips.len() >= actual_clip_count as usize {
-                        break;
-                    }
-
-                    attempts += 1;
-                    if attempts > MAX_ATTEMPTS {
-                        break;
-                    }
-
-                    // Create TimeRange around peak
-                    // Use a duration in the middle of the valid range
-                    let clip_duration =
-                        config.min_duration + (config.max_duration - config.min_duration) * 0.5;
-
-                    // Center the clip around the peak's start time
-                    let mut start = (peak.start_time - clip_duration / 2.0).max(intro_cutoff);
-
-                    // Ensure the clip doesn't exceed outro boundary
-                    let mut end = start + clip_duration;
-                    if end > outro_cutoff {
-                        end = outro_cutoff;
-                        start = (end - clip_duration).max(intro_cutoff);
-                    }
-
-                    // Recalculate duration in case adjustments were made
-                    let actual_duration = end - start;
-
-                    // Skip if duration is invalid
-                    if !(config.min_duration..=config.max_duration).contains(&actual_duration) {
-                        continue;
-                    }
-
-                    let candidate = TimeRange {
-                        start_seconds: start,
-                        duration_seconds: actual_duration,
-                    };
-
-                    // Check for overlaps with existing clips
-                    if !selected_clips
-                        .iter()
-                        .any(|existing| candidate.overlaps(existing))
-                        && (config.min_duration..=config.max_duration).contains(&candidate.duration_seconds)
-                    {
-                        selected_clips.push(candidate);
-                    }
-                }
-
-                // If we couldn't generate any clips from peaks, fall back to middle segment
-                if selected_clips.is_empty() {
-                    return Ok(vec![config.middle_segment(duration)?]);
-                }
-
-                // Sort selected clips by start time before returning
-                selected_clips
-                    .sort_by(|a, b| a.start_seconds.partial_cmp(&b.start_seconds).unwrap());
-
-                Ok(selected_clips)
-            }
+        match crate::ffmpeg::analyze_audio_intensity(video_path, duration) {
+            Ok(segments) => select_clips_from_peaks(
+                segments,
+                duration,
+                intro_exclusion_percent,
+                outro_exclusion_percent,
+                clip_count,
+                config,
+            ),
             Err(crate::ffmpeg::FFmpegError::NoAudioTrack) => {
                 // No audio track, fall back to middle segment
-                // This doesn't respect exclusion zones but ensures we always return something
                 Ok(vec![config.middle_segment(duration)?])
             }
             Err(e) => {
@@ -485,114 +563,16 @@ impl ClipSelector for ActionSelector {
         clip_count: u8,
         config: &ClipConfig,
     ) -> Result<Vec<TimeRange>, SelectionError> {
-        const MAX_ATTEMPTS: u32 = 1000;
-
-        // Calculate valid selection zone
-        let intro_cutoff = duration * (intro_exclusion_percent / 100.0);
-        let outro_cutoff = duration - (duration * (outro_exclusion_percent / 100.0));
-        let valid_duration = outro_cutoff - intro_cutoff;
-
         // Try to analyze motion intensity
-        match crate::ffmpeg::analyze_motion_intensity(video_path, duration)
-        {
-            Ok(segments) => {
-                // Check if video can accommodate requested clips
-                let min_required = (clip_count as f64) * config.min_duration;
-
-                // If video is too short, generate as many clips as possible
-                let actual_clip_count = if valid_duration < min_required {
-                    (valid_duration / config.min_duration).floor() as u8
-                } else {
-                    clip_count
-                };
-
-                // If no clips can be generated within exclusion zones, fall back to middle segment
-                if actual_clip_count == 0 || valid_duration < config.min_duration {
-                    return Ok(vec![config.middle_segment(duration)?]);
-                }
-
-                // Calculate exclusion zone boundaries
-                let zones =
-                    ExclusionZones::new(duration, intro_exclusion_percent, outro_exclusion_percent);
-
-                // Find motion peaks within valid zone
-                // Segments are already sorted by motion score (highest first)
-                let valid_peaks: Vec<_> = segments
-                    .into_iter()
-                    .filter(|seg| {
-                        let segment_end = seg.start_time + seg.duration;
-                        zones.contains_segment(seg.start_time, segment_end)
-                    })
-                    .collect();
-
-                // If no valid peaks found, fall back to middle segment
-                if valid_peaks.is_empty() {
-                    return Ok(vec![config.middle_segment(duration)?]);
-                }
-
-                // Select top N non-overlapping peaks
-                let mut selected_clips = Vec::new();
-                let mut attempts = 0;
-
-                for peak in valid_peaks {
-                    if selected_clips.len() >= actual_clip_count as usize {
-                        break;
-                    }
-
-                    attempts += 1;
-                    if attempts > MAX_ATTEMPTS {
-                        break;
-                    }
-
-                    // Create TimeRange around peak
-                    // Use a duration in the middle of the valid range
-                    let clip_duration =
-                        config.min_duration + (config.max_duration - config.min_duration) * 0.5;
-
-                    // Center the clip around the peak's start time
-                    let mut start = (peak.start_time - clip_duration / 2.0).max(intro_cutoff);
-
-                    // Ensure the clip doesn't exceed outro boundary
-                    let mut end = start + clip_duration;
-                    if end > outro_cutoff {
-                        end = outro_cutoff;
-                        start = (end - clip_duration).max(intro_cutoff);
-                    }
-
-                    // Recalculate duration in case adjustments were made
-                    let actual_duration = end - start;
-
-                    // Skip if duration is invalid
-                    if !(config.min_duration..=config.max_duration).contains(&actual_duration) {
-                        continue;
-                    }
-
-                    let candidate = TimeRange {
-                        start_seconds: start,
-                        duration_seconds: actual_duration,
-                    };
-
-                    // Check for overlaps with existing clips
-                    if !selected_clips
-                        .iter()
-                        .any(|existing| candidate.overlaps(existing))
-                        && (config.min_duration..=config.max_duration).contains(&candidate.duration_seconds)
-                    {
-                        selected_clips.push(candidate);
-                    }
-                }
-
-                // If we couldn't generate any clips from peaks, fall back to middle segment
-                if selected_clips.is_empty() {
-                    return Ok(vec![config.middle_segment(duration)?]);
-                }
-
-                // Sort selected clips by start time before returning
-                selected_clips
-                    .sort_by(|a, b| a.start_seconds.partial_cmp(&b.start_seconds).unwrap());
-
-                Ok(selected_clips)
-            }
+        match crate::ffmpeg::analyze_motion_intensity(video_path, duration) {
+            Ok(segments) => select_clips_from_peaks(
+                segments,
+                duration,
+                intro_exclusion_percent,
+                outro_exclusion_percent,
+                clip_count,
+                config,
+            ),
             Err(_e) => {
                 // Motion analysis failed, fall back to middle segment
                 Ok(vec![config.middle_segment(duration)?])
@@ -1253,9 +1233,9 @@ mod tests {
                 duration,
                 INTRO_EXCLUSION_PERCENT,
                 OUTRO_EXCLUSION_PERCENT,
-            1,
-            &ClipConfig::default(),
-        );
+                1,
+                &ClipConfig::default(),
+            );
             assert!(result.is_ok());
             let time_ranges = result.unwrap();
             assert!(!time_ranges.is_empty());
@@ -1559,7 +1539,14 @@ mod tests {
         let intro_percent = 5.0; // 5% intro exclusion
         let outro_percent = 30.0; // 30% outro exclusion
 
-        let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, 3, &ClipConfig::default());
+        let result = selector.select_clips(
+            &video_path,
+            duration,
+            intro_percent,
+            outro_percent,
+            3,
+            &ClipConfig::default(),
+        );
         assert!(result.is_ok(), "Selection should succeed");
 
         let clips = result.unwrap();
@@ -1605,9 +1592,9 @@ mod tests {
                 duration,
                 INTRO_EXCLUSION_PERCENT,
                 OUTRO_EXCLUSION_PERCENT,
-            3,
-            &ClipConfig::default(),
-        );
+                3,
+                &ClipConfig::default(),
+            );
             assert!(result.is_ok(), "Selection should succeed");
 
             let clips = result.unwrap();
@@ -3418,7 +3405,7 @@ mod tests {
         );
 
         let time_ranges = result.unwrap();
-        
+
         // With fallback, we get a single middle segment
         assert_eq!(time_ranges.len(), 1, "Fallback should return single clip");
     }
@@ -3493,4 +3480,3 @@ mod tests {
         );
     }
 }
-

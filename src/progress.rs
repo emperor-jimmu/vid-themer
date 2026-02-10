@@ -35,7 +35,11 @@ impl ProgressReporter {
 
     pub fn start(&mut self, total: usize) {
         self.total = total;
-        println!("{} {} videos to process", "Found".bright_cyan().bold(), total.to_string().bright_yellow().bold());
+        println!(
+            "{} {} videos to process",
+            "Found".bright_cyan().bold(),
+            total.to_string().bright_yellow().bold()
+        );
     }
 
     pub fn update(&mut self, result: &ProcessResult) {
@@ -43,14 +47,20 @@ impl ProgressReporter {
 
         println!(
             "{} Processing: {}",
-            format!("[{}/{}]", self.current, self.total).bright_blue().bold(),
+            format!("[{}/{}]", self.current, self.total)
+                .bright_blue()
+                .bold(),
             result.video_path.display().to_string().bright_white()
         );
 
         if result.success {
             self.successful += 1;
             if result.clips_generated == 1 {
-                println!("  {} {}", "->".bright_green(), result.output_path.display().to_string().bright_cyan());
+                println!(
+                    "  {} {}",
+                    "->".bright_green(),
+                    result.output_path.display().to_string().bright_cyan()
+                );
             } else {
                 // Print per-clip progress bars for multiple clips
                 let total_clips = result.clip_filenames.len();
@@ -59,17 +69,19 @@ impl ProgressReporter {
                     let bar_width = 20;
                     let filled = (clip_num * bar_width) / total_clips;
                     let empty = bar_width - filled;
-                    let bar = format!("[{}{}]", 
+                    let bar = format!(
+                        "[{}{}]",
                         "X".repeat(filled).bright_green(),
                         " ".repeat(empty)
                     );
-                    println!("  {} {} {}", 
+                    println!(
+                        "  {} {} {}",
                         filename.bright_cyan().bold(),
                         bar,
                         format!("{}/{}", clip_num, total_clips).bright_yellow()
                     );
                 }
-                
+
                 println!(
                     "  {} Generated {} clips in {}",
                     "->".bright_green(),
@@ -106,8 +118,9 @@ impl ProgressReporter {
         if self.failed > 0
             && let Some(logger) = &self.logger
         {
-            println!("{} {}", 
-                "Failure details logged to:".bright_yellow(), 
+            println!(
+                "{} {}",
+                "Failure details logged to:".bright_yellow(),
                 logger.log_path().display().to_string().bright_white()
             );
         }
@@ -134,7 +147,11 @@ mod tests {
             error_message,
             ffmpeg_stderr: None,
             clips_generated: if success { 1 } else { 0 },
-            clip_filenames: if success { vec!["backdrop1.mp4".to_string()] } else { Vec::new() },
+            clip_filenames: if success {
+                vec!["backdrop1.mp4".to_string()]
+            } else {
+                Vec::new()
+            },
         }
     }
 
