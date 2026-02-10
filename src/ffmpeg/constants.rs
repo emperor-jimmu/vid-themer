@@ -20,12 +20,12 @@ pub mod encoding {
     /// Output pixel format (8-bit yuv420p for maximum compatibility)
     pub const PIX_FMT: &str = "yuv420p";
 
-    /// Fixed GOP size for streaming compatibility (72 frames = 3 seconds at 24fps)
-    /// 3-second segments are standard for HLS and allow direct play without transcoding
-    pub const GOP_SIZE: &str = "72";
+    /// Fixed GOP size for streaming compatibility (48 frames = 2 seconds at 24fps)
+    /// Smaller GOP for short clips ensures better browser compatibility
+    pub const GOP_SIZE: &str = "48";
 
     /// Minimum keyframe interval
-    pub const KEYINT_MIN: &str = "72";
+    pub const KEYINT_MIN: &str = "48";
 
     /// Scene-cut detection threshold (0 = disabled for fixed GOP structure)
     pub const SC_THRESHOLD: &str = "0";
@@ -102,9 +102,9 @@ pub mod analysis {
 /// MP4 muxer options
 pub mod muxer {
     /// MP4 muxer flags for streaming compatibility
-    /// faststart: Move moov atom to beginning for streaming
-    /// frag_keyframe: Fragment at keyframes for better seeking in browsers
-    pub const MOVFLAGS: &str = "+faststart+frag_keyframe";
+    /// faststart: Move moov atom to beginning for streaming (critical for browser playback)
+    /// Note: Removed frag_keyframe as it can cause playback issues in some browsers
+    pub const MOVFLAGS: &str = "+faststart";
 }
 
 /// Fade effect settings

@@ -253,7 +253,7 @@ pub fn build_extract_command(config: &ExtractConfig) -> Vec<String> {
     // Accurate seek (after input)
     args.extend(after_input);
 
-    // Timestamp handling
+    // Timestamp handling - ensure proper timing for browser playback
     args.extend(vec![
         "-avoid_negative_ts".to_string(),
         "make_zero".to_string(),
@@ -278,9 +278,6 @@ pub fn build_extract_command(config: &ExtractConfig) -> Vec<String> {
     args.extend(vec!["-pix_fmt".to_string(), encoding::PIX_FMT.to_string()]);
     args.extend(build_gop_args());
     
-    // Force keyframe at start for proper playback in media servers like Jellyfin
-    args.extend(vec!["-force_key_frames".to_string(), "0".to_string()]);
-    
     args.extend(build_color_args());
 
     // Video filters
@@ -296,7 +293,7 @@ pub fn build_extract_command(config: &ExtractConfig) -> Vec<String> {
     // Audio
     args.extend(build_audio_args(config.include_audio));
 
-    // Muxer options
+    // Muxer options - faststart moves moov atom to beginning for browser streaming
     args.extend(vec!["-movflags".to_string(), muxer::MOVFLAGS.to_string()]);
 
     // Output
