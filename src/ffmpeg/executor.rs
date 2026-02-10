@@ -288,6 +288,18 @@ fn apply_fade_effect(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        
+        // If fade fails due to corrupted input, just use the file without fade
+        if stderr.contains("unspecified pixel format") 
+            || stderr.contains("Cannot determine format")
+            || stderr.contains("Could not find codec parameters")
+        {
+            // Try to rename the temp file to output (skip fade)
+            if let Ok(_) = std::fs::rename(input_path, output_path) {
+                return Ok(());
+            }
+        }
+        
         return Err(FFmpegError::ExecutionFailed(format!(
             "Failed to apply fade effect: {}",
             stderr
@@ -313,6 +325,14 @@ fn validate_output(output_path: &Path) -> Result<(), FFmpegError> {
         return Err(FFmpegError::ExecutionFailed(
             "Output file is empty (0 bytes)".to_string(),
         ));
+    }
+
+    // Basic validation: file should be at least 1KB for a valid video
+    if metadata.len() < 1024 {
+        return Err(FFmpegError::ExecutionFailed(format!(
+            "Output file is too small ({} bytes), likely corrupted",
+            metadata.len()
+        )));
     }
 
     Ok(())
