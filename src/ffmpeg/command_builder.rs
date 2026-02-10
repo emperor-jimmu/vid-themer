@@ -179,6 +179,10 @@ pub fn build_video_filters(
         // For SDR sources, just ensure proper pixel format
         filters.push(format!("format={}", encoding::PIX_FMT));
     }
+    
+    // Set color metadata explicitly for browser compatibility
+    // This ensures the output has proper BT.709 tags regardless of input
+    filters.push("setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv".to_string());
 
     // Add scale filter if needed (downscaling only, no upscaling)
     if let Some(scale_filter) = calculate_scale_filter(source_resolution, target_resolution) {
