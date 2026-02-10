@@ -75,7 +75,7 @@ fn main() {
     }
 
     // Create VideoScanner and scan for videos
-    let scanner = VideoScanner::new(args.directory.clone());
+    let scanner = VideoScanner::new(args.directory.clone(), args.clip_count);
     let scan_result = exit_on_error(scanner.scan(), "scanning directory");
 
     // Exit early if no videos found

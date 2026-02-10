@@ -10,6 +10,7 @@ const BACKDROP_FILE: &str = "backdrop.mp4";
 
 pub struct VideoScanner {
     pub root_path: PathBuf,
+    pub requested_clip_count: u8,
 }
 
 pub struct VideoFile {
@@ -23,8 +24,11 @@ pub struct ScanResult {
 }
 
 impl VideoScanner {
-    pub fn new(root_path: PathBuf) -> Self {
-        Self { root_path }
+    pub fn new(root_path: PathBuf, requested_clip_count: u8) -> Self {
+        Self {
+            root_path,
+            requested_clip_count,
+        }
     }
 
     /// Check if a directory should be skipped
@@ -34,29 +38,40 @@ impl VideoScanner {
             return true;
         }
 
-        // Check if it already has any valid backdrop files (non-zero size)
+        // Check if it already has enough valid backdrop files (non-zero size)
         let backdrops_dir = dir.join(BACKDROPS_DIR);
         if backdrops_dir.exists() && backdrops_dir.is_dir() {
-            return self.has_valid_backdrop_files(&backdrops_dir);
+            let existing_count = self.count_valid_backdrop_files(&backdrops_dir);
+            // Skip only if we have enough or more clips than requested
+            return existing_count >= self.requested_clip_count;
         }
 
         false
     }
 
-    /// Check if a directory contains valid (non-zero size) backdrop files
-    fn has_valid_backdrop_files(&self, backdrops_dir: &Path) -> bool {
-        let Ok(entries) = std::fs::read_dir(backdrops_dir) else {
-            return false;
-        };
-
-        entries.flatten().any(|entry| {
-            let Ok(metadata) = entry.metadata() else {
-                return false;
-            };
-            metadata.is_file()
-                && metadata.len() > 0
-                && entry.path().extension().is_some_and(|ext| ext == "mp4")
-        })
+    /// Count the number of valid (non-zero size) backdrop files in sequential order
+    /// Returns the count of backdrop1.mp4, backdrop2.mp4, etc. that exist and are valid
+    fn count_valid_backdrop_files(&self, backdrops_dir: &Path) -> u8 {
+        let mut count = 0u8;
+        
+        // Check for backdrop files in sequential order (backdrop1.mp4, backdrop2.mp4, etc.)
+        for i in 1..=4 {
+            let backdrop_path = backdrops_dir.join(format!("backdrop{}.mp4", i));
+            
+            if let Ok(metadata) = std::fs::metadata(&backdrop_path) {
+                if metadata.is_file() && metadata.len() > 0 {
+                    count += 1;
+                } else {
+                    // Stop counting if we hit a zero-byte or invalid file
+                    break;
+                }
+            } else {
+                // Stop counting if the file doesn't exist
+                break;
+            }
+        }
+        
+        count
     }
 
     /// Scan the root directory recursively for video files
@@ -208,8 +223,8 @@ mod tests {
             // Create video files in each directory
             let expected_videos = create_video_files(&created_dirs, files_per_dir).unwrap();
 
-            // Create the scanner
-            let scanner = VideoScanner::new(temp_dir.clone());
+            // Create the scanner (with default clip_count of 1 for testing)
+            let scanner = VideoScanner::new(temp_dir.clone(), 1);
 
             // Scan for videos
             let result = scanner.scan();
@@ -306,8 +321,8 @@ mod tests {
                 file.write_all(b"non-video content").unwrap();
             }
 
-            // Create the scanner
-            let scanner = VideoScanner::new(temp_dir.clone());
+            // Create the scanner (with default clip_count of 1 for testing)
+            let scanner = VideoScanner::new(temp_dir.clone(), 1);
 
             // Scan for videos
             let result = scanner.scan();
@@ -409,8 +424,8 @@ mod tests {
                 file.write_all(format!("content for .{} file", ext).as_bytes()).unwrap();
             }
 
-            // Create the scanner
-            let scanner = VideoScanner::new(temp_dir.clone());
+            // Create the scanner (with default clip_count of 1 for testing)
+            let scanner = VideoScanner::new(temp_dir.clone(), 1);
 
             // Scan for videos - this should NOT produce errors despite non-video files
             let result = scanner.scan();
@@ -488,7 +503,7 @@ mod tests {
         let video_path = temp_dir.join("test.mp4");
         fs::File::create(&video_path).unwrap();
 
-        let scanner = VideoScanner::new(temp_dir.clone());
+        let scanner = VideoScanner::new(temp_dir.clone(), 1);
         let result = scanner.scan();
 
         assert!(result.is_ok());
@@ -522,7 +537,7 @@ mod tests {
         fs::File::create(&video2).unwrap();
         fs::File::create(&video3).unwrap();
 
-        let scanner = VideoScanner::new(temp_dir.clone());
+        let scanner = VideoScanner::new(temp_dir.clone(), 1);
         let result = scanner.scan();
 
         assert!(result.is_ok());
@@ -552,8 +567,9 @@ mod tests {
             num_dirs_without_clips in 1usize..5,
             videos_per_dir in 1usize..3,
         ) {
-            // Property: For any directory containing a backdrops/backdrop.mp4 file,
+            // Property: For any directory containing a backdrops/backdrop1.mp4 file,
             // the scanner should exclude all video files in that directory from the processing list
+            // when clip_count is 1 (since it already has 1 clip)
 
             // Create a temporary directory for testing
             let temp_dir = std::env::temp_dir().join(format!(
@@ -567,15 +583,15 @@ mod tests {
             let mut expected_videos = Vec::new();
             let mut skipped_videos = Vec::new();
 
-            // Create directories WITH existing backdrops/backdrop.mp4 (should be skipped)
+            // Create directories WITH existing backdrops/backdrop1.mp4 (should be skipped with clip_count=1)
             for i in 0..num_dirs_with_clips {
                 let dir = temp_dir.join(format!("with_clip_{}", i));
                 fs::create_dir_all(&dir).unwrap();
 
-                // Create the backdrops/backdrop.mp4 file
+                // Create the backdrops/backdrop1.mp4 file (new naming convention)
                 let backdrops_dir = dir.join("backdrops");
                 fs::create_dir_all(&backdrops_dir).unwrap();
-                let backdrop_file = backdrops_dir.join("backdrop.mp4");
+                let backdrop_file = backdrops_dir.join("backdrop1.mp4");
                 let mut file = fs::File::create(&backdrop_file).unwrap();
                 file.write_all(b"existing backdrop content").unwrap();
 
@@ -602,8 +618,8 @@ mod tests {
                 }
             }
 
-            // Create the scanner
-            let scanner = VideoScanner::new(temp_dir.clone());
+            // Create the scanner (with default clip_count of 1 for testing)
+            let scanner = VideoScanner::new(temp_dir.clone(), 1);
 
             // Scan for videos
             let result = scanner.scan();
@@ -654,7 +670,7 @@ mod tests {
                 );
             }
 
-            // Property 5: Verify that directories with backdrops/backdrop.mp4 are actually skipped
+            // Property 5: Verify that directories with backdrops/backdrop1.mp4 are actually skipped
             // by checking that none of their videos appear in results
             for skipped in &skipped_videos {
                 prop_assert!(

@@ -52,6 +52,30 @@ impl VideoProcessor {
     {
         let video_path = video.path.clone();
 
+        // Step 0: Check for existing clips and determine how many more we need
+        let backdrops_dir = video.parent_dir.join(BACKDROPS_DIR);
+        let existing_clip_count = if backdrops_dir.exists() {
+            self.count_existing_clips(&backdrops_dir)
+        } else {
+            0
+        };
+
+        // Calculate how many clips we need to generate
+        let clips_to_generate = if existing_clip_count >= self.clip_count {
+            // Already have enough clips, skip this video
+            return ProcessResult {
+                video_path,
+                output_path: PathBuf::new(),
+                success: true,
+                error_message: None,
+                ffmpeg_stderr: None,
+                clips_generated: 0,
+                clip_filenames: Vec::new(),
+            };
+        } else {
+            self.clip_count - existing_clip_count
+        };
+
         // Step 1: Get video duration
         let duration = match self.ffmpeg.get_duration(&video.path) {
             Ok(d) => d,
@@ -75,13 +99,13 @@ impl VideoProcessor {
             }
         };
 
-        // Step 2: Select segments using ClipSelector strategy
+        // Step 2: Select segments using ClipSelector strategy (only for the clips we need)
         let time_ranges = match self.selector.select_clips(
             &video.path,
             duration,
             self.intro_exclusion_percent,
             self.outro_exclusion_percent,
-            self.clip_count,
+            clips_to_generate,
             &self.clip_config,
         ) {
             Ok(ranges) if !ranges.is_empty() => ranges,
@@ -92,7 +116,7 @@ impl VideoProcessor {
                     success: false,
                     error_message: Some(format!(
                         "No valid clips could be selected (requested: {} clips)",
-                        self.clip_count
+                        clips_to_generate
                     )),
                     ffmpeg_stderr: None,
                     clips_generated: 0,
@@ -106,7 +130,7 @@ impl VideoProcessor {
                     success: false,
                     error_message: Some(format!(
                         "Failed to select clip segment (requested: {} clips): {}",
-                        self.clip_count, e
+                        clips_to_generate, e
                     )),
                     ffmpeg_stderr: None,
                     clips_generated: 0,
@@ -116,11 +140,11 @@ impl VideoProcessor {
         };
 
         // Warn if fewer clips generated than requested
-        if time_ranges.len() < self.clip_count as usize {
+        if time_ranges.len() < clips_to_generate as usize {
             eprintln!(
                 "Warning: Only generated {} of {} requested clips for {}",
                 time_ranges.len(),
-                self.clip_count,
+                clips_to_generate,
                 video.path.display()
             );
         }
@@ -141,13 +165,14 @@ impl VideoProcessor {
             }
         };
 
-        // Step 4: Extract each clip with sequential naming
+        // Step 4: Extract each clip with sequential naming, starting after existing clips
         let mut last_output_path = PathBuf::new();
         let mut clip_filenames = Vec::new();
         let total_clips = time_ranges.len();
 
         for (index, time_range) in time_ranges.iter().enumerate() {
-            let clip_num = index + 1;
+            // Start numbering from existing_clip_count + 1
+            let clip_num = existing_clip_count as usize + index + 1;
             let output_filename = format!("backdrop{}.mp4", clip_num);
             clip_filenames.push(output_filename.clone());
 
@@ -165,7 +190,7 @@ impl VideoProcessor {
                     success: false,
                     error_message: Some(format!(
                         "Failed to extract clip {} of {} (backdrop{}.mp4): {}",
-                        clip_num,
+                        index + 1,
                         time_ranges.len(),
                         clip_num,
                         e
@@ -177,7 +202,7 @@ impl VideoProcessor {
             }
 
             // Call progress callback after successful extraction
-            progress_callback(clip_num, total_clips, &output_filename);
+            progress_callback(index + 1, total_clips, &output_filename);
         }
 
         ProcessResult {
@@ -189,6 +214,30 @@ impl VideoProcessor {
             clips_generated: time_ranges.len(),
             clip_filenames,
         }
+    }
+
+    /// Count existing valid backdrop files in sequential order
+    fn count_existing_clips(&self, backdrops_dir: &std::path::Path) -> u8 {
+        let mut count = 0u8;
+        
+        // Check for backdrop files in sequential order (backdrop1.mp4, backdrop2.mp4, etc.)
+        for i in 1..=4 {
+            let backdrop_path = backdrops_dir.join(format!("backdrop{}.mp4", i));
+            
+            if let Ok(metadata) = std::fs::metadata(&backdrop_path) {
+                if metadata.is_file() && metadata.len() > 0 {
+                    count += 1;
+                } else {
+                    // Stop counting if we hit a zero-byte or invalid file
+                    break;
+                }
+            } else {
+                // Stop counting if the file doesn't exist
+                break;
+            }
+        }
+        
+        count
     }
 
     /// Create the backdrops subdirectory and return the directory path

@@ -7,11 +7,12 @@ A command-line tool that recursively scans directories for video files and autom
 - **Recursive Directory Scanning** - Automatically discovers video files in nested directories
 - **Intelligent Clip Selection** - Choose between random or audio-intensity-based extraction strategies
 - **Configurable Clip Duration** - Set minimum and maximum clip duration (default: 10-15 seconds)
-- **Multiple Clips Per Video** - Generate 1-4 clips from each video
+- **Multiple Clips Per Video** - Generate 1-4 clips from each video with incremental generation support
+- **Incremental Clip Generation** - Add more clips without regenerating existing ones
 - **Configurable Exclusion Zones** - Control intro/outro exclusion as percentages of video duration
 - **Smart Resolution Handling** - Scales videos down to target resolution without upscaling
-- **Organized Output** - Creates `backdrops/backdrop.mp4` subdirectories next to source videos
-- **Skip Existing** - Automatically skips directories that already have extracted clips
+- **Organized Output** - Creates `backdrops/` subdirectories with sequentially numbered clips (backdrop1.mp4, backdrop2.mp4, etc.)
+- **Skip Existing** - Automatically skips directories that already have enough extracted clips
 - **0-Byte File Recovery** - Automatically re-processes videos with 0-byte backdrop files
 - **Failure Logging** - Detailed error logs with FFmpeg output for debugging
 - **Progress Tracking** - Real-time feedback on processing status
@@ -113,6 +114,10 @@ video-clip-extractor ~/Videos --min-duration 5 --max-duration 20
 Generate multiple clips per video:
 
 ```bash
+# Generate 2 clips per video
+video-clip-extractor ~/Videos --clip-count 2
+
+# Later, add a third clip without regenerating the first two
 video-clip-extractor ~/Videos --clip-count 3
 ```
 
@@ -128,19 +133,39 @@ Analyzes audio levels throughout the video and selects segments with the highest
 
 ## Output Structure
 
-For each video file, the tool creates a subdirectory with the extracted clip:
+For each video file, the tool creates a subdirectory with the extracted clips:
 
 ```
 /path/to/videos/
 ├── movie1.mp4
 ├── backdrops/
-│   └── backdrop.mp4          # Extracted clip from movie1.mp4
+│   ├── backdrop1.mp4         # First clip from movie1.mp4
+│   ├── backdrop2.mp4         # Second clip (if -c 2 or higher)
+│   └── backdrop3.mp4         # Third clip (if -c 3 or higher)
 ├── subfolder/
 │   ├── movie2.mkv
 │   └── backdrops/
-│       └── backdrop.mp4      # Extracted clip from movie2.mkv
+│       └── backdrop1.mp4     # First clip from movie2.mkv
 └── video_clip_extractor_failures.log  # Created only if failures occur
 ```
+
+### Incremental Clip Generation
+
+The tool supports incremental clip generation, allowing you to add more clips without regenerating existing ones:
+
+1. **Initial Run**: `video-clip-extractor ~/Videos -c 2`
+   - Creates `backdrop1.mp4` and `backdrop2.mp4` for each video
+
+2. **Add More Clips**: `video-clip-extractor ~/Videos -c 3`
+   - Only creates `backdrop3.mp4` (preserves existing clips)
+
+3. **Skip When Enough Exist**: `video-clip-extractor ~/Videos -c 2`
+   - Skips videos that already have 2 or more clips
+
+This feature is useful when you want to:
+- Start with fewer clips and add more later
+- Experiment with different clip counts without wasting processing time
+- Incrementally build up your clip library
 
 ## Error Handling and Debugging
 
@@ -159,7 +184,7 @@ This log file is invaluable for debugging issues with specific video files or FF
 
 ### 0-Byte File Recovery
 
-If a previous run created a 0-byte `backdrop.mp4` file (due to a crash or error), the tool will automatically detect this and re-process the video on subsequent runs. Only backdrop files with actual content are considered valid and will be skipped.
+If a previous run created a 0-byte backdrop file (due to a crash or error), the tool will automatically detect this and re-process the video on subsequent runs. Only backdrop files with actual content (size > 0) are considered valid. The tool checks clips sequentially (backdrop1.mp4, backdrop2.mp4, etc.) and stops at the first missing or zero-byte file.
 
 ## Video Encoding
 

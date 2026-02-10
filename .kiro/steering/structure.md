@@ -27,7 +27,8 @@ src/
 
 - `VideoScanner` - Recursive directory traversal
 - `VideoFile` - Video file representation
-- Skip logic for directories with existing clips
+- Skip logic for directories with existing clips based on requested clip count
+- Counts existing clips (backdrop1.mp4, backdrop2.mp4, etc.) and skips directories that already have enough clips
 
 ### Selection Strategies (`selector.rs`)
 
@@ -84,8 +85,17 @@ For each processed video, output is organized as:
 <video-directory>/
 ├── video.mp4
 └── backdrops/
-    └── backdrop.mp4    # Extracted clip
+    ├── backdrop1.mp4    # First extracted clip
+    ├── backdrop2.mp4    # Second extracted clip (if -c 2 or higher)
+    ├── backdrop3.mp4    # Third extracted clip (if -c 3 or higher)
+    └── backdrop4.mp4    # Fourth extracted clip (if -c 4)
 ```
+
+**Incremental Clip Generation:**
+- When running with `-c N`, the tool checks for existing clips (backdrop1.mp4, backdrop2.mp4, etc.)
+- If fewer than N clips exist, only the missing clips are generated
+- If N or more clips exist, the video is skipped entirely
+- Example: Running with `-c 2` creates backdrop1.mp4 and backdrop2.mp4. Running again with `-c 3` only creates backdrop3.mp4
 
 ## Testing Organization
 
