@@ -42,6 +42,25 @@ impl ProgressReporter {
         );
     }
 
+    /// Report progress for a single clip extraction
+    /// This is called during video processing as each clip completes
+    pub fn update_clip_progress(&self, clip_num: usize, total_clips: usize, filename: &str) {
+        let bar_width = 20;
+        let filled = (clip_num * bar_width) / total_clips;
+        let empty = bar_width - filled;
+        let bar = format!(
+            "[{}{}]",
+            "X".repeat(filled).bright_green(),
+            " ".repeat(empty)
+        );
+        println!(
+            "  {} {} {}",
+            filename.bright_cyan().bold(),
+            bar,
+            format!("{}/{}", clip_num, total_clips).bright_yellow()
+        );
+    }
+
     pub fn update(&mut self, result: &ProcessResult) {
         self.current += 1;
 
@@ -66,26 +85,7 @@ impl ProgressReporter {
                     result.output_path.display().to_string().bright_cyan()
                 ));
             } else {
-                // Build per-clip progress bars for multiple clips
-                let total_clips = result.clip_filenames.len();
-                for (index, filename) in result.clip_filenames.iter().enumerate() {
-                    let clip_num = index + 1;
-                    let bar_width = 20;
-                    let filled = (clip_num * bar_width) / total_clips;
-                    let empty = bar_width - filled;
-                    let bar = format!(
-                        "[{}{}]",
-                        "X".repeat(filled).bright_green(),
-                        " ".repeat(empty)
-                    );
-                    output.push_str(&format!(
-                        "  {} {} {}\n",
-                        filename.bright_cyan().bold(),
-                        bar,
-                        format!("{}/{}", clip_num, total_clips).bright_yellow()
-                    ));
-                }
-
+                // For multiple clips, just show the summary (individual clips already printed in real-time)
                 output.push_str(&format!(
                     "  {} Generated {} clips in {}\n",
                     "->".bright_green(),

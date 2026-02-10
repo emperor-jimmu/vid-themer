@@ -41,7 +41,15 @@ impl VideoProcessor {
     /// Process a video file: detect duration, select segment, create output directory, and extract clip
     /// Returns ProcessResult with success/failure status
     /// Handles errors gracefully by logging and continuing
-    pub fn process_video(&self, video: &VideoFile) -> ProcessResult {
+    /// 
+    /// The progress_callback is called after each clip is successfully extracted with:
+    /// - clip_num: The number of the clip that was just extracted (1-indexed)
+    /// - total_clips: The total number of clips being extracted
+    /// - filename: The name of the clip file that was just created
+    pub fn process_video<F>(&self, video: &VideoFile, mut progress_callback: F) -> ProcessResult
+    where
+        F: FnMut(usize, usize, &str),
+    {
         let video_path = video.path.clone();
 
         // Step 1: Get video duration
@@ -136,6 +144,7 @@ impl VideoProcessor {
         // Step 4: Extract each clip with sequential naming
         let mut last_output_path = PathBuf::new();
         let mut clip_filenames = Vec::new();
+        let total_clips = time_ranges.len();
 
         for (index, time_range) in time_ranges.iter().enumerate() {
             let clip_num = index + 1;
@@ -166,6 +175,9 @@ impl VideoProcessor {
                     clip_filenames: clip_filenames.clone(),
                 };
             }
+
+            // Call progress callback after successful extraction
+            progress_callback(clip_num, total_clips, &output_filename);
         }
 
         ProcessResult {
@@ -213,6 +225,7 @@ pub struct ProcessResult {
     pub error_message: Option<String>,
     pub ffmpeg_stderr: Option<String>,
     pub clips_generated: usize,
+    #[allow(dead_code)]
     pub clip_filenames: Vec<String>,
 }
 
@@ -649,7 +662,7 @@ mod tests {
             // This simulates real-world errors (corrupted videos, etc.)
             let mut results = Vec::new();
             for video in &video_files {
-                let result = processor.process_video(video);
+                let result = processor.process_video(video, |_, _, _| {});
                 results.push(result);
             }
 
@@ -759,7 +772,7 @@ mod tests {
         // Process all videos
         let mut results = Vec::new();
         for video in &videos {
-            let result = processor.process_video(video);
+            let result = processor.process_video(video, |_, _, _| {});
             results.push(result);
         }
 
@@ -839,7 +852,7 @@ mod tests {
             let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1, default_test_config());
 
             // Process the video (will fail because it's a fake video file)
-            let result = processor.process_video(&video_file);
+            let result = processor.process_video(&video_file, |_, _, _| {});
 
             // Property 1: The result should have the video_path set
             prop_assert_eq!(
