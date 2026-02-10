@@ -169,10 +169,10 @@ pub fn build_video_filters(
     };
 
     if is_hdr {
-        // HDR to SDR tone mapping using simplified approach from FFmpeg documentation
+        // HDR to SDR tone mapping with explicit input colorspace specification
+        // This approach specifies both input and output colorspaces to avoid "no path" errors
         // Reference: https://ffmpeg.org/ffmpeg-filters.html#tonemap
-        // This uses the recommended filter chain: zscale(linear) -> tonemap -> zscale(bt709) -> format
-        filters.push("zscale=transfer=linear".to_string());
+        filters.push("zscale=transfer=linear:primaries=input:matrix=input:range=input".to_string());
         filters.push("tonemap=tonemap=hable:desat=0".to_string());
         filters.push("zscale=transfer=bt709:primaries=bt709:matrix=bt709:range=limited".to_string());
         filters.push(format!("format={}", encoding::PIX_FMT));
