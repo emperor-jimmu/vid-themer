@@ -277,6 +277,10 @@ pub fn build_extract_command(config: &ExtractConfig) -> Vec<String> {
     // Pixel format and GOP settings
     args.extend(vec!["-pix_fmt".to_string(), encoding::PIX_FMT.to_string()]);
     args.extend(build_gop_args());
+    
+    // Force keyframe at start for proper playback in media servers like Jellyfin
+    args.extend(vec!["-force_key_frames".to_string(), "0".to_string()]);
+    
     args.extend(build_color_args());
 
     // Video filters
