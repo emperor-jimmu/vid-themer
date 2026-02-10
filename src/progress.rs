@@ -45,24 +45,28 @@ impl ProgressReporter {
     pub fn update(&mut self, result: &ProcessResult) {
         self.current += 1;
 
-        println!(
-            "{} Processing: {}",
+        // Buffer all output for this video update to print atomically
+        // This prevents race conditions when multiple threads print concurrently
+        let mut output = String::new();
+
+        output.push_str(&format!(
+            "{} Processing: {}\n",
             format!("[{}/{}]", self.current, self.total)
                 .bright_blue()
                 .bold(),
             result.video_path.display().to_string().bright_white()
-        );
+        ));
 
         if result.success {
             self.successful += 1;
             if result.clips_generated == 1 {
-                println!(
-                    "  {} {}",
+                output.push_str(&format!(
+                    "  {} {}\n",
                     "->".bright_green(),
                     result.output_path.display().to_string().bright_cyan()
-                );
+                ));
             } else {
-                // Print per-clip progress bars for multiple clips
+                // Build per-clip progress bars for multiple clips
                 let total_clips = result.clip_filenames.len();
                 for (index, filename) in result.clip_filenames.iter().enumerate() {
                     let clip_num = index + 1;
@@ -74,16 +78,16 @@ impl ProgressReporter {
                         "X".repeat(filled).bright_green(),
                         " ".repeat(empty)
                     );
-                    println!(
-                        "  {} {} {}",
+                    output.push_str(&format!(
+                        "  {} {} {}\n",
                         filename.bright_cyan().bold(),
                         bar,
                         format!("{}/{}", clip_num, total_clips).bright_yellow()
-                    );
+                    ));
                 }
 
-                println!(
-                    "  {} Generated {} clips in {}",
+                output.push_str(&format!(
+                    "  {} Generated {} clips in {}\n",
                     "->".bright_green(),
                     result.clips_generated.to_string().bright_yellow().bold(),
                     result
@@ -92,12 +96,16 @@ impl ProgressReporter {
                         .map(|p| p.display().to_string())
                         .unwrap_or_else(|| "backdrops/".to_string())
                         .bright_cyan()
-                );
+                ));
             }
         } else {
             self.failed += 1;
             if let Some(error) = &result.error_message {
-                println!("  {} {}", "X".bright_red().bold(), error.bright_red());
+                output.push_str(&format!(
+                    "  {} {}\n",
+                    "X".bright_red().bold(),
+                    error.bright_red()
+                ));
             }
 
             // Log failure to file if logger is available
@@ -105,6 +113,9 @@ impl ProgressReporter {
                 logger.log_failure(result, result.ffmpeg_stderr.as_deref());
             }
         }
+
+        // Print all output atomically (single print call prevents interleaving)
+        print!("{}", output);
     }
 
     pub fn finish(&self) {
