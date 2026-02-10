@@ -52,6 +52,24 @@ impl ProgressReporter {
             if result.clips_generated == 1 {
                 println!("  {} {}", "->".bright_green(), result.output_path.display().to_string().bright_cyan());
             } else {
+                // Print per-clip progress bars for multiple clips
+                let total_clips = result.clip_filenames.len();
+                for (index, filename) in result.clip_filenames.iter().enumerate() {
+                    let clip_num = index + 1;
+                    let bar_width = 20;
+                    let filled = (clip_num * bar_width) / total_clips;
+                    let empty = bar_width - filled;
+                    let bar = format!("[{}{}]", 
+                        "X".repeat(filled).bright_green(),
+                        " ".repeat(empty)
+                    );
+                    println!("  {} {} {}", 
+                        filename.bright_cyan().bold(),
+                        bar,
+                        format!("{}/{}", clip_num, total_clips).bright_yellow()
+                    );
+                }
+                
                 println!(
                     "  {} Generated {} clips in {}",
                     "->".bright_green(),
@@ -75,21 +93,6 @@ impl ProgressReporter {
                 logger.log_failure(result, result.ffmpeg_stderr.as_deref());
             }
         }
-    }
-
-    pub fn report_clip_progress(&self, filename: &str, clip_num: usize, total_clips: usize) {
-        let bar_width = 20;
-        let filled = (clip_num * bar_width) / total_clips;
-        let empty = bar_width - filled;
-        let bar = format!("[{}{}]", 
-            "X".repeat(filled).bright_green(),
-            " ".repeat(empty)
-        );
-        println!("  {} {} {}", 
-            filename.bright_cyan().bold(),
-            bar,
-            format!("{}/{}", clip_num, total_clips).bright_yellow()
-        );
     }
 
     pub fn finish(&self) {
@@ -131,6 +134,7 @@ mod tests {
             error_message,
             ffmpeg_stderr: None,
             clips_generated: if success { 1 } else { 0 },
+            clip_filenames: if success { vec!["backdrop1.mp4".to_string()] } else { Vec::new() },
         }
     }
 

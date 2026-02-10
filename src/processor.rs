@@ -41,10 +41,7 @@ impl VideoProcessor {
     /// Process a video file: detect duration, select segment, create output directory, and extract clip
     /// Returns ProcessResult with success/failure status
     /// Handles errors gracefully by logging and continuing
-    pub fn process_video<F>(&self, video: &VideoFile, progress_callback: Option<F>) -> ProcessResult
-    where
-        F: Fn(&str, usize, usize),
-    {
+    pub fn process_video(&self, video: &VideoFile) -> ProcessResult {
         let video_path = video.path.clone();
 
         // Step 1: Get video duration
@@ -65,6 +62,7 @@ impl VideoProcessor {
                     error_message: Some(error_message),
                     ffmpeg_stderr: stderr,
                     clips_generated: 0,
+                    clip_filenames: Vec::new(),
                 };
             }
         };
@@ -90,6 +88,7 @@ impl VideoProcessor {
                     )),
                     ffmpeg_stderr: None,
                     clips_generated: 0,
+                    clip_filenames: Vec::new(),
                 };
             }
             Err(e) => {
@@ -103,6 +102,7 @@ impl VideoProcessor {
                     )),
                     ffmpeg_stderr: None,
                     clips_generated: 0,
+                    clip_filenames: Vec::new(),
                 };
             }
         };
@@ -128,24 +128,19 @@ impl VideoProcessor {
                     error_message: Some(format!("Failed to create output directory: {}", e)),
                     ffmpeg_stderr: None,
                     clips_generated: 0,
+                    clip_filenames: Vec::new(),
                 };
             }
         };
 
         // Step 4: Extract each clip with sequential naming
         let mut last_output_path = PathBuf::new();
-        let total_clips = time_ranges.len();
+        let mut clip_filenames = Vec::new();
         
         for (index, time_range) in time_ranges.iter().enumerate() {
             let clip_num = index + 1;
             let output_filename = format!("backdrop{}.mp4", clip_num);
-            
-            // Report per-clip progress if callback provided and multiple clips
-            if total_clips > 1 {
-                if let Some(ref callback) = progress_callback {
-                    callback(&output_filename, clip_num, total_clips);
-                }
-            }
+            clip_filenames.push(output_filename.clone());
             
             let output_path = backdrops_dir.join(&output_filename);
             last_output_path = output_path.clone();
@@ -168,6 +163,7 @@ impl VideoProcessor {
                     )),
                     ffmpeg_stderr: stderr,
                     clips_generated: index,
+                    clip_filenames: clip_filenames.clone(),
                 };
             }
         }
@@ -179,6 +175,7 @@ impl VideoProcessor {
             error_message: None,
             ffmpeg_stderr: None,
             clips_generated: time_ranges.len(),
+            clip_filenames,
         }
     }
 
@@ -216,6 +213,7 @@ pub struct ProcessResult {
     pub error_message: Option<String>,
     pub ffmpeg_stderr: Option<String>,
     pub clips_generated: usize,
+    pub clip_filenames: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -651,7 +649,7 @@ mod tests {
             // This simulates real-world errors (corrupted videos, etc.)
             let mut results = Vec::new();
             for video in &video_files {
-                let result = processor.process_video(video, None::<fn(&str, usize, usize)>);
+                let result = processor.process_video(video);
                 results.push(result);
             }
 
@@ -761,7 +759,7 @@ mod tests {
         // Process all videos
         let mut results = Vec::new();
         for video in &videos {
-            let result = processor.process_video(video, None::<fn(&str, usize, usize)>);
+            let result = processor.process_video(video);
             results.push(result);
         }
 
@@ -841,7 +839,7 @@ mod tests {
             let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1, default_test_config());
 
             // Process the video (will fail because it's a fake video file)
-            let result = processor.process_video(&video_file, None::<fn(&str, usize, usize)>);
+            let result = processor.process_video(&video_file);
 
             // Property 1: The result should have the video_path set
             prop_assert_eq!(

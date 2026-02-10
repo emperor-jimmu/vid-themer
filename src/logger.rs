@@ -122,6 +122,7 @@ mod tests {
             error_message: Some("Test error".to_string()),
             ffmpeg_stderr: None,
             clips_generated: 0,
+            clip_filenames: Vec::new(),
         };
 
         logger.log_failure(&result, Some("FFmpeg stderr output"));
@@ -170,6 +171,7 @@ mod tests {
             error_message: Some("Failed to extract clip 2 of 3".to_string()),
             ffmpeg_stderr: None,
             clips_generated: 1,
+            clip_filenames: vec!["backdrop1.mp4".to_string()],
         };
 
         logger.log_failure(&result, None);

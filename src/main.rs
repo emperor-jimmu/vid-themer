@@ -151,14 +151,7 @@ fn main() {
                 });
 
             videos.par_iter().for_each(|video| {
-                // Create a closure that locks the reporter for per-clip progress
-                let clip_progress = |filename: &str, clip_num: usize, total_clips: usize| {
-                    if let Ok(reporter) = reporter.lock() {
-                        reporter.report_clip_progress(filename, clip_num, total_clips);
-                    }
-                };
-                
-                let result = processor.process_video(video, Some(clip_progress));
+                let result = processor.process_video(video);
                 if let Ok(mut reporter) = reporter.lock() {
                     reporter.update(&result);
                 }
@@ -196,14 +189,7 @@ fn main() {
 
     // Process videos in parallel with progress updates
     videos.par_iter().for_each(|video| {
-        // Create a closure that locks the reporter for per-clip progress
-        let clip_progress = |filename: &str, clip_num: usize, total_clips: usize| {
-            if let Ok(reporter) = reporter.lock() {
-                reporter.report_clip_progress(filename, clip_num, total_clips);
-            }
-        };
-        
-        let result = processor.process_video(video, Some(clip_progress));
+        let result = processor.process_video(video);
         
         // Lock the reporter to update progress
         if let Ok(mut reporter) = reporter.lock() {
