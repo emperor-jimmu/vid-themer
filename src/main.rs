@@ -50,33 +50,37 @@ fn exit_on_error<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) -
 /// Display configuration summary
 fn display_config_summary(args: &CliArgs) {
     use colored::Colorize;
-    
+
     let version = env!("CARGO_PKG_VERSION");
-    println!("{} {}", "Video Clip Extractor".bright_cyan().bold(), version.bright_yellow());
-    
+    println!(
+        "{} {}",
+        "Video Clip Extractor".bright_cyan().bold(),
+        version.bright_yellow()
+    );
+
     let strategy_name = match args.strategy {
         SelectionStrategy::Random => "Random",
         SelectionStrategy::IntenseAudio => "Intense Audio",
         SelectionStrategy::Action => "Action",
     };
-    
+
     let resolution_name = match args.resolution {
         cli::Resolution::Hd720 => "720p",
         cli::Resolution::Hd1080 => "1080p",
     };
-    
+
     let clip_text = if args.clip_count == 1 {
         "1 clip/vid".to_string()
     } else {
         format!("{} clips/vid", args.clip_count)
     };
-    
+
     let force_text = if args.force {
         ", Force mode".to_string()
     } else {
         String::new()
     };
-    
+
     println!(
         "{} {}, {}-{} sec length, {}, {} mode{}",
         "Using".bright_white(),

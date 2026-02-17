@@ -7,6 +7,7 @@ use walkdir::WalkDir;
 // Constants for output directory and file naming
 const BACKDROPS_DIR: &str = "backdrops";
 const BACKDROP_FILE: &str = "backdrop.mp4";
+const DONE_MARKER: &str = "done.ext";
 
 pub struct VideoScanner {
     pub root_path: PathBuf,
@@ -40,19 +41,44 @@ impl VideoScanner {
             return true;
         }
 
-        // If force mode is enabled, never skip directories based on existing clips
+        // If force mode is enabled, never skip directories based on done marker
         if self.force {
             return false;
         }
 
-        // Check if it already has enough valid backdrop files (non-zero size)
+        // Check if done.ext marker exists in the backdrops directory
         let backdrops_dir = dir.join(BACKDROPS_DIR);
         if backdrops_dir.exists() && backdrops_dir.is_dir() {
+            let done_marker = backdrops_dir.join(DONE_MARKER);
+            if done_marker.exists() && done_marker.is_file() {
+                return true;
+            }
+            // Fall back to counting existing clips for backward compatibility
             let existing_count = self.count_valid_backdrop_files(&backdrops_dir);
-            // Skip only if we have enough or more clips than requested
             return existing_count >= self.requested_clip_count;
         }
 
+        false
+    }
+
+    /// Check if a directory name matches the movie folder format: "<name> (<year>)"
+    /// e.g. "The Matrix (1999)", "Inception (2010)"
+    fn is_movie_folder(dir_name: &str) -> bool {
+        // Match pattern: anything followed by space, open paren, 4 digits, close paren at end
+        if let Some(paren_start) = dir_name.rfind('(') {
+            let before_paren = &dir_name[..paren_start];
+            let after_paren = &dir_name[paren_start..];
+            // Must have content before the paren and a space before it
+            if before_paren.ends_with(' ') && !before_paren.trim().is_empty() {
+                // Check the year part: "(YYYY)"
+                if after_paren.len() == 6
+                    && after_paren.ends_with(')')
+                    && after_paren[1..5].chars().all(|c| c.is_ascii_digit())
+                {
+                    return true;
+                }
+            }
+        }
         false
     }
 
@@ -60,11 +86,11 @@ impl VideoScanner {
     /// Returns the count of backdrop1.mp4, backdrop2.mp4, etc. that exist and are valid
     fn count_valid_backdrop_files(&self, backdrops_dir: &Path) -> u8 {
         let mut count = 0u8;
-        
+
         // Check for backdrop files in sequential order (backdrop1.mp4, backdrop2.mp4, etc.)
         for i in 1..=4 {
             let backdrop_path = backdrops_dir.join(format!("backdrop{}.mp4", i));
-            
+
             if let Ok(metadata) = std::fs::metadata(&backdrop_path) {
                 if metadata.is_file() && metadata.len() > 0 {
                     count += 1;
@@ -77,7 +103,7 @@ impl VideoScanner {
                 break;
             }
         }
-        
+
         count
     }
 
@@ -87,14 +113,32 @@ impl VideoScanner {
         let mut skipped_dirs = Vec::new();
 
         for entry in WalkDir::new(&self.root_path).into_iter().filter_entry(|e| {
-            // Skip directories that already have backdrops
+            // Skip directories that already have backdrops or don't match movie folder format
             if e.file_type().is_dir() {
-                let should_skip = self.should_skip_directory(e.path());
+                let path = e.path();
+
+                let should_skip = self.should_skip_directory(path);
                 if should_skip {
-                    // Track skipped directories (including root if it has a backdrop)
-                    skipped_dirs.push(e.path().to_path_buf());
+                    skipped_dirs.push(path.to_path_buf());
+                    return false;
                 }
-                !should_skip
+
+                // For subdirectories (not the root), check if they match movie folder format
+                // or are the backdrops directory. Non-movie subdirectories are skipped.
+                if path != self.root_path {
+                    if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
+                        // Allow backdrops directories (already handled above)
+                        if dir_name == BACKDROPS_DIR {
+                            return false; // already filtered by should_skip_directory
+                        }
+                        // Skip non-movie-format subdirectories
+                        if !Self::is_movie_folder(dir_name) {
+                            return false;
+                        }
+                    }
+                }
+
+                true
             } else {
                 true
             }
@@ -161,6 +205,17 @@ impl VideoScanner {
     }
 }
 
+/// Write a done.ext marker file in the given backdrops directory.
+/// The file contains JSON with the current timestamp.
+pub fn write_done_marker(backdrops_dir: &Path) -> std::io::Result<()> {
+    let now = chrono::Local::now();
+    let content = format!(
+        "{{\n  \"completed_at\": \"{}\"\n}}\n",
+        now.format("%Y-%m-%dT%H:%M:%S%:z")
+    );
+    std::fs::write(backdrops_dir.join(DONE_MARKER), content)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,6 +224,7 @@ mod tests {
     use std::io::Write;
 
     // Helper function to create a temporary directory structure for testing
+    // Uses movie folder format names so subdirectories pass the scanner's filter
     fn create_test_directory_structure(
         base_path: &Path,
         depth: usize,
@@ -180,9 +236,9 @@ mod tests {
             return Ok(created_dirs);
         }
 
-        // Create subdirectories at this level
+        // Create subdirectories at this level with movie folder format names
         for i in 0..subdirs_per_level.min(3) {
-            let subdir = base_path.join(format!("subdir_{}", i));
+            let subdir = base_path.join(format!("Movie {} (200{})", i, i));
             fs::create_dir_all(&subdir)?;
 
             // Recursively create deeper levels and collect all directories
@@ -553,7 +609,10 @@ mod tests {
 
         // Verify videos are sorted alphabetically
         assert_eq!(videos[0].path, video_a, "First video should be a_video.mp4");
-        assert_eq!(videos[1].path, video_b, "Second video should be b_video.mp4");
+        assert_eq!(
+            videos[1].path, video_b,
+            "Second video should be b_video.mp4"
+        );
         assert_eq!(videos[2].path, video_c, "Third video should be c_video.mp4");
 
         // Clean up
@@ -562,15 +621,15 @@ mod tests {
 
     #[test]
     fn test_scanner_nested_directories() {
-        // Test that scanner finds videos in nested directories
+        // Test that scanner finds videos in nested directories (using movie folder format)
         let temp_dir =
             std::env::temp_dir().join(format!("video_scanner_nested_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
 
-        // Create nested structure: root/level1/level2/video.mp4
-        let level1 = temp_dir.join("level1");
-        let level2 = level1.join("level2");
+        // Create nested structure using movie folder format names
+        let level1 = temp_dir.join("Movie A (2020)");
+        let level2 = level1.join("Movie B (2021)");
         fs::create_dir_all(&level2).unwrap();
 
         let video1 = temp_dir.join("root_video.mp4");
@@ -629,7 +688,7 @@ mod tests {
 
             // Create directories WITH existing backdrops/backdrop1.mp4 (should be skipped with clip_count=1)
             for i in 0..num_dirs_with_clips {
-                let dir = temp_dir.join(format!("with_clip_{}", i));
+                let dir = temp_dir.join(format!("With Clip {} (200{})", i, i));
                 fs::create_dir_all(&dir).unwrap();
 
                 // Create the backdrops/backdrop1.mp4 file (new naming convention)
@@ -650,7 +709,7 @@ mod tests {
 
             // Create directories WITHOUT existing backdrops (should be scanned)
             for i in 0..num_dirs_without_clips {
-                let dir = temp_dir.join(format!("without_clip_{}", i));
+                let dir = temp_dir.join(format!("Without Clip {} (201{})", i, i));
                 fs::create_dir_all(&dir).unwrap();
 
                 // Create video files in this directory (should be found)
@@ -728,5 +787,162 @@ mod tests {
             let _ = fs::remove_dir_all(&temp_dir);
         }
     }
-}
 
+    #[test]
+    fn test_is_movie_folder_valid() {
+        assert!(VideoScanner::is_movie_folder("The Matrix (1999)"));
+        assert!(VideoScanner::is_movie_folder("Inception (2010)"));
+        assert!(VideoScanner::is_movie_folder("A (0000)"));
+        assert!(VideoScanner::is_movie_folder("Movie 2 (2024)"));
+        assert!(VideoScanner::is_movie_folder(
+            "Some Movie - Extended (2015)"
+        ));
+    }
+
+    #[test]
+    fn test_is_movie_folder_invalid() {
+        assert!(!VideoScanner::is_movie_folder("backdrops"));
+        assert!(!VideoScanner::is_movie_folder("Extras"));
+        assert!(!VideoScanner::is_movie_folder("Featurettes"));
+        assert!(!VideoScanner::is_movie_folder("subdir_0"));
+        assert!(!VideoScanner::is_movie_folder("(2020)")); // no name before paren
+        assert!(!VideoScanner::is_movie_folder("Movie(2020)")); // no space before paren
+        assert!(!VideoScanner::is_movie_folder("Movie (20)")); // year too short
+        assert!(!VideoScanner::is_movie_folder("Movie (20200)")); // year too long
+        assert!(!VideoScanner::is_movie_folder("Movie (abcd)")); // non-digit year
+    }
+
+    #[test]
+    fn test_non_movie_subdirectories_are_skipped() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "non_movie_subdir_test_{}_{}",
+            std::process::id(),
+            rand::random::<u32>()
+        ));
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create a movie folder with a video
+        let movie_dir = temp_dir.join("The Matrix (1999)");
+        fs::create_dir_all(&movie_dir).unwrap();
+        let movie_video = movie_dir.join("movie.mp4");
+        fs::File::create(&movie_video).unwrap();
+
+        // Create a non-movie subfolder inside the movie folder with a video
+        let extras_dir = movie_dir.join("Extras");
+        fs::create_dir_all(&extras_dir).unwrap();
+        let extras_video = extras_dir.join("extra.mp4");
+        fs::File::create(&extras_video).unwrap();
+
+        // Create a non-movie subfolder at root level with a video
+        let random_dir = temp_dir.join("some_random_folder");
+        fs::create_dir_all(&random_dir).unwrap();
+        let random_video = random_dir.join("random.mp4");
+        fs::File::create(&random_video).unwrap();
+
+        let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
+        let result = scanner.scan().unwrap();
+
+        // Should only find the movie video, not extras or random folder videos
+        assert_eq!(
+            result.videos.len(),
+            1,
+            "Should only find video in movie folder"
+        );
+        assert_eq!(result.videos[0].path, movie_video);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_done_marker_skips_directory() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "done_marker_test_{}_{}",
+            std::process::id(),
+            rand::random::<u32>()
+        ));
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create a movie folder with a video and a done.ext marker
+        let movie_dir = temp_dir.join("Done Movie (2020)");
+        fs::create_dir_all(&movie_dir).unwrap();
+        let video = movie_dir.join("movie.mp4");
+        fs::File::create(&video).unwrap();
+
+        let backdrops_dir = movie_dir.join("backdrops");
+        fs::create_dir_all(&backdrops_dir).unwrap();
+        write_done_marker(&backdrops_dir).unwrap();
+
+        // Create another movie folder without done marker
+        let movie_dir2 = temp_dir.join("Undone Movie (2021)");
+        fs::create_dir_all(&movie_dir2).unwrap();
+        let video2 = movie_dir2.join("movie.mp4");
+        fs::File::create(&video2).unwrap();
+
+        let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
+        let result = scanner.scan().unwrap();
+
+        // Should only find the video in the undone folder
+        assert_eq!(result.videos.len(), 1);
+        assert_eq!(result.videos[0].path, video2);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_done_marker_json_content() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "done_marker_json_test_{}_{}",
+            std::process::id(),
+            rand::random::<u32>()
+        ));
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        write_done_marker(&temp_dir).unwrap();
+
+        let content = fs::read_to_string(temp_dir.join("done.ext")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(
+            parsed.get("completed_at").is_some(),
+            "Should have completed_at field"
+        );
+        assert!(
+            parsed["completed_at"].is_string(),
+            "completed_at should be a string"
+        );
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_force_mode_ignores_done_marker() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "force_done_test_{}_{}",
+            std::process::id(),
+            rand::random::<u32>()
+        ));
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create a movie folder with done marker
+        let movie_dir = temp_dir.join("Force Movie (2020)");
+        fs::create_dir_all(&movie_dir).unwrap();
+        let video = movie_dir.join("movie.mp4");
+        fs::File::create(&video).unwrap();
+
+        let backdrops_dir = movie_dir.join("backdrops");
+        fs::create_dir_all(&backdrops_dir).unwrap();
+        write_done_marker(&backdrops_dir).unwrap();
+
+        // With force=true, should still find the video
+        let scanner = VideoScanner::new(temp_dir.clone(), 1, true);
+        let result = scanner.scan().unwrap();
+
+        assert_eq!(result.videos.len(), 1);
+        assert_eq!(result.videos[0].path, video);
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+}

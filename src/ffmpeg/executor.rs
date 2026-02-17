@@ -87,7 +87,7 @@ impl FFmpegExecutor {
                         e
                     );
                     let _ = std::fs::remove_file(&temp_path);
-                    
+
                     // Retry with conservative seeking (no fast seek)
                     self.extract_clip_internal(
                         video_path,
@@ -98,10 +98,10 @@ impl FFmpegExecutor {
                         &metadata,
                         true, // use_conservative_seeking
                     )?;
-                    
+
                     validate_clip_duration(&temp_path, time_range.duration_seconds)?;
                 }
-                
+
                 apply_fade_effect(&temp_path, output_path, time_range.duration_seconds)?;
                 validate_output(output_path)?;
                 Ok(())
@@ -162,19 +162,19 @@ impl FFmpegExecutor {
         let args = if use_conservative_seeking {
             // Conservative seeking: only accurate seek, no fast seek
             let mut args = vec!["-err_detect".to_string(), "ignore_err".to_string()];
-            
+
             // Input file
             args.extend(vec![
                 "-i".to_string(),
                 video_path.to_string_lossy().to_string(),
             ]);
-            
+
             // Accurate seek only
             args.extend(vec![
                 "-ss".to_string(),
                 time_range.start_seconds.to_string(),
             ]);
-            
+
             // Build rest of command
             args.extend(vec![
                 "-avoid_negative_ts".to_string(),
@@ -182,13 +182,13 @@ impl FFmpegExecutor {
                 "-t".to_string(),
                 time_range.duration_seconds.to_string(),
             ]);
-            
+
             // Add remaining standard args (mapping, codec, filters, etc.)
             let standard_args = command_builder::build_extract_command(&config);
             // Skip the first parts we already added and add the rest
             let skip_until = standard_args.iter().position(|s| s == "-map").unwrap_or(0);
             args.extend(standard_args.into_iter().skip(skip_until));
-            
+
             args
         } else {
             // Standard hybrid seeking
@@ -229,7 +229,7 @@ impl FFmpegExecutor {
     ) -> Result<(), FFmpegError> {
         // Get metadata for color information
         let metadata = self.get_video_metadata(video_path)?;
-        
+
         // First attempt: Try with audio but with error tolerance
         let mut args = vec![
             "-err_detect".to_string(),
@@ -266,11 +266,12 @@ impl FFmpegExecutor {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            
+
             // If audio decoding failed, try without audio
-            if self.include_audio && (stderr.contains("Error submitting packet to decoder")
-                || stderr.contains("aac")
-                || stderr.contains("Could not open encoder before EOF"))
+            if self.include_audio
+                && (stderr.contains("Error submitting packet to decoder")
+                    || stderr.contains("aac")
+                    || stderr.contains("Could not open encoder before EOF"))
             {
                 return self.extract_clip_without_audio(
                     video_path,
@@ -281,7 +282,7 @@ impl FFmpegExecutor {
                     &metadata,
                 );
             }
-            
+
             return Err(FFmpegError::ExecutionFailed(format!(
                 "FFmpeg clip extraction failed even with recovery for '{}' at {:.2}s-{:.2}s: {}",
                 video_path.display(),
@@ -377,9 +378,9 @@ fn apply_fade_effect(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        
+
         // If fade fails due to corrupted input, just use the file without fade
-        if stderr.contains("unspecified pixel format") 
+        if stderr.contains("unspecified pixel format")
             || stderr.contains("Cannot determine format")
             || stderr.contains("Could not find codec parameters")
         {
@@ -388,7 +389,7 @@ fn apply_fade_effect(
                 return Ok(());
             }
         }
-        
+
         return Err(FFmpegError::ExecutionFailed(format!(
             "Failed to apply fade effect: {}",
             stderr
@@ -433,9 +434,12 @@ fn validate_clip_duration(output_path: &Path, expected_duration: f64) -> Result<
     // Use ffprobe to get the actual duration of the extracted clip
     let output = Command::new("ffprobe")
         .args([
-            "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
             output_path.to_string_lossy().as_ref(),
         ])
         .output()
@@ -450,14 +454,13 @@ fn validate_clip_duration(output_path: &Path, expected_duration: f64) -> Result<
     }
 
     let duration_str = String::from_utf8_lossy(&output.stdout);
-    let actual_duration: f64 = duration_str
-        .trim()
-        .parse()
-        .map_err(|e| FFmpegError::ExecutionFailed(format!(
+    let actual_duration: f64 = duration_str.trim().parse().map_err(|e| {
+        FFmpegError::ExecutionFailed(format!(
             "Failed to parse clip duration '{}': {}",
             duration_str.trim(),
             e
-        )))?;
+        ))
+    })?;
 
     // Allow 0.5 second tolerance for keyframe alignment
     const DURATION_TOLERANCE: f64 = 0.5;
@@ -467,8 +470,7 @@ fn validate_clip_duration(output_path: &Path, expected_duration: f64) -> Result<
         return Err(FFmpegError::ExecutionFailed(format!(
             "Extracted clip duration ({:.2}s) differs significantly from expected ({:.2}s). \
              This may indicate seeking issues or keyframe problems in the source video.",
-            actual_duration,
-            expected_duration
+            actual_duration, expected_duration
         )));
     }
 

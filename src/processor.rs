@@ -44,7 +44,7 @@ impl VideoProcessor {
     /// Process a video file: detect duration, select segment, create output directory, and extract clip
     /// Returns ProcessResult with success/failure status
     /// Handles errors gracefully by logging and continuing
-    /// 
+    ///
     /// The progress_callback is called after each clip is successfully extracted with:
     /// - clip_num: The number of the clip that was just extracted (1-indexed)
     /// - total_clips: The total number of clips being extracted
@@ -208,6 +208,18 @@ impl VideoProcessor {
             progress_callback(index + 1, total_clips, &output_filename);
         }
 
+        // Write done.ext marker if we now have all requested clips
+        let total_clips_after = existing_clip_count as usize + time_ranges.len();
+        if total_clips_after >= self.clip_count as usize {
+            if let Err(e) = crate::scanner::write_done_marker(&backdrops_dir) {
+                eprintln!(
+                    "Warning: Failed to write done marker for {}: {}",
+                    video.path.display(),
+                    e
+                );
+            }
+        }
+
         ProcessResult {
             video_path,
             output_path: last_output_path,
@@ -222,11 +234,11 @@ impl VideoProcessor {
     /// Count existing valid backdrop files in sequential order
     fn count_existing_clips(&self, backdrops_dir: &std::path::Path) -> u8 {
         let mut count = 0u8;
-        
+
         // Check for backdrop files in sequential order (backdrop1.mp4, backdrop2.mp4, etc.)
         for i in 1..=4 {
             let backdrop_path = backdrops_dir.join(format!("backdrop{}.mp4", i));
-            
+
             if let Ok(metadata) = std::fs::metadata(&backdrop_path) {
                 if metadata.is_file() && metadata.len() > 0 {
                     count += 1;
@@ -239,7 +251,7 @@ impl VideoProcessor {
                 break;
             }
         }
-        
+
         count
     }
 
@@ -605,7 +617,8 @@ mod tests {
         // Create processor
         let selector = Box::new(MockSelector);
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
-        let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1, default_test_config(), false);
+        let processor =
+            VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1, default_test_config(), false);
 
         // Get output path
         let output_path = processor.create_output_directory(&video_file).unwrap();
@@ -645,7 +658,8 @@ mod tests {
 
         let selector = Box::new(MockSelector);
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
-        let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1, default_test_config(), false);
+        let processor =
+            VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1, default_test_config(), false);
 
         for video_name in test_video_names {
             let video_file = create_test_video_structure(&temp_dir, video_name);
@@ -819,7 +833,8 @@ mod tests {
         // Create processor
         let selector = Box::new(MockSelector);
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
-        let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1, default_test_config(), false);
+        let processor =
+            VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1, default_test_config(), false);
 
         // Process all videos
         let mut results = Vec::new();
@@ -1358,7 +1373,8 @@ mod tests {
         // Create processor with multi-clip mock selector
         let selector = Box::new(MultiClipMockSelector { clip_count: 1 });
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
-        let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1, default_test_config(), false);
+        let processor =
+            VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1, default_test_config(), false);
 
         // Create backdrops directory
         let backdrops_dir = processor.create_backdrops_directory(&video_file).unwrap();
@@ -1387,7 +1403,8 @@ mod tests {
         // Create processor with multi-clip mock selector
         let selector = Box::new(MultiClipMockSelector { clip_count: 2 });
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
-        let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 2, default_test_config(), false);
+        let processor =
+            VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 2, default_test_config(), false);
 
         // Create backdrops directory
         let backdrops_dir = processor.create_backdrops_directory(&video_file).unwrap();
@@ -1422,7 +1439,8 @@ mod tests {
         // Create processor with multi-clip mock selector
         let selector = Box::new(MultiClipMockSelector { clip_count: 3 });
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
-        let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 3, default_test_config(), false);
+        let processor =
+            VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 3, default_test_config(), false);
 
         // Create backdrops directory
         let backdrops_dir = processor.create_backdrops_directory(&video_file).unwrap();
@@ -1462,7 +1480,8 @@ mod tests {
         // Create processor with multi-clip mock selector
         let selector = Box::new(MultiClipMockSelector { clip_count: 4 });
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
-        let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 4, default_test_config(), false);
+        let processor =
+            VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 4, default_test_config(), false);
 
         // Create backdrops directory
         let backdrops_dir = processor.create_backdrops_directory(&video_file).unwrap();
@@ -1514,7 +1533,8 @@ mod tests {
         // Create processor
         let selector = Box::new(MultiClipMockSelector { clip_count: 3 });
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
-        let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 3, default_test_config(), false);
+        let processor =
+            VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 3, default_test_config(), false);
 
         // Create backdrops directory
         let created_dir = processor.create_backdrops_directory(&video_file).unwrap();
@@ -1552,7 +1572,8 @@ mod tests {
         // Create processor
         let selector = Box::new(MultiClipMockSelector { clip_count: 2 });
         let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true);
-        let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 2, default_test_config(), false);
+        let processor =
+            VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 2, default_test_config(), false);
 
         // Create backdrops directory
         let backdrops_dir = processor.create_backdrops_directory(&video_file).unwrap();
@@ -1878,5 +1899,3 @@ mod tests {
         }
     }
 }
-
-

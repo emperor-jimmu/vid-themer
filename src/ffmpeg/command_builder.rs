@@ -173,16 +173,19 @@ pub fn build_video_filters(
         // Reference: https://ffmpeg.org/ffmpeg-filters.html#tonemap
         filters.push("zscale=transfer=linear:primaries=input:matrix=input:range=input".to_string());
         filters.push("tonemap=tonemap=hable:desat=0".to_string());
-        filters.push("zscale=transfer=bt709:primaries=bt709:matrix=bt709:range=limited".to_string());
+        filters
+            .push("zscale=transfer=bt709:primaries=bt709:matrix=bt709:range=limited".to_string());
         filters.push(format!("format={}", encoding::PIX_FMT));
     } else {
         // For SDR sources, just ensure proper pixel format
         filters.push(format!("format={}", encoding::PIX_FMT));
     }
-    
+
     // Set color metadata explicitly for browser compatibility
     // This ensures the output has proper BT.709 tags regardless of input
-    filters.push("setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv".to_string());
+    filters.push(
+        "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv".to_string(),
+    );
 
     // Add scale filter if needed (downscaling only, no upscaling)
     if let Some(scale_filter) = calculate_scale_filter(source_resolution, target_resolution) {
@@ -280,7 +283,7 @@ pub fn build_extract_command(config: &ExtractConfig) -> Vec<String> {
     // Pixel format and GOP settings
     args.extend(vec!["-pix_fmt".to_string(), encoding::PIX_FMT.to_string()]);
     args.extend(build_gop_args());
-    
+
     args.extend(build_color_args());
 
     // Video filters

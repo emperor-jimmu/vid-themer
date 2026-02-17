@@ -45,7 +45,13 @@ impl ProgressReporter {
     /// Report progress for a single clip extraction
     /// This is called during video processing as each clip completes
     /// Must be called while holding the reporter lock to prevent interleaving
-    pub fn update_clip_progress(&self, clip_num: usize, total_clips: usize, filename: &str, video_path: &std::path::Path) {
+    pub fn update_clip_progress(
+        &self,
+        clip_num: usize,
+        total_clips: usize,
+        filename: &str,
+        video_path: &std::path::Path,
+    ) {
         // On first clip, print the header
         if clip_num == 1 {
             println!(
@@ -56,7 +62,7 @@ impl ProgressReporter {
                 video_path.display().to_string().bright_white()
             );
         }
-        
+
         let bar_width = 13;
         let filled = (clip_num * bar_width) / total_clips;
         let empty = bar_width - filled;
@@ -65,7 +71,7 @@ impl ProgressReporter {
             "=".repeat(filled).bright_green(),
             " ".repeat(empty)
         );
-        
+
         // Use \r to overwrite the previous line
         print!(
             "\r  {} {} {}",
@@ -73,11 +79,11 @@ impl ProgressReporter {
             bar,
             format!("{}/{}", clip_num, total_clips).bright_yellow()
         );
-        
+
         // Flush to ensure immediate display
         use std::io::Write;
         let _ = std::io::stdout().flush();
-        
+
         // On last clip, print newline to move to next line
         if clip_num == total_clips {
             println!();
@@ -228,7 +234,7 @@ mod tests {
 
                 // Increment current counter (simulating video processing start)
                 reporter.current += 1;
-                
+
                 // Update the reporter with result
                 reporter.update(&result);
 
@@ -901,4 +907,3 @@ mod tests {
         assert_eq!(reporter4.failed, 0);
     }
 }
-

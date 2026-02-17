@@ -10,10 +10,8 @@ mod common;
 #[ignore] // Requires FFmpeg and real video files
 fn test_incremental_clip_generation() {
     // Create a temporary test directory
-    let test_dir = std::env::temp_dir().join(format!(
-        "incremental_clip_test_{}",
-        std::process::id()
-    ));
+    let test_dir =
+        std::env::temp_dir().join(format!("incremental_clip_test_{}", std::process::id()));
     let _ = fs::remove_dir_all(&test_dir);
     fs::create_dir_all(&test_dir).unwrap();
 
@@ -51,9 +49,18 @@ fn test_incremental_clip_generation() {
     let backdrop2 = backdrops_dir.join("backdrop2.mp4");
     let backdrop3 = backdrops_dir.join("backdrop3.mp4");
 
-    assert!(backdrop1.exists(), "backdrop1.mp4 should exist after first run");
-    assert!(backdrop2.exists(), "backdrop2.mp4 should exist after first run");
-    assert!(!backdrop3.exists(), "backdrop3.mp4 should NOT exist after first run");
+    assert!(
+        backdrop1.exists(),
+        "backdrop1.mp4 should exist after first run"
+    );
+    assert!(
+        backdrop2.exists(),
+        "backdrop2.mp4 should exist after first run"
+    );
+    assert!(
+        !backdrop3.exists(),
+        "backdrop3.mp4 should NOT exist after first run"
+    );
 
     // Get file sizes to verify they're not regenerated
     let backdrop1_size = fs::metadata(&backdrop1).unwrap().len();
@@ -84,7 +91,10 @@ fn test_incremental_clip_generation() {
     );
 
     // Verify that backdrop3.mp4 now exists
-    assert!(backdrop3.exists(), "backdrop3.mp4 should exist after second run");
+    assert!(
+        backdrop3.exists(),
+        "backdrop3.mp4 should exist after second run"
+    );
     let backdrop3_size = fs::metadata(&backdrop3).unwrap().len();
     assert!(backdrop3_size > 0, "backdrop3.mp4 should not be empty");
 
@@ -160,10 +170,8 @@ fn test_incremental_clip_generation() {
 fn test_skip_when_enough_clips_exist() {
     // Test that videos with enough clips are skipped during scanning
 
-    let test_dir = std::env::temp_dir().join(format!(
-        "skip_enough_clips_test_{}",
-        std::process::id()
-    ));
+    let test_dir =
+        std::env::temp_dir().join(format!("skip_enough_clips_test_{}", std::process::id()));
     let _ = fs::remove_dir_all(&test_dir);
     fs::create_dir_all(&test_dir).unwrap();
 
@@ -187,13 +195,7 @@ fn test_skip_when_enough_clips_exist() {
 
     // Run with -c 2 - should skip the video
     let output = Command::new("cargo")
-        .args(&[
-            "run",
-            "--",
-            test_dir.to_str().unwrap(),
-            "-c",
-            "2",
-        ])
+        .args(&["run", "--", test_dir.to_str().unwrap(), "-c", "2"])
         .output()
         .expect("Failed to execute command");
 
@@ -208,13 +210,7 @@ fn test_skip_when_enough_clips_exist() {
 
     // Run with -c 1 - should also skip
     let output = Command::new("cargo")
-        .args(&[
-            "run",
-            "--",
-            test_dir.to_str().unwrap(),
-            "-c",
-            "1",
-        ])
+        .args(&["run", "--", test_dir.to_str().unwrap(), "-c", "1"])
         .output()
         .expect("Failed to execute command");
 
