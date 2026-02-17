@@ -9,7 +9,7 @@ pub mod encoding {
     pub const CRF: &str = "26";
 
     /// Encoding preset for libx264
-    pub const PRESET: &str = "fast";
+    pub const PRESET: &str = "medium";
 
     /// H.264 Profile for web compatibility
     pub const PROFILE: &str = "high";
