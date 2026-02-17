@@ -15,6 +15,7 @@ pub struct VideoProcessor {
     ffmpeg: FFmpegExecutor,
     intro_exclusion_percent: f64,
     outro_exclusion_percent: f64,
+    #[allow(dead_code)]
     clip_count: u8,
     clip_config: crate::selector::ClipConfig,
     force: bool,
@@ -56,6 +57,8 @@ impl VideoProcessor {
         let video_path = video.path.clone();
 
         // Step 0: Check for existing clips and determine how many more we need
+        // Target is always 3 clips per video
+        const TARGET_CLIPS: u8 = 3;
         let backdrops_dir = video.parent_dir.join(BACKDROPS_DIR);
         let existing_clip_count = if !self.force && backdrops_dir.exists() {
             self.count_existing_clips(&backdrops_dir)
@@ -63,9 +66,18 @@ impl VideoProcessor {
             0
         };
 
-        // Calculate how many clips we need to generate
-        let clips_to_generate = if existing_clip_count >= self.clip_count {
-            // Already have enough clips, skip this video
+        // If already have 3 clips but no done.ext, write the marker and skip
+        if existing_clip_count >= TARGET_CLIPS {
+            // Ensure backdrops dir exists before writing marker
+            if backdrops_dir.exists() {
+                if let Err(e) = crate::scanner::write_done_marker(&backdrops_dir) {
+                    eprintln!(
+                        "Warning: Failed to write done marker for {}: {}",
+                        video.path.display(),
+                        e
+                    );
+                }
+            }
             return ProcessResult {
                 video_path,
                 output_path: PathBuf::new(),
@@ -75,9 +87,9 @@ impl VideoProcessor {
                 clips_generated: 0,
                 clip_filenames: Vec::new(),
             };
-        } else {
-            self.clip_count - existing_clip_count
-        };
+        }
+
+        let clips_to_generate = TARGET_CLIPS - existing_clip_count;
 
         // Step 1: Get video duration
         let duration = match self.ffmpeg.get_duration(&video.path) {
@@ -208,16 +220,13 @@ impl VideoProcessor {
             progress_callback(index + 1, total_clips, &output_filename);
         }
 
-        // Write done.ext marker if we now have all requested clips
-        let total_clips_after = existing_clip_count as usize + time_ranges.len();
-        if total_clips_after >= self.clip_count as usize {
-            if let Err(e) = crate::scanner::write_done_marker(&backdrops_dir) {
-                eprintln!(
-                    "Warning: Failed to write done marker for {}: {}",
-                    video.path.display(),
-                    e
-                );
-            }
+        // Write done.ext marker — we've now rendered all needed clips
+        if let Err(e) = crate::scanner::write_done_marker(&backdrops_dir) {
+            eprintln!(
+                "Warning: Failed to write done marker for {}: {}",
+                video.path.display(),
+                e
+            );
         }
 
         ProcessResult {

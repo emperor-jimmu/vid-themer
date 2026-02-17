@@ -11,6 +11,7 @@ const DONE_MARKER: &str = "done.ext";
 
 pub struct VideoScanner {
     pub root_path: PathBuf,
+    #[allow(dead_code)]
     pub requested_clip_count: u8,
     pub force: bool,
 }
@@ -34,28 +35,27 @@ impl VideoScanner {
         }
     }
 
-    /// Check if a directory should be skipped
+    /// Check if a directory should be skipped.
+    /// Only done.ext is the skip signal. If it doesn't exist, the directory is NOT skipped
+    /// (the processor will handle counting existing clips and writing done.ext).
     fn should_skip_directory(&self, dir: &Path) -> bool {
         // Skip if it's a backdrops directory
         if dir.file_name().and_then(|n| n.to_str()) == Some(BACKDROPS_DIR) {
             return true;
         }
 
-        // If force mode is enabled, never skip directories based on done marker
+        // If force mode is enabled, never skip directories
         if self.force {
             return false;
         }
 
-        // Check if done.ext marker exists in the backdrops directory
+        // Only skip if done.ext marker exists
         let backdrops_dir = dir.join(BACKDROPS_DIR);
         if backdrops_dir.exists() && backdrops_dir.is_dir() {
             let done_marker = backdrops_dir.join(DONE_MARKER);
             if done_marker.exists() && done_marker.is_file() {
                 return true;
             }
-            // Fall back to counting existing clips for backward compatibility
-            let existing_count = self.count_valid_backdrop_files(&backdrops_dir);
-            return existing_count >= self.requested_clip_count;
         }
 
         false
@@ -84,6 +84,7 @@ impl VideoScanner {
 
     /// Count the number of valid (non-zero size) backdrop files in sequential order
     /// Returns the count of backdrop1.mp4, backdrop2.mp4, etc. that exist and are valid
+    #[allow(dead_code)]
     fn count_valid_backdrop_files(&self, backdrops_dir: &Path) -> u8 {
         let mut count = 0u8;
 
@@ -662,17 +663,16 @@ mod tests {
         let _ = fs::remove_dir_all(&temp_dir);
     }
 
-    // Feature: video-clip-extractor, Property 3: Skip Directories with Existing Clips
+    // Feature: video-clip-extractor, Property 3: Skip Directories with done.ext Marker
     proptest! {
         #[test]
-        fn test_skip_directories_with_existing_clips(
-            num_dirs_with_clips in 0usize..5,
-            num_dirs_without_clips in 1usize..5,
+        fn test_skip_directories_with_done_marker(
+            num_dirs_with_marker in 0usize..5,
+            num_dirs_without_marker in 1usize..5,
             videos_per_dir in 1usize..3,
         ) {
-            // Property: For any directory containing a backdrops/backdrop1.mp4 file,
+            // Property: For any directory containing a backdrops/done.ext marker,
             // the scanner should exclude all video files in that directory from the processing list
-            // when clip_count is 1 (since it already has 1 clip)
 
             // Create a temporary directory for testing
             let temp_dir = std::env::temp_dir().join(format!(
@@ -686,17 +686,15 @@ mod tests {
             let mut expected_videos = Vec::new();
             let mut skipped_videos = Vec::new();
 
-            // Create directories WITH existing backdrops/backdrop1.mp4 (should be skipped with clip_count=1)
-            for i in 0..num_dirs_with_clips {
-                let dir = temp_dir.join(format!("With Clip {} (200{})", i, i));
+            // Create directories WITH done.ext marker (should be skipped)
+            for i in 0..num_dirs_with_marker {
+                let dir = temp_dir.join(format!("With Marker {} (200{})", i, i));
                 fs::create_dir_all(&dir).unwrap();
 
-                // Create the backdrops/backdrop1.mp4 file (new naming convention)
+                // Create the backdrops dir with done.ext marker
                 let backdrops_dir = dir.join("backdrops");
                 fs::create_dir_all(&backdrops_dir).unwrap();
-                let backdrop_file = backdrops_dir.join("backdrop1.mp4");
-                let mut file = fs::File::create(&backdrop_file).unwrap();
-                file.write_all(b"existing backdrop content").unwrap();
+                write_done_marker(&backdrops_dir).unwrap();
 
                 // Create video files in this directory (should be skipped)
                 for j in 0..videos_per_dir {
@@ -707,9 +705,9 @@ mod tests {
                 }
             }
 
-            // Create directories WITHOUT existing backdrops (should be scanned)
-            for i in 0..num_dirs_without_clips {
-                let dir = temp_dir.join(format!("Without Clip {} (201{})", i, i));
+            // Create directories WITHOUT done.ext marker (should be scanned)
+            for i in 0..num_dirs_without_marker {
+                let dir = temp_dir.join(format!("Without Marker {} (201{})", i, i));
                 fs::create_dir_all(&dir).unwrap();
 
                 // Create video files in this directory (should be found)
@@ -721,10 +719,8 @@ mod tests {
                 }
             }
 
-            // Create the scanner (with default clip_count of 1 for testing)
-            let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
+            let scanner = VideoScanner::new(temp_dir.clone(), 3, false);
 
-            // Scan for videos
             let result = scanner.scan();
             prop_assert!(
                 result.is_ok(),
@@ -734,51 +730,32 @@ mod tests {
             let scan_result = result.unwrap();
             let found_videos = scan_result.videos;
 
-            // Property 1: Scanner should find only videos from directories WITHOUT existing clips
+            // Property 1: Scanner should find only videos from directories WITHOUT done.ext
             prop_assert_eq!(
                 found_videos.len(),
                 expected_videos.len(),
-                "Scanner should find exactly {} videos from {} directories without clips, \
-                 ignoring {} videos from {} directories with existing clips",
+                "Scanner should find exactly {} videos from {} directories without marker, \
+                 ignoring {} videos from {} directories with done.ext",
                 expected_videos.len(),
-                num_dirs_without_clips,
+                num_dirs_without_marker,
                 skipped_videos.len(),
-                num_dirs_with_clips
+                num_dirs_with_marker
             );
 
-            // Property 2: All found videos should be from directories without existing clips
+            // Property 2: All found videos should be from directories without done.ext
             for video in &found_videos {
                 prop_assert!(
                     expected_videos.contains(&video.path),
-                    "Found video {:?} should be from a directory without existing clips",
+                    "Found video {:?} should be from a directory without done.ext",
                     video.path
                 );
             }
 
-            // Property 3: No videos from directories with existing clips should be found
-            for video in &found_videos {
-                prop_assert!(
-                    !skipped_videos.contains(&video.path),
-                    "Found video {:?} should NOT be from a directory with existing clips",
-                    video.path
-                );
-            }
-
-            // Property 4: All expected videos should be found
-            for expected in &expected_videos {
-                prop_assert!(
-                    found_videos.iter().any(|v| v.path == *expected),
-                    "Expected video {:?} from directory without clips should be found",
-                    expected
-                );
-            }
-
-            // Property 5: Verify that directories with backdrops/backdrop1.mp4 are actually skipped
-            // by checking that none of their videos appear in results
+            // Property 3: No videos from directories with done.ext should be found
             for skipped in &skipped_videos {
                 prop_assert!(
                     !found_videos.iter().any(|v| v.path == *skipped),
-                    "Skipped video {:?} from directory with existing clip should NOT be found",
+                    "Skipped video {:?} from directory with done.ext should NOT be found",
                     skipped
                 );
             }
