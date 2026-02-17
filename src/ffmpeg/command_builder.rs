@@ -149,22 +149,20 @@ pub fn calculate_scale_filter(
 pub fn build_video_filters(
     source_resolution: (u32, u32),
     target_resolution: Resolution,
-    codec: &str,
+    _codec: &str,
     color_transfer: Option<&str>,
-    pix_fmt: Option<&str>,
+    _pix_fmt: Option<&str>,
 ) -> String {
     let mut filters = Vec::new();
 
-    // Detect HDR based on color transfer characteristics and pixel format
-    // HDR indicators: smpte2084 (PQ/HDR10), arib-std-b67 (HLG), or 10-bit pixel formats
-    let is_hdr = if let Some(transfer) = color_transfer {
-        transfer == "smpte2084" || transfer == "arib-std-b67"
-    } else if let Some(fmt) = pix_fmt {
-        // Check for 10-bit formats which often indicate HDR
-        fmt.contains("10le") || fmt.contains("10be")
-    } else {
-        // Fallback: assume HEVC/VP9 might be HDR
-        codec.contains("hevc") || codec.contains("h265") || codec.contains("vp9")
+    // Detect HDR based on color transfer characteristics only.
+    // Only PQ (smpte2084) and HLG (arib-std-b67) are true HDR transfer functions.
+    // 10-bit pixel formats (yuv420p10le) are common in SDR HEVC encodes and do NOT
+    // indicate HDR — applying zscale tone mapping to these causes "no path between
+    // colorspaces" errors because there's no HDR-to-SDR conversion to perform.
+    let is_hdr = match color_transfer {
+        Some(transfer) => transfer == "smpte2084" || transfer == "arib-std-b67",
+        None => false,
     };
 
     if is_hdr {
