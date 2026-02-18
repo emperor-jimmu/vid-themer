@@ -5,8 +5,8 @@ pub mod encoding {
     /// Target bitrate for hardware-accelerated encoding (5 Mbps)
     pub const HW_ACCEL_BITRATE: &str = "5M";
 
-    /// CRF value for software encoding (26 = good quality for background/ambient clips)
-    pub const CRF: &str = "26";
+    /// CRF value for software encoding (28 = good quality for background/ambient clips)
+    pub const CRF: &str = "28";
 
     /// Encoding preset for libx264
     pub const PRESET: &str = "medium";
