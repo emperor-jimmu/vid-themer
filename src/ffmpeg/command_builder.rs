@@ -18,6 +18,8 @@ pub struct ExtractConfig<'a> {
     pub target_resolution: Resolution,
     pub include_audio: bool,
     pub use_hw_accel: bool,
+    /// Absolute stream index of the preferred audio stream (English first, fallback to first)
+    pub audio_stream_index: Option<usize>,
 }
 
 /// Build audio-related FFmpeg arguments based on configuration
@@ -264,13 +266,18 @@ pub fn build_extract_command(config: &ExtractConfig) -> Vec<String> {
     ]);
 
     // Duration and stream mapping
+    // Use absolute stream index for audio to prefer English track
+    let audio_map = match config.audio_stream_index {
+        Some(idx) => format!("0:{}?", idx),
+        None => "0:a:0?".to_string(),
+    };
     args.extend(vec![
         "-t".to_string(),
         config.time_range.duration_seconds.to_string(),
         "-map".to_string(),
         "0:v:0".to_string(),
         "-map".to_string(),
-        "0:a:0?".to_string(),
+        audio_map,
         "-map_metadata".to_string(),
         "-1".to_string(),
     ]);

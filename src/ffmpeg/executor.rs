@@ -157,6 +157,7 @@ impl FFmpegExecutor {
             target_resolution: self.resolution.clone(),
             include_audio: self.include_audio,
             use_hw_accel: self.use_hw_accel,
+            audio_stream_index: metadata.audio_stream_index,
         };
 
         let args = if use_conservative_seeking {
@@ -251,6 +252,7 @@ impl FFmpegExecutor {
             target_resolution: self.resolution.clone(),
             include_audio: self.include_audio,
             use_hw_accel: self.use_hw_accel,
+            audio_stream_index: metadata.audio_stream_index,
         };
 
         let standard_args = command_builder::build_extract_command(&config);
@@ -326,6 +328,7 @@ impl FFmpegExecutor {
             target_resolution: self.resolution.clone(),
             include_audio: false, // Force no audio
             use_hw_accel: self.use_hw_accel,
+            audio_stream_index: metadata.audio_stream_index,
         };
 
         let standard_args = command_builder::build_extract_command(&config);
