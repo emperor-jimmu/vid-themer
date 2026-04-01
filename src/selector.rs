@@ -1,6 +1,6 @@
 // Clip selection strategies (trait + implementations)
 
-use rand::Rng;
+use rand::RngExt;
 use std::path::Path;
 
 /// Minimum clip duration in seconds
@@ -29,8 +29,8 @@ impl ClipConfig {
     /// Get a random duration within the configured range
     #[allow(dead_code)] // Public API method
     pub fn random_duration(&self) -> f64 {
-        let mut rng = rand::thread_rng();
-        rng.gen_range(self.min_duration..=self.max_duration)
+        let mut rng = rand::rng();
+        rng.random_range(self.min_duration..=self.max_duration)
     }
 
     /// Calculate middle segment as fallback when analysis fails
@@ -225,7 +225,7 @@ impl ClipSelector for RandomSelector {
         }
 
         let mut clips = Vec::new();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut attempts = 0;
         let mut consecutive_empty_gaps = 0;
 
@@ -235,7 +235,7 @@ impl ClipSelector for RandomSelector {
             attempts += 1;
 
             // Generate random clip duration between min and max
-            let clip_duration = rng.gen_range(config.min_duration..=config.max_duration);
+            let clip_duration = rng.random_range(config.min_duration..=config.max_duration);
 
             // Find available gaps between existing clips
             let available_gaps =
@@ -259,12 +259,12 @@ impl ClipSelector for RandomSelector {
             consecutive_empty_gaps = 0; // Reset on success
 
             // Randomly select a gap
-            let gap_index = rng.gen_range(0..available_gaps.len());
+            let gap_index = rng.random_range(0..available_gaps.len());
             let (gap_start, gap_end) = available_gaps[gap_index];
 
             // Generate random start time within the selected gap
             let max_start = gap_end - clip_duration;
-            let start = rng.gen_range(gap_start..=max_start);
+            let start = rng.random_range(gap_start..=max_start);
 
             let candidate = TimeRange {
                 start_seconds: start,
