@@ -126,16 +126,16 @@ impl VideoScanner {
 
                 // For subdirectories (not the root), check if they match movie folder format
                 // or are the backdrops directory. Non-movie subdirectories are skipped.
-                if path != self.root_path {
-                    if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
-                        // Allow backdrops directories (already handled above)
-                        if dir_name == BACKDROPS_DIR {
-                            return false; // already filtered by should_skip_directory
-                        }
-                        // Skip non-movie-format subdirectories
-                        if !Self::is_movie_folder(dir_name) {
-                            return false;
-                        }
+                if path != self.root_path
+                    && let Some(dir_name) = path.file_name().and_then(|n| n.to_str())
+                {
+                    // Allow backdrops directories (already handled above)
+                    if dir_name == BACKDROPS_DIR {
+                        return false; // already filtered by should_skip_directory
+                    }
+                    // Skip non-movie-format subdirectories
+                    if !Self::is_movie_folder(dir_name) {
+                        return false;
                     }
                 }
 

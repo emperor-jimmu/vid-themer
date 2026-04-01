@@ -20,11 +20,11 @@ pub struct FFmpegExecutor {
 }
 
 impl FFmpegExecutor {
-    pub fn new(resolution: Resolution, include_audio: bool) -> Self {
+    pub fn new(resolution: Resolution, include_audio: bool, use_hw_accel: bool) -> Self {
         Self {
             resolution,
             include_audio,
-            use_hw_accel: false,
+            use_hw_accel,
         }
     }
 
@@ -496,7 +496,7 @@ mod tests {
 
     #[test]
     fn test_executor_creation() {
-        let executor = FFmpegExecutor::new(Resolution::Hd1080, true);
+        let executor = FFmpegExecutor::new(Resolution::Hd1080, true, false);
         assert!(!executor.use_hw_accel);
     }
 }

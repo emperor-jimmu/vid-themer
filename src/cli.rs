@@ -47,6 +47,10 @@ pub struct CliArgs {
     /// Force regeneration of all clips, ignoring existing clips
     #[arg(short = 'f', long = "force", action = clap::ArgAction::SetTrue, default_value_t = false)]
     pub force: bool,
+
+    /// Use hardware acceleration for encoding (h264_videotoolbox on macOS, h264_nvenc elsewhere)
+    #[arg(long = "hw-accel", action = clap::ArgAction::SetTrue, default_value_t = false)]
+    pub hw_accel: bool,
 }
 
 fn validate_duration(s: &str) -> Result<f64, String> {

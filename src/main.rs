@@ -153,7 +153,8 @@ fn main() {
     let videos = scan_result.videos;
 
     // Create FFmpegExecutor with resolution and audio settings
-    let ffmpeg_executor = FFmpegExecutor::new(args.resolution.clone(), args.include_audio);
+    let ffmpeg_executor =
+        FFmpegExecutor::new(args.resolution.clone(), args.include_audio, args.hw_accel);
 
     // Create appropriate ClipSelector based on strategy flag
     let selector: Box<dyn ClipSelector> = match args.strategy {

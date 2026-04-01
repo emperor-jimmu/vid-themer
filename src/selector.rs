@@ -1885,7 +1885,7 @@ mod tests {
         use std::path::PathBuf;
 
         // Create an FFmpegExecutor
-        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
+        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
 
         // Create IntenseAudioSelector
         let selector = IntenseAudioSelector::new(ffmpeg_executor);
@@ -2100,7 +2100,7 @@ mod tests {
         use crate::cli::Resolution;
         use std::path::PathBuf;
 
-        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
+        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
         let selector = IntenseAudioSelector::new(ffmpeg_executor);
 
         // Use a non-existent video path - will fall back to middle segment
@@ -2294,7 +2294,7 @@ mod tests {
         use crate::cli::Resolution;
         use std::path::PathBuf;
 
-        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
+        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
         let selector = IntenseAudioSelector::new(ffmpeg_executor);
 
         // Use a short video duration that can only fit 1 clip
@@ -2341,7 +2341,7 @@ mod tests {
         use crate::cli::Resolution;
         use std::path::PathBuf;
 
-        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
+        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
         let selector = IntenseAudioSelector::new(ffmpeg_executor);
 
         let video_path = PathBuf::from("/nonexistent/very_short.mp4");
@@ -2493,7 +2493,7 @@ mod tests {
         use std::path::PathBuf;
 
         // Create an FFmpegExecutor
-        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
+        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
 
         // Create ActionSelector
         let selector = ActionSelector::new(ffmpeg_executor);
@@ -2776,7 +2776,7 @@ mod tests {
             const MAX_CLIP_DURATION: f64 = 15.0;
 
             // Create an FFmpegExecutor and ActionSelector
-            let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
+            let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
             let selector = ActionSelector::new(ffmpeg_executor);
 
             // Use a non-existent video path (will fall back to middle segment)
@@ -2821,7 +2821,7 @@ mod tests {
             use std::path::PathBuf;
 
             // Create an FFmpegExecutor and ActionSelector
-            let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
+            let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
             let selector = ActionSelector::new(ffmpeg_executor);
 
             // Use a non-existent video path (will fall back to middle segment)
@@ -2860,7 +2860,7 @@ mod tests {
             use std::path::PathBuf;
 
             // Create an FFmpegExecutor and ActionSelector
-            let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
+            let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
             let selector = ActionSelector::new(ffmpeg_executor);
 
             // Use a non-existent video path (will fall back to middle segment)
@@ -2969,7 +2969,7 @@ mod tests {
             use std::path::PathBuf;
 
             // Create a single ActionSelector instance
-            let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
+            let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
             let selector = ActionSelector::new(ffmpeg_executor);
 
             // Process first video (non-existent, will fall back to middle segment)
@@ -3377,7 +3377,7 @@ mod tests {
         use std::path::PathBuf;
 
         // Create an FFmpegExecutor
-        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
+        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
 
         // Create ActionSelector
         let selector = ActionSelector::new(ffmpeg_executor);
@@ -3416,7 +3416,7 @@ mod tests {
         use crate::cli::Resolution;
         use std::path::PathBuf;
 
-        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
+        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
         let selector = ActionSelector::new(ffmpeg_executor);
 
         let video_path = PathBuf::from("/nonexistent/video.mp4");
@@ -3454,7 +3454,7 @@ mod tests {
         use crate::cli::Resolution;
         use std::path::PathBuf;
 
-        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true);
+        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
         let selector = ActionSelector::new(ffmpeg_executor);
 
         let video_path = PathBuf::from("/nonexistent/short_video.mp4");
