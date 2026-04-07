@@ -40,14 +40,17 @@ src/
 
 ## Key Behaviors
 
-- Scans directories recursively, skips dirs with existing `backdrops/backdrop1.mp4`
-- Creates `backdrops/backdrop1.mp4`, `backdrop2.mp4`, etc.
+- **Movie folder format only**: Scans for directories matching `"Movie Name (Year)"` pattern (e.g., "The Matrix (1999)")
+- Only processes videos inside movie folders, skips non-movie subdirectories
+- Skips directories with `backdrops/done.ext` marker (unless `--force` is used)
+- Creates `backdrops/backdrop1.mp4`, `backdrop2.mp4`, etc. (configurable via `-c` flag)
 - Processes videos **sequentially** (FFmpeg itself is multi-threaded)
 - Integration tests create temp videos via FFmpeg; skip if FFmpeg unavailable
 
 ## Testing
 
 Integration tests are in `tests/` and use `tests/common/mod.rs` helpers:
+
 - `create_test_video()` - creates test videos with FFmpeg
 - `build_binary()` - compiles release binary
 - `get_binary_path()` - returns platform-specific binary path
