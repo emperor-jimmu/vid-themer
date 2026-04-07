@@ -9,7 +9,7 @@ use crate::selector::TimeRange;
 use super::command_builder;
 use super::constants::fade;
 use super::error::FFmpegError;
-use super::metadata::{get_video_metadata, VideoMetadata};
+use super::metadata::{VideoMetadata, get_video_metadata};
 
 /// FFmpeg executor with configuration
 #[derive(Clone)]

@@ -97,6 +97,7 @@ pub fn get_video_resolution(path: &Path) -> Option<(u32, u32)> {
     }
 }
 
+#[allow(dead_code)]
 /// Get the path to the compiled binary
 pub fn get_binary_path() -> std::path::PathBuf {
     if cfg!(windows) {
@@ -106,6 +107,7 @@ pub fn get_binary_path() -> std::path::PathBuf {
     }
 }
 
+#[allow(dead_code)]
 /// Build the project binary
 pub fn build_binary() -> Result<(), String> {
     let build_output = Command::new("cargo")
