@@ -16,34 +16,32 @@ fn test_full_pipeline_with_sample_videos() {
 
     // Create directory structure:
     // temp_base/
-    //   ├── movies/
-    //   │   ├── movie1.mp4
+    //   ├── Movie1 (2020)/
+    //   │   └── movie1.mp4
+    //   ├── Movie2 (2021)/
     //   │   └── movie2.mkv
-    //   └── shows/
-    //       ├── episode1.mp4
-    //       └── nested/
-    //           └── episode2.mp4
+    //   └── Movie3 (2022)/
+    //       └── movie3.mp4
 
-    let movies_dir = temp_base.join("movies");
-    let shows_dir = temp_base.join("shows");
-    let nested_dir = shows_dir.join("nested");
+    let movie1_dir = temp_base.join("Movie1 (2020)");
+    let movie2_dir = temp_base.join("Movie2 (2021)");
+    let movie3_dir = temp_base.join("Movie3 (2022)");
 
-    fs::create_dir_all(&movies_dir).unwrap();
-    fs::create_dir_all(&shows_dir).unwrap();
-    fs::create_dir_all(&nested_dir).unwrap();
+    fs::create_dir_all(&movie1_dir).unwrap();
+    fs::create_dir_all(&movie2_dir).unwrap();
+    fs::create_dir_all(&movie3_dir).unwrap();
 
     // Create test videos (if FFmpeg is available)
     let video_paths = vec![
-        movies_dir.join("movie1.mp4"),
-        movies_dir.join("movie2.mkv"),
-        shows_dir.join("episode1.mp4"),
-        nested_dir.join("episode2.mp4"),
+        movie1_dir.join("movie1.mp4"),
+        movie2_dir.join("movie2.mkv"),
+        movie3_dir.join("movie3.mp4"),
     ];
 
     let mut videos_created = 0;
     for video_path in &video_paths {
         // Create videos with different durations and resolutions
-        let duration = 30; // 30 seconds (enough for 10-15s clip with 1% intro + 40% outro exclusion)
+        let duration = 35; // 35 seconds (enough for 20-30s clip with 2% intro + 40% outro exclusion)
         let (width, height) = (1280, 720); // 720p
 
         if create_test_video(video_path, duration, width, height) {
@@ -119,9 +117,9 @@ fn test_full_pipeline_with_sample_videos() {
 
     // Verify output files are created in correct locations
     let expected_outputs = vec![
-        movies_dir.join("backdrops").join("backdrop1.mp4"),
-        shows_dir.join("backdrops").join("backdrop1.mp4"),
-        nested_dir.join("backdrops").join("backdrop1.mp4"),
+        movie1_dir.join("backdrops").join("backdrop1.mp4"),
+        movie2_dir.join("backdrops").join("backdrop1.mp4"),
+        movie3_dir.join("backdrops").join("backdrop1.mp4"),
     ];
 
     let mut clips_found = 0;
@@ -145,11 +143,11 @@ fn test_full_pipeline_with_sample_videos() {
                 expected_output
             );
 
-            // Verify clip duration is between 10 and 15 seconds
+            // Verify clip duration is between 20 and 30 seconds (default CLI range)
             if let Some(duration) = get_video_duration(expected_output) {
                 assert!(
-                    duration >= 9.5 && duration <= 15.5,
-                    "Clip duration should be between 10 and 15 seconds, got: {:.2}s for {:?}",
+                    duration >= 19.5 && duration <= 31.0,
+                    "Clip duration should be between 20 and 30 seconds, got: {:.2}s for {:?}",
                     duration,
                     expected_output
                 );
@@ -197,10 +195,13 @@ fn test_pipeline_with_existing_clips() {
     let _ = fs::remove_dir_all(&temp_base);
     fs::create_dir_all(&temp_base).unwrap();
 
-    let video_path = temp_base.join("test_video.mp4");
+    // Videos must be in movie folder format
+    let movie_dir = temp_base.join("Test Movie (2020)");
+    fs::create_dir_all(&movie_dir).unwrap();
+    let video_path = movie_dir.join("test_video.mp4");
 
     // Create a test video
-    if !create_test_video(&video_path, 30, 1280, 720) {
+    if !create_test_video(&video_path, 35, 1280, 720) {
         eprintln!("Skipping overwrite test: FFmpeg not available");
         let _ = fs::remove_dir_all(&temp_base);
         return;
@@ -224,7 +225,7 @@ fn test_pipeline_with_existing_clips() {
         "First run should complete successfully"
     );
 
-    let backdrops_dir = temp_base.join("backdrops");
+    let backdrops_dir = movie_dir.join("backdrops");
     let clip_path = backdrops_dir.join("backdrop1.mp4");
 
     assert!(clip_path.exists(), "Clip should be created on first run");
@@ -287,18 +288,18 @@ fn test_pipeline_skips_directories_with_existing_clips() {
     let _ = fs::remove_dir_all(&temp_base);
     fs::create_dir_all(&temp_base).unwrap();
 
-    // Create two directories
-    let dir1 = temp_base.join("dir1");
-    let dir2 = temp_base.join("dir2");
-    fs::create_dir_all(&dir1).unwrap();
-    fs::create_dir_all(&dir2).unwrap();
+    // Create two movie directories
+    let movie1_dir = temp_base.join("Movie1 (2020)");
+    let movie2_dir = temp_base.join("Movie2 (2021)");
+    fs::create_dir_all(&movie1_dir).unwrap();
+    fs::create_dir_all(&movie2_dir).unwrap();
 
     // Create videos in both directories
-    let video1 = dir1.join("video1.mp4");
-    let video2 = dir2.join("video2.mp4");
+    let video1 = movie1_dir.join("video1.mp4");
+    let video2 = movie2_dir.join("video2.mp4");
 
-    let videos_created = create_test_video(&video1, 30, 1280, 720) as u32
-        + create_test_video(&video2, 30, 1280, 720) as u32;
+    let videos_created = create_test_video(&video1, 35, 1280, 720) as u32
+        + create_test_video(&video2, 35, 1280, 720) as u32;
 
     if videos_created == 0 {
         eprintln!("Skipping skip test: FFmpeg not available");
@@ -306,8 +307,8 @@ fn test_pipeline_skips_directories_with_existing_clips() {
         return;
     }
 
-    // Create an existing backdrop in dir1 (should cause dir1 to be skipped)
-    let backdrops_dir1 = dir1.join("backdrops");
+    // Create an existing backdrop in movie1_dir (should cause it to be skipped)
+    let backdrops_dir1 = movie1_dir.join("backdrops");
     fs::create_dir_all(&backdrops_dir1).unwrap();
     let existing_clip1 = backdrops_dir1.join("backdrop1.mp4");
     fs::File::create(&existing_clip1).unwrap();
@@ -330,14 +331,14 @@ fn test_pipeline_skips_directories_with_existing_clips() {
 
     assert!(output.status.success(), "Tool should complete successfully");
 
-    // Verify that only dir2 was processed (dir1 should be skipped)
+    // Verify that only movie2 was processed (movie1 should be skipped)
     // The output should show fewer videos found than we created
-    let backdrops_dir2 = dir2.join("backdrops");
+    let backdrops_dir2 = movie2_dir.join("backdrops");
     let clip2 = backdrops_dir2.join("backdrop1.mp4");
 
-    // dir2 should have a new clip
+    // movie2 should have a new clip
     if videos_created == 2 {
-        assert!(clip2.exists(), "dir2 should have a new clip created");
+        assert!(clip2.exists(), "movie2 should have a new clip created");
     }
 
     println!("✓ Skip test passed: directories with existing clips are skipped");

@@ -18,10 +18,10 @@ fn test_error_recovery_with_corrupted_video() {
     let _ = fs::remove_dir_all(&temp_base);
     fs::create_dir_all(&temp_base).unwrap();
 
-    // Create directory structure with multiple videos
-    let dir1 = temp_base.join("dir1");
-    let dir2 = temp_base.join("dir2");
-    let dir3 = temp_base.join("dir3");
+    // Create directory structure with multiple videos (using movie folder format to avoid being skipped)
+    let dir1 = temp_base.join("Movie1 (2020)");
+    let dir2 = temp_base.join("Movie2 (2021)");
+    let dir3 = temp_base.join("Movie3 (2022)");
     fs::create_dir_all(&dir1).unwrap();
     fs::create_dir_all(&dir2).unwrap();
     fs::create_dir_all(&dir3).unwrap();
@@ -31,11 +31,15 @@ fn test_error_recovery_with_corrupted_video() {
     let video3 = dir3.join("valid_video3.mp4");
 
     let mut valid_videos_created = 0;
-    if create_test_video(&video1, 30, 1280, 720) {
+    if create_test_video(&video1, 35, 1280, 720) {
         valid_videos_created += 1;
         println!("Created valid test video: {:?}", video1);
     }
-    if create_test_video(&video3, 30, 1280, 720) {
+    if create_test_video(&video3, 35, 1280, 720) {
+        valid_videos_created += 1;
+        println!("Created valid test video: {:?}", video3);
+    }
+    if create_test_video(&video3, 35, 1280, 720) {
         valid_videos_created += 1;
         println!("Created valid test video: {:?}", video3);
     }

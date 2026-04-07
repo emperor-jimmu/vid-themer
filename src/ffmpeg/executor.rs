@@ -9,7 +9,7 @@ use crate::selector::TimeRange;
 use super::command_builder;
 use super::constants::fade;
 use super::error::FFmpegError;
-use super::metadata::{VideoMetadata, get_video_metadata};
+use super::metadata::{get_video_metadata, VideoMetadata};
 
 /// FFmpeg executor with configuration
 #[derive(Clone)]
@@ -206,13 +206,34 @@ impl FFmpegExecutor {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(FFmpegError::ExecutionFailed(format!(
-                "FFmpeg clip extraction failed for '{}' at {:.2}s-{:.2}s: {}",
-                video_path.display(),
-                time_range.start_seconds,
-                time_range.start_seconds + time_range.duration_seconds,
-                stderr
-            )));
+
+            // Check for specific error types to provide better error handling
+            let stderr_lower = stderr.to_lowercase();
+            if stderr_lower.contains("unknown encoder")
+                || stderr_lower.contains("encoder not found")
+                || stderr_lower.contains("codec not found")
+                || stderr_lower.contains("invalid data found when processing input")
+            {
+                return Err(FFmpegError::CodecNotFound(stderr.trim().to_string()));
+            } else if stderr_lower.contains("invalid data found when processing input")
+                || stderr_lower.contains("unsupported codec")
+                || stderr_lower.contains("invalid argument")
+            {
+                return Err(FFmpegError::InvalidFormat(stderr.trim().to_string()));
+            } else if stderr_lower.contains("hardware acceleration")
+                || stderr_lower.contains("failed to load")
+                || stderr_lower.contains("not available for this device")
+            {
+                return Err(FFmpegError::HWAccelNotAvailable(stderr.trim().to_string()));
+            } else {
+                return Err(FFmpegError::ExecutionFailed(format!(
+                    "FFmpeg clip extraction failed for '{}' at {:.2}s-{:.2}s: {}",
+                    video_path.display(),
+                    time_range.start_seconds,
+                    time_range.start_seconds + time_range.duration_seconds,
+                    stderr
+                )));
+            }
         }
 
         validate_output(output_path)?;
@@ -269,29 +290,49 @@ impl FFmpegExecutor {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
 
-            // If audio decoding failed, try without audio
-            if self.include_audio
-                && (stderr.contains("Error submitting packet to decoder")
-                    || stderr.contains("aac")
-                    || stderr.contains("Could not open encoder before EOF"))
+            // Check for specific error types to provide better error handling
+            let stderr_lower = stderr.to_lowercase();
+            if stderr_lower.contains("unknown encoder")
+                || stderr_lower.contains("encoder not found")
+                || stderr_lower.contains("codec not found")
+                || stderr_lower.contains("invalid data found when processing input")
             {
-                return self.extract_clip_without_audio(
-                    video_path,
-                    time_range,
-                    output_path,
-                    source_resolution,
-                    codec,
-                    &metadata,
-                );
-            }
+                return Err(FFmpegError::CodecNotFound(stderr.trim().to_string()));
+            } else if stderr_lower.contains("invalid data found when processing input")
+                || stderr_lower.contains("unsupported codec")
+                || stderr_lower.contains("invalid argument")
+            {
+                return Err(FFmpegError::InvalidFormat(stderr.trim().to_string()));
+            } else if stderr_lower.contains("hardware acceleration")
+                || stderr_lower.contains("failed to load")
+                || stderr_lower.contains("not available for this device")
+            {
+                return Err(FFmpegError::HWAccelNotAvailable(stderr.trim().to_string()));
+            } else {
+                // If audio decoding failed, try without audio
+                if self.include_audio
+                    && (stderr.contains("Error submitting packet to decoder")
+                        || stderr.contains("aac")
+                        || stderr.contains("Could not open encoder before EOF"))
+                {
+                    return self.extract_clip_without_audio(
+                        video_path,
+                        time_range,
+                        output_path,
+                        source_resolution,
+                        codec,
+                        &metadata,
+                    );
+                }
 
-            return Err(FFmpegError::ExecutionFailed(format!(
-                "FFmpeg clip extraction failed even with recovery for '{}' at {:.2}s-{:.2}s: {}",
-                video_path.display(),
-                time_range.start_seconds,
-                time_range.start_seconds + time_range.duration_seconds,
-                stderr
-            )));
+                return Err(FFmpegError::ExecutionFailed(format!(
+                    "FFmpeg clip extraction failed even with recovery for '{}' at {:.2}s-{:.2}s: {}",
+                    video_path.display(),
+                    time_range.start_seconds,
+                    time_range.start_seconds + time_range.duration_seconds,
+                    stderr
+                )));
+            }
         }
 
         validate_output(output_path)?;

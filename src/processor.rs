@@ -57,8 +57,7 @@ impl VideoProcessor {
         let video_path = video.path.clone();
 
         // Step 0: Check for existing clips and determine how many more we need
-        // Target is always 3 clips per video
-        const TARGET_CLIPS: u8 = 3;
+        // Target comes from CLI argument
         let backdrops_dir = video.parent_dir.join(BACKDROPS_DIR);
         let existing_clip_count = if !self.force && backdrops_dir.exists() {
             self.count_existing_clips(&backdrops_dir)
@@ -66,8 +65,8 @@ impl VideoProcessor {
             0
         };
 
-        // If already have 3 clips but no done.ext, write the marker and skip
-        if existing_clip_count >= TARGET_CLIPS {
+        // If already have requested clips but no done.ext, write the marker and skip
+        if existing_clip_count >= self.clip_count {
             // Ensure backdrops dir exists before writing marker
             if backdrops_dir.exists()
                 && let Err(e) = crate::scanner::write_done_marker(&backdrops_dir)
@@ -89,7 +88,7 @@ impl VideoProcessor {
             };
         }
 
-        let clips_to_generate = TARGET_CLIPS - existing_clip_count;
+        let clips_to_generate = self.clip_count - existing_clip_count;
 
         // Step 1: Get video duration
         let duration = match self.ffmpeg.get_duration(&video.path) {

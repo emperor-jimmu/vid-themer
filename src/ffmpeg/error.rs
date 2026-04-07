@@ -14,6 +14,15 @@ pub enum FFmpegError {
     #[error("Video has no audio track")]
     NoAudioTrack,
 
+    #[error("Codec not found or not supported: {0}")]
+    CodecNotFound(String),
+
+    #[error("Invalid or unsupported video format: {0}")]
+    InvalidFormat(String),
+
+    #[error("Hardware acceleration not available: {0}")]
+    HWAccelNotAvailable(String),
+
     #[error("Corrupted or invalid video file: {0}")]
     CorruptedFile(String),
 }
