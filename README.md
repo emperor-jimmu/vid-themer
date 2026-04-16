@@ -5,7 +5,7 @@ A command-line tool that recursively scans directories for video files and autom
 ## Features
 
 - **Recursive Directory Scanning** - Automatically discovers video files in nested directories (sorted alphabetically)
-- **Intelligent Clip Selection** - Choose between random or audio-intensity-based extraction strategies
+- **Intelligent Clip Selection** - Choose between random, audio-intensity-based, or action-based extraction strategies
 - **Configurable Clip Duration** - Set minimum and maximum clip duration (default: 20-30 seconds)
 - **Multiple Clips Per Video** - Generate 1-4 clips from each video with incremental generation support
 - **Incremental Clip Generation** - Add more clips without regenerating existing ones
@@ -13,9 +13,11 @@ A command-line tool that recursively scans directories for video files and autom
 - **Smart Resolution Handling** - Scales videos down to target resolution without upscaling
 - **Organized Output** - Creates `backdrops/` subdirectories with sequentially numbered clips (backdrop1.mp4, backdrop2.mp4, etc.)
 - **Skip Existing** - Automatically skips directories that already have enough extracted clips
+- **Force Regeneration** - Override existing clips with `--force` flag
 - **0-Byte File Recovery** - Automatically re-processes videos with 0-byte backdrop files
 - **Failure Logging** - Detailed error logs with FFmpeg output for debugging
 - **Progress Tracking** - Real-time feedback on processing status
+- **Hardware Acceleration** - Optional GPU encoding support (h264_videotoolbox on macOS, h264_nvenc elsewhere)
 
 ## Requirements
 
@@ -53,16 +55,18 @@ Arguments:
 
 Options:
   -s, --strategy <STRATEGY>              Clip selection strategy [default: random]
-                                         [possible values: random, intense-audio, action]
+                                           [possible values: random, intense-audio, action]
   -r, --resolution <RESOLUTION>          Target resolution for extracted clips [default: 1080p]
-                                         [possible values: 720p, 1080p]
+                                           [possible values: 720p, 1080p]
   -a, --audio <AUDIO>                    Include audio in extracted clips [default: true]
-                                         [possible values: true, false]
+                                           [possible values: true, false]
   -c, --clip-count <COUNT>               Number of clips to generate per video (1-4) [default: 1]
-      --intro-exclusion <PERCENT>        Intro exclusion zone as percentage of video duration (0-100) [default: 2.0]
+      --intro-exclusion <PERCENT>         Intro exclusion zone as percentage of video duration (0-100) [default: 2.0]
       --outro-exclusion <PERCENT>        Outro exclusion zone as percentage of video duration (0-100) [default: 40.0]
       --min-duration <SECONDS>           Minimum clip duration in seconds [default: 20.0]
       --max-duration <SECONDS>           Maximum clip duration in seconds [default: 30.0]
+  -f, --force                            Force regeneration of all clips, ignoring existing clips
+      --hw-accel                         Use hardware acceleration for encoding (h264_videotoolbox on macOS, h264_nvenc elsewhere)
   -h, --help                             Print help
   -V, --version                          Print version
 ```
@@ -121,6 +125,18 @@ video-clip-extractor ~/Videos --clip-count 2
 video-clip-extractor ~/Videos --clip-count 3
 ```
 
+Force regeneration of all clips:
+
+```bash
+video-clip-extractor ~/Videos --force
+```
+
+Use hardware acceleration:
+
+```bash
+video-clip-extractor ~/Videos --hw-accel
+```
+
 ## Selection Strategies
 
 ### Random Strategy (Default)
@@ -130,6 +146,10 @@ Selects random segments from the video with configurable duration (default: 20-3
 ### Intense Audio Strategy
 
 Analyzes audio levels throughout the video and selects segments with the highest audio intensity, ideal for action scenes or dramatic moments. Respects exclusion zones and duration constraints.
+
+### Action Strategy
+
+Analyzes video frames for motion/intensity and selects segments with the most visual activity. Also available as `intense-action` alias. Great for capturing high-energy scenes. Respects exclusion zones and duration constraints.
 
 ## Output Structure
 
