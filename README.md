@@ -5,6 +5,7 @@ A command-line tool that recursively scans directories for video files and autom
 ## Features
 
 - **Recursive Directory Scanning** - Automatically discovers video files in nested directories (sorted alphabetically)
+- **Movie Folder Support** - Processes videos in directories matching `"Movie Name (Year)"` format
 - **Intelligent Clip Selection** - Choose between random, audio-intensity-based, or action-based extraction strategies
 - **Configurable Clip Duration** - Set minimum and maximum clip duration (default: 20-30 seconds)
 - **Multiple Clips Per Video** - Generate 1-4 clips from each video with incremental generation support
@@ -12,7 +13,7 @@ A command-line tool that recursively scans directories for video files and autom
 - **Configurable Exclusion Zones** - Control intro/outro exclusion as percentages of video duration
 - **Smart Resolution Handling** - Scales videos down to target resolution without upscaling
 - **Organized Output** - Creates `backdrops/` subdirectories with sequentially numbered clips (backdrop1.mp4, backdrop2.mp4, etc.)
-- **Skip Existing** - Automatically skips directories that already have enough extracted clips
+- **Skip with done.ext** - Automatically skips directories with `backdrops/done.ext` marker
 - **Force Regeneration** - Override existing clips with `--force` flag
 - **0-Byte File Recovery** - Automatically re-processes videos with 0-byte backdrop files
 - **Failure Logging** - Detailed error logs with FFmpeg output for debugging
@@ -21,7 +22,7 @@ A command-line tool that recursively scans directories for video files and autom
 
 ## Requirements
 
-- **Rust** (Edition 2024 or later)
+- **Rust** (Edition 2024 - requires nightly or recent stable)
 - **FFmpeg** - Must be installed and available in your system PATH
   - Includes `ffmpeg` and `ffprobe` commands
 
@@ -57,13 +58,13 @@ Arguments:
 
 Options:
   -s, --strategy <STRATEGY>              Clip selection strategy [default: random]
-                                           [possible values: random, intense-audio, action]
+                                           [possible values: random, intense-audio, action, intense-action]
   -r, --resolution <RESOLUTION>          Target resolution for extracted clips [default: 1080p]
                                            [possible values: 720p, 1080p]
   -a, --audio <AUDIO>                    Include audio in extracted clips [default: true]
                                            [possible values: true, false]
   -c, --clip-count <COUNT>               Number of clips to generate per video (1-4) [default: 1]
-      --intro-exclusion <PERCENT>         Intro exclusion zone as percentage of video duration (0-100) [default: 2.0]
+      --intro-exclusion <PERCENT>        Intro exclusion zone as percentage of video duration (0-100) [default: 2.0]
       --outro-exclusion <PERCENT>        Outro exclusion zone as percentage of video duration (0-100) [default: 40.0]
       --min-duration <SECONDS>           Minimum clip duration in seconds [default: 20.0]
       --max-duration <SECONDS>           Maximum clip duration in seconds [default: 30.0]
@@ -147,29 +148,39 @@ Selects random segments from the video with configurable duration (default: 20-3
 
 ### Intense Audio Strategy
 
-Analyzes audio levels throughout the video and selects segments with the highest audio intensity, ideal for action scenes or dramatic moments. Respects exclusion zones and duration constraints.
+Analyzes audio levels throughout the video and selects segments with the highest audio intensity, ideal for action scenes or dramatic moments. Falls back to middle-segment selection if audio analysis fails. Respects exclusion zones and duration constraints.
 
 ### Action Strategy
 
-Analyzes video frames for motion/intensity and selects segments with the most visual activity. Also available as `intense-action` alias. Great for capturing high-energy scenes. Respects exclusion zones and duration constraints.
+Analyzes video frames for motion/intensity and selects segments with the most visual activity. Also available as `intense-action` alias. Great for capturing high-energy scenes. Falls back to middle-segment selection if motion analysis fails. Respects exclusion zones and duration constraints.
 
 ## Output Structure
 
-For each video file, the tool creates a subdirectory with the extracted clips:
+For each video file in a movie folder, the tool creates a subdirectory with the extracted clips:
 
 ```
 /path/to/videos/
-├── movie1.mp4
-├── backdrops/
-│   ├── backdrop1.mp4         # First clip from movie1.mp4
-│   ├── backdrop2.mp4         # Second clip (if -c 2 or higher)
-│   └── backdrop3.mp4         # Third clip (if -c 3 or higher)
-├── subfolder/
+├── Movie1 (2020)/
+│   ├── movie1.mp4
+│   └── backdrops/
+│       ├── backdrop1.mp4         # First clip from movie1.mp4
+│       ├── backdrop2.mp4         # Second clip (if -c 2 or higher)
+│       ├── backdrop3.mp4         # Third clip (if -c 3 or higher)
+│       └── done.ext              # Marker file (added after successful processing)
+├── Movie2 (2021)/
 │   ├── movie2.mkv
 │   └── backdrops/
-│       └── backdrop1.mp4     # First clip from movie2.mkv
-└── 2026-01-27-12-00-00.log        # Timestamped failure log (created only if failures occur)
+│       └── backdrop1.mp4         # First clip from movie2.mkv
+└── 2026-04-17-12-30-00.log      # Timestamped failure log (created only if failures occur)
 ```
+
+### Movie Folder Format
+
+The tool expects directories in the format `"Movie Name (Year)"` (e.g., "The Matrix (1999)"). Videos must be directly inside these movie folders. Non-movie subdirectories are skipped.
+
+### Skip Mechanism
+
+Directories are skipped if they contain `backdrops/done.ext`. Use `--force` to override this and reprocess.
 
 ### Incremental Clip Generation
 
@@ -182,7 +193,7 @@ The tool supports incremental clip generation, allowing you to add more clips wi
    - Only creates `backdrop3.mp4` (preserves existing clips)
 
 3. **Skip When Enough Exist**: `video-clip-extractor ~/Videos -c 2`
-   - Skips videos that already have 2 or more clips
+   - Skips videos that already have 2 or more valid clips
 
 This feature is useful when you want to:
 - Start with fewer clips and add more later
@@ -199,8 +210,9 @@ When processing failures occur, the tool creates a detailed log file in the curr
 - **Contents**:
   - Video file path that failed
   - Error message
+  - Number of clips generated
+  - Output path
   - FFmpeg stderr output (when applicable)
-  - Separated entries for each failure
 
 This log file is invaluable for debugging issues with specific video files or FFmpeg processing errors.
 
@@ -260,8 +272,22 @@ cargo clippy
 
 The project follows a pipeline architecture:
 
-1. **Scanner** - Discovers video files recursively, skips directories with valid backdrops
-2. **Selector** - Chooses clip segments using configured strategy
+```
+src/
+├── main.rs       # CLI entry point, orchestrates components
+├── cli.rs        # Argument parsing (clap derive)
+├── processor.rs  # Video processing orchestration
+├── scanner.rs    # Recursive directory scanning
+├── selector.rs   # Clip selection strategies (random, intense-audio, action)
+├── ffmpeg/       # FFmpeg wrapper (executor, command_builder, analysis, metadata)
+├── progress.rs   # Progress reporting
+└── logger.rs    # Failure logging
+```
+
+### Components
+
+1. **Scanner** - Discovers video files recursively, skips directories with `done.ext` markers
+2. **Selector** - Chooses clip segments using configured strategy (random, intense-audio, or action)
 3. **FFmpeg Executor** - Extracts clips with proper scaling and encoding
 4. **Processor** - Orchestrates the extraction workflow
 5. **Progress Reporter** - Provides real-time feedback
@@ -269,15 +295,23 @@ The project follows a pipeline architecture:
 
 ## Dependencies
 
-- `clap` - CLI argument parsing with derive macros
-- `thiserror` - Error type definitions
-- `walkdir` / `std::fs` - Directory traversal
-- `proptest` - Property-based testing (dev dependency)
+- `clap` (4.6) - CLI argument parsing with derive macros
+- `thiserror` (2.0) - Error type definitions
+- `rand` (0.10) - Random number generation for random strategy
+- `walkdir` (2.5) - Directory traversal
+- `serde` (1.0) - Serialization for metadata and done markers
+- `serde_json` (1.0) - JSON parsing
+- `colored` (3.1) - Terminal colors for progress output
+- `rayon` (1.11) - Data-level parallelism
+- `tokio` (1.0) - Async runtime
+- `async-trait` (0.1) - Async trait support
+- `chrono` (0.4) - Date/time handling for logging
+- `proptest` (1.11) - Property-based testing (dev dependency)
 
 ## License
 
-[Add your license here]
+MIT License
 
 ## Contributing
 
-[Add contribution guidelines here]
+Contributions are welcome! Please feel free to submit a Pull Request.
