@@ -533,13 +533,9 @@ impl ClipSelector for IntenseAudioSelector {
                 clip_count,
                 config,
             ),
-            Err(crate::ffmpeg::FFmpegError::NoAudioTrack) => {
-                // No audio track, fall back to middle segment
+            Err(_e) => {
+                // Audio analysis failed, fall back to middle segment
                 Ok(vec![config.middle_segment(duration)?])
-            }
-            Err(e) => {
-                // Other errors, return as SelectionError
-                Err(SelectionError::AudioAnalysisFailed(e.to_string()))
             }
         }
     }
@@ -582,16 +578,12 @@ impl ClipSelector for ActionSelector {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub enum SelectionError {
     #[error("Video too short: {0}s")]
-    #[allow(dead_code)]
     VideoTooShort(f64),
 
-    #[error("Failed to analyze audio: {0}")]
-    AudioAnalysisFailed(String),
-
     #[error("Failed to analyze motion: {0}")]
-    #[allow(dead_code)]
     MotionAnalysisFailed(String),
 }
 

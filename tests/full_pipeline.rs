@@ -298,8 +298,8 @@ fn test_pipeline_skips_directories_with_existing_clips() {
     let video1 = movie1_dir.join("video1.mp4");
     let video2 = movie2_dir.join("video2.mp4");
 
-    let videos_created = create_test_video(&video1, 35, 1280, 720) as u32
-        + create_test_video(&video2, 35, 1280, 720) as u32;
+    let videos_created = create_test_video(&video1, 120, 1280, 720) as u32
+        + create_test_video(&video2, 120, 1280, 720) as u32;
 
     if videos_created == 0 {
         eprintln!("Skipping skip test: FFmpeg not available");
