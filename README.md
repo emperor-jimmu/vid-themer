@@ -31,11 +31,13 @@ A command-line tool that recursively scans directories for video files and autom
 
 ```bash
 git clone <repository-url>
-cd video-clip-extractor
+cd vid-themer
 cargo build --release
 ```
 
-The compiled binary will be available at `target/release/video-clip-extractor`.
+The compiled binary will be available at:
+- Windows: `target/release/video-clip-extractor.exe`
+- Unix: `target/release/video-clip-extractor`
 
 ## Usage
 
@@ -166,7 +168,7 @@ For each video file, the tool creates a subdirectory with the extracted clips:
 │   ├── movie2.mkv
 │   └── backdrops/
 │       └── backdrop1.mp4     # First clip from movie2.mkv
-└── video_clip_extractor_failures.log  # Created only if failures occur
+└── 2026-01-27-12-00-00.log        # Timestamped failure log (created only if failures occur)
 ```
 
 ### Incremental Clip Generation
@@ -191,9 +193,9 @@ This feature is useful when you want to:
 
 ### Failure Logging
 
-When processing failures occur, the tool creates a detailed log file in the root directory:
+When processing failures occur, the tool creates a detailed log file in the current working directory with a timestamped filename:
 
-- **Log File**: `video_clip_extractor_failures.log`
+- **Log Format**: `YYYY-MM-DD-HH-MM-SS.log` (e.g., `2026-04-17-12-30-00.log`)
 - **Contents**:
   - Video file path that failed
   - Error message
