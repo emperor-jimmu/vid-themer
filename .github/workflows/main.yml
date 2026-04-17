@@ -1,0 +1,47 @@
+name: Build and Publish
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract Cargo.toml Version
+        id: get_version
+        run: |
+          VERSION=$(grep -m1 '^version = ' Cargo.toml | cut -d '"' -f2)
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check Existing Release
+        id: check_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "v${{ steps.get_version.outputs.VERSION }}" > /dev/null 2>&1; then
+            echo "EXISTS=true" >> $GITHUB_OUTPUT
+          else
+            echo "EXISTS=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Compile Executable
+        if: steps.check_release.outputs.EXISTS == 'false'
+        run: cargo build --release
+
+      - name: Publish Release and Upload Binary
+        if: steps.check_release.outputs.EXISTS == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.get_version.outputs.VERSION }}
+        run: |
+          # Replace 'YOUR_BINARY_NAME' with the actual output name of your executable
+          gh release create "v$VERSION" target/release/video-clip-extractor \
+            --title "v$VERSION" \
+            --generate-notes
