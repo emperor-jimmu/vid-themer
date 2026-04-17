@@ -103,11 +103,11 @@ fn test_full_pipeline_with_multiple_clips() {
         let metadata = fs::metadata(clip_path).unwrap();
         assert!(metadata.len() > 0, "Clip {} should not be empty", i + 1);
 
-        // Verify clip duration is within constraints (12-18 seconds) (Requirement 5.1)
+        // Verify clip duration is within constraints (20-30 seconds)
         if let Some(duration) = get_video_duration(clip_path) {
             assert!(
-                duration >= 9.5 && duration <= 15.5,
-                "Clip {} duration should be between 10 and 15 seconds, got: {:.2}s (Requirement 5.1)",
+                duration >= 19.5 && duration <= 31.0,
+                "Clip {} duration should be between 20 and 30 seconds, got: {:.2}s (Requirement 5.1)",
                 i + 1,
                 duration
             );
@@ -115,7 +115,7 @@ fn test_full_pipeline_with_multiple_clips() {
         }
     }
 
-    println!("✓ All clips have valid durations (12-18 seconds)");
+    println!("✓ All clips have valid durations (20-30 seconds)");
 
     // Verify clips are non-overlapping (Requirement 3.1)
     // We can't directly verify time ranges without parsing FFmpeg output,
@@ -158,7 +158,7 @@ fn test_backward_compatibility_single_clip() {
     // Create a test video
     let video_path = temp_base.join("test_video.mp4");
 
-    if !create_test_video(&video_path, 30, 1280, 720) {
+    if !create_test_video(&video_path, 120, 1280, 720) {
         eprintln!("Skipping backward compatibility test: FFmpeg not available");
         let _ = fs::remove_dir_all(&temp_base);
         return;
@@ -218,8 +218,8 @@ fn test_backward_compatibility_single_clip() {
 
     if let Some(duration) = get_video_duration(&clip1) {
         assert!(
-            duration >= 9.5 && duration <= 15.5,
-            "Clip duration should be between 10 and 15 seconds, got: {:.2}s",
+            duration >= 19.5 && duration <= 31.0,
+            "Clip duration should be between 20 and 30 seconds, got: {:.2}s",
             duration
         );
         println!("  Clip duration: {:.2}s", duration);
@@ -249,7 +249,7 @@ fn test_default_clip_count() {
     // Create a test video
     let video_path = temp_base.join("test_video.mp4");
 
-    if !create_test_video(&video_path, 30, 1280, 720) {
+    if !create_test_video(&video_path, 120, 1280, 720) {
         eprintln!("Skipping default clip count test: FFmpeg not available");
         let _ = fs::remove_dir_all(&temp_base);
         return;

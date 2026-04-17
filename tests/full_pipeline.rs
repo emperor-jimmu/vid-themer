@@ -307,11 +307,11 @@ fn test_pipeline_skips_directories_with_existing_clips() {
         return;
     }
 
-    // Create an existing backdrop in movie1_dir (should cause it to be skipped)
+    // Create a done.ext marker in movie1_dir (should cause it to be skipped)
     let backdrops_dir1 = movie1_dir.join("backdrops");
     fs::create_dir_all(&backdrops_dir1).unwrap();
-    let existing_clip1 = backdrops_dir1.join("backdrop1.mp4");
-    fs::File::create(&existing_clip1).unwrap();
+    let done_marker = backdrops_dir1.join("done.ext");
+    fs::write(&done_marker, "{ \"completed_at\": \"test\" }").unwrap();
 
     // Build the project
     if let Err(e) = build_binary() {

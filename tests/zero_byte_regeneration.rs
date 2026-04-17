@@ -79,8 +79,12 @@ fn test_non_zero_byte_backdrop_skipped() {
     let metadata = fs::metadata(&backdrop_path).unwrap();
     assert!(metadata.len() > 0, "Backdrop should have content");
 
+    // Create done.ext marker to signal the directory should be skipped
+    let done_marker = backdrops_dir.join("done.ext");
+    fs::write(&done_marker, "{ \"completed_at\": \"test\" }").unwrap();
+
     // Run the video-clip-extractor on this directory
-    // It should skip the video because the backdrop has content
+    // It should skip the video because of the done.ext marker
     let output = Command::new(env!("CARGO_BIN_EXE_video-clip-extractor"))
         .arg(&temp_dir)
         .output();
@@ -90,8 +94,8 @@ fn test_non_zero_byte_backdrop_skipped() {
 
         // Should show that it skipped the directory
         assert!(
-            stdout.contains("already have backdrop") || stdout.contains("Skipped 1 director"),
-            "Should skip directory with valid backdrop. stdout: {}",
+            stdout.contains("Skipped 1 director"),
+            "Should skip directory with done.ext marker. stdout: {}",
             stdout
         );
     }
