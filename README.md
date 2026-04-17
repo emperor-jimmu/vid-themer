@@ -1,5 +1,7 @@
 # Video Clip Extractor
 
+[![Build and Publish](https://github.com/emperor-jimmu/vid-themer/actions/workflows/main.yml/badge.svg)](https://github.com/emperor-jimmu/vid-themer/actions/workflows/main.yml)
+
 A command-line tool that recursively scans directories for video files and automatically extracts short thematic clips from each video. Perfect for creating preview thumbnails or theme videos for media libraries.
 
 ## Features
