@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: vid-themer
     volumes:
-      - ./movies:/videos:ro
+      - ./local-movies:/videos
     environment:
       - VID_THEMER_VIDEO_DIR=/videos
       - VID_THEMER_CRON_SCHEDULE=0 2 * * *
