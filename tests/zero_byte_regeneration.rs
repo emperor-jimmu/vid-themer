@@ -5,8 +5,16 @@ use std::fs;
 use std::io::Write;
 use std::process::Command;
 
+fn is_ffmpeg_available() -> bool {
+    Command::new("ffmpeg").arg("-version").output().is_ok()
+}
+
 #[test]
 fn test_zero_byte_backdrop_regeneration() {
+    if !is_ffmpeg_available() {
+        eprintln!("Skipping test: FFmpeg not available");
+        return;
+    }
     // Create a temporary test directory
     let temp_dir = std::env::temp_dir().join(format!("zero_byte_test_{}", std::process::id()));
     let _ = fs::remove_dir_all(&temp_dir);
@@ -60,6 +68,10 @@ fn test_zero_byte_backdrop_regeneration() {
 
 #[test]
 fn test_non_zero_byte_backdrop_skipped() {
+    if !is_ffmpeg_available() {
+        eprintln!("Skipping test: FFmpeg not available");
+        return;
+    }
     // Create a temporary test directory
     let temp_dir = std::env::temp_dir().join(format!("non_zero_byte_test_{}", std::process::id()));
     let _ = fs::remove_dir_all(&temp_dir);
