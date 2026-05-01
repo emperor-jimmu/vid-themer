@@ -1,8 +1,6 @@
 services:
   vid-themer:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: emperorjimmu/vid-themer:latest
     container_name: vid-themer
     volumes:
       - ./local-movies:/videos
