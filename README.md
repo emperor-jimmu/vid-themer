@@ -22,6 +22,12 @@ A command-line tool that recursively scans directories for video files and autom
 - **Progress Tracking** - Real-time feedback on processing status
 - **Hardware Acceleration** - Optional GPU encoding support (h264_videotoolbox on macOS, h264_nvenc elsewhere)
 
+## Supported Platforms
+
+- Windows 10/11
+- Linux
+- macOS (Apple Silicon)
+
 ## Requirements
 
 - **Rust** (Edition 2024 - requires nightly or recent stable)

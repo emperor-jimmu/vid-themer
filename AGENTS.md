@@ -19,6 +19,12 @@ cargo fmt                     # Format code
 cargo check                   # Type check without building
 ```
 
+## Supported Platforms
+
+- Windows 10/11
+- Linux
+- macOS (Apple Silicon)
+
 ## Requirements
 
 - **Rust** (Edition 2024 - requires nightly or recent stable)
@@ -60,4 +66,4 @@ Tests that require FFmpeg: run with `cargo test` (they skip gracefully if FFmpeg
 ## Binary Name
 
 - Windows: `video-clip-extractor.exe`
-- Unix: `video-clip-extractor`
+- Linux / macOS: `video-clip-extractor`
