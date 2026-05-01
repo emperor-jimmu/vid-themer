@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - master
+    paths:
+      - 'Dockerfile'
+      - 'entrypoint.sh'
+      - 'crontab'
+  release:
+    types: [published]
 
 permissions:
   contents: write
@@ -122,7 +128,6 @@ jobs:
 
   docker:
     needs: check-version
-    if: needs.check-version.outputs.exists == 'false'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -159,6 +164,7 @@ jobs:
             type=ref,event=branch
             type=sha
             type=semver,pattern={{version}}
+            latest
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6.13.0
