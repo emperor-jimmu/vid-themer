@@ -44,9 +44,4 @@ RUN chmod 0600 /etc/crontabs/root
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-RUN addgroup -g 1000 appgroup && adduser -u 1000 -G appgroup -s /bin/sh -D appuser && \
-    chown -R appuser:appgroup /app /var/log
-
-USER appuser
-
 CMD ["crond", "-f", "-l", "2"]
