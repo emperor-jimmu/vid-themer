@@ -12,7 +12,7 @@ pub struct FailureLogger {
 
 impl FailureLogger {
     /// Create a new failure logger with a timestamped log file in the current working directory
-    pub fn new(_root_dir: &Path) -> std::io::Result<Self> {
+    pub fn new() -> std::io::Result<Self> {
         // Get current working directory (where the executable is running from)
         let current_dir = std::env::current_dir()?;
 
@@ -88,7 +88,7 @@ mod tests {
         let _ = fs::remove_dir_all(&temp_dir);
         fs::create_dir_all(&temp_dir).unwrap();
 
-        let logger = FailureLogger::new(&temp_dir);
+        let logger = FailureLogger::new();
         assert!(logger.is_ok());
 
         let logger = logger.unwrap();
@@ -109,7 +109,7 @@ mod tests {
         // Sleep briefly to ensure unique timestamp
         std::thread::sleep(std::time::Duration::from_millis(10));
 
-        let logger = FailureLogger::new(&temp_dir).unwrap();
+        let logger = FailureLogger::new().unwrap();
 
         // Use a realistic path that will work on all platforms
         let video_path = temp_dir.join("test").join("video.mp4");
@@ -122,7 +122,6 @@ mod tests {
             error_message: Some("Test error".to_string()),
             ffmpeg_stderr: None,
             clips_generated: 0,
-            clip_filenames: Vec::new(),
         };
 
         logger.log_failure(&result, Some("FFmpeg stderr output"));
@@ -158,7 +157,7 @@ mod tests {
         // Sleep briefly to ensure unique timestamp
         std::thread::sleep(std::time::Duration::from_millis(20));
 
-        let logger = FailureLogger::new(&temp_dir).unwrap();
+        let logger = FailureLogger::new().unwrap();
 
         // Use realistic paths
         let video_path = temp_dir.join("test").join("video.mp4");
@@ -174,7 +173,6 @@ mod tests {
             error_message: Some("Failed to extract clip 2 of 3".to_string()),
             ffmpeg_stderr: None,
             clips_generated: 1,
-            clip_filenames: vec!["backdrop1.mp4".to_string()],
         };
 
         logger.log_failure(&result, None);

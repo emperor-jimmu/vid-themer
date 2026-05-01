@@ -1,5 +1,6 @@
 // FFmpeg command execution
 
+use std::ffi::OsString;
 use std::path::Path;
 use std::process::Command;
 
@@ -66,7 +67,18 @@ impl FFmpegExecutor {
         let source_resolution = (metadata.width, metadata.height);
         let codec = &metadata.codec;
 
-        let temp_path = output_path.with_extension("tmp.mp4");
+        let temp_filename = format!("tmp.{}.mp4", std::process::id());
+        let temp_path = output_path.with_file_name(
+            output_path
+                .file_stem()
+                .map(|s| {
+                    let mut name = s.to_os_string();
+                    name.push(format!(".{}.tmp", std::process::id()));
+                    name
+                })
+                .unwrap_or_else(|| OsString::from(&temp_filename)),
+        );
+        let temp_path = temp_path.with_extension("mp4");
 
         // First attempt: Standard extraction with hybrid seeking
         match self.extract_clip_internal(
@@ -162,32 +174,28 @@ impl FFmpegExecutor {
 
         let args = if use_conservative_seeking {
             // Conservative seeking: only accurate seek, no fast seek
-            let mut args = vec!["-err_detect".to_string(), "ignore_err".to_string()];
-
-            // Input file
-            args.extend(vec![
-                "-i".to_string(),
-                video_path.to_string_lossy().to_string(),
-            ]);
-
-            // Accurate seek only
-            args.extend(vec![
-                "-ss".to_string(),
-                time_range.start_seconds.to_string(),
-            ]);
-
-            // Build rest of command
-            args.extend(vec![
-                "-avoid_negative_ts".to_string(),
-                "make_zero".to_string(),
-                "-t".to_string(),
-                time_range.duration_seconds.to_string(),
+            let mut args: Vec<OsString> = vec![
+                "-err_detect".into(),
+                "ignore_err".into(),
+                "-i".into(),
+            ];
+            args.push(video_path.into());
+            args.extend([
+                "-ss".into(),
+                time_range.start_seconds.to_string().into(),
+                "-avoid_negative_ts".into(),
+                "make_zero".into(),
+                "-t".into(),
+                time_range.duration_seconds.to_string().into(),
             ]);
 
             // Add remaining standard args (mapping, codec, filters, etc.)
             let standard_args = command_builder::build_extract_command(&config);
-            // Skip the first parts we already added and add the rest
-            let skip_until = standard_args.iter().position(|s| s == "-map").unwrap_or(0);
+            // Skip to -map (standard args start with -err_detect, -i, seeking, -avoid_negative_ts, -t, then -map)
+            let skip_until = standard_args
+                .iter()
+                .position(|s| s == "-map")
+                .unwrap_or(0);
             args.extend(standard_args.into_iter().skip(skip_until));
 
             args
@@ -207,33 +215,17 @@ impl FFmpegExecutor {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
 
-            // Check for specific error types to provide better error handling
-            let stderr_lower = stderr.to_lowercase();
-            if stderr_lower.contains("unknown encoder")
-                || stderr_lower.contains("encoder not found")
-                || stderr_lower.contains("codec not found")
-                || stderr_lower.contains("invalid data found when processing input")
-            {
-                return Err(FFmpegError::CodecNotFound(stderr.trim().to_string()));
-            } else if stderr_lower.contains("invalid data found when processing input")
-                || stderr_lower.contains("unsupported codec")
-                || stderr_lower.contains("invalid argument")
-            {
-                return Err(FFmpegError::InvalidFormat(stderr.trim().to_string()));
-            } else if stderr_lower.contains("hardware acceleration")
-                || stderr_lower.contains("failed to load")
-                || stderr_lower.contains("not available for this device")
-            {
-                return Err(FFmpegError::HWAccelNotAvailable(stderr.trim().to_string()));
-            } else {
-                return Err(FFmpegError::ExecutionFailed(format!(
-                    "FFmpeg clip extraction failed for '{}' at {:.2}s-{:.2}s: {}",
-                    video_path.display(),
-                    time_range.start_seconds,
-                    time_range.start_seconds + time_range.duration_seconds,
-                    stderr
-                )));
+            if let Some(e) = classify_stderr_error(&stderr, video_path, time_range) {
+                return Err(e);
             }
+
+            return Err(FFmpegError::ExecutionFailed(format!(
+                "FFmpeg clip extraction failed for '{}' at {:.2}s-{:.2}s: {}",
+                video_path.display(),
+                time_range.start_seconds,
+                time_range.start_seconds + time_range.duration_seconds,
+                stderr
+            )));
         }
 
         validate_output(output_path)?;
@@ -252,16 +244,9 @@ impl FFmpegExecutor {
         // Get metadata for color information
         let metadata = self.get_video_metadata(video_path)?;
 
-        // First attempt: Try with audio but with error tolerance
-        let mut args = vec![
-            "-err_detect".to_string(),
-            "ignore_err".to_string(),
-            "-fflags".to_string(),
-            "+genpts+igndts".to_string(),
-            "-max_error_rate".to_string(),
-            "1.0".to_string(),
-        ];
-
+        // Build the standard extraction command, then prepend error-tolerance flags.
+        // The standard command already begins with "-err_detect ignore_err"; we replace
+        // just that prefix with our expanded error-tolerance flags.
         let config = command_builder::ExtractConfig {
             video_path,
             time_range,
@@ -276,8 +261,16 @@ impl FFmpegExecutor {
             audio_stream_index: metadata.audio_stream_index,
         };
 
+        // Prepend extra error-tolerance flags before the standard args.
+        // standard_args starts with ["-err_detect", "ignore_err", ...]; we keep that and add more.
         let standard_args = command_builder::build_extract_command(&config);
-        args.extend(standard_args.into_iter().skip(2));
+        let mut args: Vec<OsString> = vec![
+            "-fflags".into(),
+            "+genpts+igndts".into(),
+            "-max_error_rate".into(),
+            "1.0".into(),
+        ];
+        args.extend(standard_args);
 
         let output = Command::new("ffmpeg").args(&args).output().map_err(|e| {
             FFmpegError::ExecutionFailed(format!(
@@ -290,49 +283,33 @@ impl FFmpegExecutor {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
 
-            // Check for specific error types to provide better error handling
-            let stderr_lower = stderr.to_lowercase();
-            if stderr_lower.contains("unknown encoder")
-                || stderr_lower.contains("encoder not found")
-                || stderr_lower.contains("codec not found")
-                || stderr_lower.contains("invalid data found when processing input")
-            {
-                return Err(FFmpegError::CodecNotFound(stderr.trim().to_string()));
-            } else if stderr_lower.contains("invalid data found when processing input")
-                || stderr_lower.contains("unsupported codec")
-                || stderr_lower.contains("invalid argument")
-            {
-                return Err(FFmpegError::InvalidFormat(stderr.trim().to_string()));
-            } else if stderr_lower.contains("hardware acceleration")
-                || stderr_lower.contains("failed to load")
-                || stderr_lower.contains("not available for this device")
-            {
-                return Err(FFmpegError::HWAccelNotAvailable(stderr.trim().to_string()));
-            } else {
-                // If audio decoding failed, try without audio
-                if self.include_audio
-                    && (stderr.contains("Error submitting packet to decoder")
-                        || stderr.contains("aac")
-                        || stderr.contains("Could not open encoder before EOF"))
-                {
-                    return self.extract_clip_without_audio(
-                        video_path,
-                        time_range,
-                        output_path,
-                        source_resolution,
-                        codec,
-                        &metadata,
-                    );
-                }
-
-                return Err(FFmpegError::ExecutionFailed(format!(
-                    "FFmpeg clip extraction failed even with recovery for '{}' at {:.2}s-{:.2}s: {}",
-                    video_path.display(),
-                    time_range.start_seconds,
-                    time_range.start_seconds + time_range.duration_seconds,
-                    stderr
-                )));
+            if let Some(e) = classify_stderr_error(&stderr, video_path, time_range) {
+                return Err(e);
             }
+
+            // If audio decoding failed, try without audio
+            if self.include_audio
+                && (stderr.contains("Error submitting packet to decoder")
+                    || stderr.contains("aac")
+                    || stderr.contains("Could not open encoder before EOF"))
+            {
+                return self.extract_clip_without_audio(
+                    video_path,
+                    time_range,
+                    output_path,
+                    source_resolution,
+                    codec,
+                    &metadata,
+                );
+            }
+
+            return Err(FFmpegError::ExecutionFailed(format!(
+                "FFmpeg clip extraction failed even with recovery for '{}' at {:.2}s-{:.2}s: {}",
+                video_path.display(),
+                time_range.start_seconds,
+                time_range.start_seconds + time_range.duration_seconds,
+                stderr
+            )));
         }
 
         validate_output(output_path)?;
@@ -349,15 +326,6 @@ impl FFmpegExecutor {
         codec: &str,
         metadata: &VideoMetadata,
     ) -> Result<(), FFmpegError> {
-        let mut args = vec![
-            "-err_detect".to_string(),
-            "ignore_err".to_string(),
-            "-fflags".to_string(),
-            "+genpts+igndts".to_string(),
-            "-max_error_rate".to_string(),
-            "1.0".to_string(),
-        ];
-
         let config = command_builder::ExtractConfig {
             video_path,
             time_range,
@@ -373,7 +341,13 @@ impl FFmpegExecutor {
         };
 
         let standard_args = command_builder::build_extract_command(&config);
-        args.extend(standard_args.into_iter().skip(2));
+        let mut args: Vec<OsString> = vec![
+            "-fflags".into(),
+            "+genpts+igndts".into(),
+            "-max_error_rate".into(),
+            "1.0".into(),
+        ];
+        args.extend(standard_args);
 
         let output = Command::new("ffmpeg").args(&args).output().map_err(|e| {
             FFmpegError::ExecutionFailed(format!(
@@ -399,7 +373,40 @@ impl FFmpegExecutor {
     }
 }
 
-/// Apply fade effect to an extracted clip
+/// Classify an FFmpeg stderr string into a typed error.
+/// Returns None if none of the known patterns match (caller should use a generic error).
+fn classify_stderr_error(stderr: &str, video_path: &Path, time_range: &TimeRange) -> Option<FFmpegError> {
+    // Use contains() directly — FFmpeg messages have consistent casing, no need to lowercase the whole string.
+    if stderr.contains("Unknown encoder")
+        || stderr.contains("Encoder") && stderr.contains("not found")
+        || stderr.contains("Codec not found")
+        || stderr.contains("codec not found")
+        || stderr.contains("encoder not found")
+        || stderr.contains("unknown encoder")
+    {
+        return Some(FFmpegError::CodecNotFound(stderr.trim().to_string()));
+    }
+    if stderr.contains("Invalid data found when processing input")
+        || stderr.contains("Unsupported codec")
+        || stderr.contains("unsupported codec")
+        || stderr.contains("Invalid argument")
+        || stderr.contains("invalid argument")
+    {
+        return Some(FFmpegError::InvalidFormat(stderr.trim().to_string()));
+    }
+    if stderr.contains("Hardware acceleration")
+        || stderr.contains("hardware acceleration")
+        || stderr.contains("Failed to load")
+        || stderr.contains("failed to load")
+        || stderr.contains("not available for this device")
+    {
+        return Some(FFmpegError::HWAccelNotAvailable(stderr.trim().to_string()));
+    }
+    let _ = (video_path, time_range); // suppress unused warnings when caller uses generic fallback
+    None
+}
+
+
 fn apply_fade_effect(
     input_path: &Path,
     output_path: &Path,
@@ -484,8 +491,8 @@ fn validate_clip_duration(output_path: &Path, expected_duration: f64) -> Result<
             "format=duration",
             "-of",
             "default=noprint_wrappers=1:nokey=1",
-            output_path.to_string_lossy().as_ref(),
         ])
+        .arg(output_path)
         .output()
         .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to run ffprobe: {}", e)))?;
 

@@ -2,6 +2,7 @@
 
 use crate::cli::Resolution;
 use crate::selector::TimeRange;
+use std::ffi::OsString;
 use std::path::Path;
 
 use super::constants::{analysis, audio, color, encoding, fade, muxer, seeking};
@@ -243,27 +244,25 @@ pub fn build_seeking_args(time_range: &TimeRange, codec: &str) -> (Vec<String>, 
 }
 
 /// Build FFmpeg command for extracting a clip
-pub fn build_extract_command(config: &ExtractConfig) -> Vec<String> {
-    let mut args = vec!["-err_detect".to_string(), "ignore_err".to_string()];
+pub fn build_extract_command(config: &ExtractConfig) -> Vec<OsString> {
+    let mut args: Vec<OsString> = vec![
+        "-err_detect".into(),
+        "ignore_err".into(),
+    ];
 
     // Build seeking arguments
     let (before_input, after_input) = build_seeking_args(config.time_range, config.codec);
-    args.extend(before_input);
+    args.extend(before_input.into_iter().map(OsString::from));
 
-    // Input file
-    args.extend(vec![
-        "-i".to_string(),
-        config.video_path.to_string_lossy().to_string(),
-    ]);
+    // Input file (pass as OsStr to preserve non-UTF-8 path bytes)
+    args.push("-i".into());
+    args.push(config.video_path.into());
 
     // Accurate seek (after input)
-    args.extend(after_input);
+    args.extend(after_input.into_iter().map(OsString::from));
 
     // Timestamp handling - ensure proper timing for browser playback
-    args.extend(vec![
-        "-avoid_negative_ts".to_string(),
-        "make_zero".to_string(),
-    ]);
+    args.extend(["-avoid_negative_ts".into(), "make_zero".into()]);
 
     // Duration and stream mapping
     // Use absolute stream index for audio to prefer English track
@@ -271,25 +270,25 @@ pub fn build_extract_command(config: &ExtractConfig) -> Vec<String> {
         Some(idx) => format!("0:{}?", idx),
         None => "0:a:0?".to_string(),
     };
-    args.extend(vec![
-        "-t".to_string(),
-        config.time_range.duration_seconds.to_string(),
-        "-map".to_string(),
-        "0:v:0".to_string(),
-        "-map".to_string(),
-        audio_map,
-        "-map_metadata".to_string(),
-        "-1".to_string(),
+    args.extend([
+        "-t".into(),
+        config.time_range.duration_seconds.to_string().into(),
+        "-map".into(),
+        "0:v:0".into(),
+        "-map".into(),
+        audio_map.into(),
+        "-map_metadata".into(),
+        "-1".into(),
     ]);
 
     // Video codec
-    args.extend(build_video_codec_args(config.use_hw_accel));
+    args.extend(build_video_codec_args(config.use_hw_accel).into_iter().map(OsString::from));
 
     // Pixel format and GOP settings
-    args.extend(vec!["-pix_fmt".to_string(), encoding::PIX_FMT.to_string()]);
-    args.extend(build_gop_args());
+    args.extend(["-pix_fmt".into(), encoding::PIX_FMT.into()]);
+    args.extend(build_gop_args().into_iter().map(OsString::from));
 
-    args.extend(build_color_args());
+    args.extend(build_color_args().into_iter().map(OsString::from));
 
     // Video filters
     let filters = build_video_filters(
@@ -299,81 +298,65 @@ pub fn build_extract_command(config: &ExtractConfig) -> Vec<String> {
         config.color_transfer,
         config.pix_fmt,
     );
-    args.extend(vec!["-vf".to_string(), filters]);
+    args.extend(["-vf".into(), filters.into()]);
 
     // Audio
-    args.extend(build_audio_args(config.include_audio));
+    args.extend(build_audio_args(config.include_audio).into_iter().map(OsString::from));
 
     // Muxer options - faststart moves moov atom to beginning for browser streaming
-    args.extend(vec!["-movflags".to_string(), muxer::MOVFLAGS.to_string()]);
+    args.extend(["-movflags".into(), muxer::MOVFLAGS.into()]);
 
-    // Output
-    args.extend(vec![
-        "-y".to_string(),
-        config.output_path.to_string_lossy().to_string(),
-    ]);
+    // Output (pass as OsStr to preserve non-UTF-8 path bytes)
+    args.push("-y".into());
+    args.push(config.output_path.into());
 
     args
 }
 
 /// Build FFmpeg command for applying fade effects
-pub fn build_fade_command(input_path: &Path, output_path: &Path, duration: f64) -> Vec<String> {
+pub fn build_fade_command(input_path: &Path, output_path: &Path, duration: f64) -> Vec<OsString> {
     let fade_out_start = duration - fade::FADE_OUT_DURATION;
 
-    vec![
-        "-i".to_string(),
-        input_path.to_string_lossy().to_string(),
-        "-vf".to_string(),
+    let mut args: Vec<OsString> = vec!["-i".into()];
+    args.push(input_path.into());
+    args.extend([
+        "-vf".into(),
         format!(
             "fade=type=in:duration={}:start_time=0,fade=type=out:duration={}:start_time={}",
             fade::FADE_IN_DURATION,
             fade::FADE_OUT_DURATION,
             fade_out_start
-        ),
-        "-af".to_string(),
+        )
+        .into(),
+        "-af".into(),
         format!(
             "afade=type=in:duration={}:start_time=0,afade=type=out:duration={}:start_time={}",
             fade::FADE_IN_DURATION,
             fade::FADE_OUT_DURATION,
             fade_out_start
-        ),
-        "-c:v".to_string(),
-        "libx264".to_string(),
-        "-preset".to_string(),
-        encoding::PRESET.to_string(),
-        "-crf".to_string(),
-        encoding::CRF.to_string(),
-        "-profile:v".to_string(),
-        encoding::PROFILE.to_string(),
-        "-level:v".to_string(),
-        encoding::LEVEL.to_string(),
-        "-pix_fmt".to_string(),
-        encoding::PIX_FMT.to_string(),
-        "-g".to_string(),
-        encoding::GOP_SIZE.to_string(),
-        "-keyint_min".to_string(),
-        encoding::KEYINT_MIN.to_string(),
-        "-sc_threshold".to_string(),
-        encoding::SC_THRESHOLD.to_string(),
-        "-colorspace".to_string(),
-        color::COLORSPACE.to_string(),
-        "-color_primaries".to_string(),
-        color::COLOR_PRIMARIES.to_string(),
-        "-color_trc".to_string(),
-        color::COLOR_TRC.to_string(),
-        "-color_range".to_string(),
-        color::COLOR_RANGE.to_string(),
-        "-c:a".to_string(),
-        audio::CODEC.to_string(),
-        "-b:a".to_string(),
-        audio::BITRATE.to_string(),
-        "-ar".to_string(),
-        audio::SAMPLE_RATE.to_string(),
-        "-movflags".to_string(),
-        muxer::MOVFLAGS.to_string(),
-        "-y".to_string(),
-        output_path.to_string_lossy().to_string(),
-    ]
+        )
+        .into(),
+    ]);
+    args.extend(build_video_codec_args(false).into_iter().map(OsString::from));
+    args.extend([
+        "-pix_fmt".into(),
+        encoding::PIX_FMT.into(),
+    ]);
+    args.extend(build_gop_args().into_iter().map(OsString::from));
+    args.extend(build_color_args().into_iter().map(OsString::from));
+    args.extend([
+        "-c:a".into(),
+        audio::CODEC.into(),
+        "-b:a".into(),
+        audio::BITRATE.into(),
+        "-ar".into(),
+        audio::SAMPLE_RATE.into(),
+        "-movflags".into(),
+        muxer::MOVFLAGS.into(),
+        "-y".into(),
+    ]);
+    args.push(output_path.into());
+    args
 }
 
 #[cfg(test)]

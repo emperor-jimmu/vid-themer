@@ -84,20 +84,20 @@ pub fn analyze_audio_intensity(
 ) -> Result<Vec<AudioSegment>, FFmpegError> {
     let analysis_duration = duration.min(analysis::MAX_ANALYSIS_DURATION);
 
-    let args = vec![
-        "-i".to_string(),
-        video_path.to_string_lossy().to_string(),
-        "-t".to_string(),
-        analysis_duration.to_string(),
-        "-af".to_string(),
-        "astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level:file=-"
-            .to_string(),
-        "-f".to_string(),
-        "null".to_string(),
-        "-".to_string(),
-    ];
-
-    let output = Command::new("ffmpeg").args(&args).output().map_err(|e| {
+    let output = Command::new("ffmpeg")
+        .args(["-i"])
+        .arg(video_path)
+        .args([
+            "-t",
+            &analysis_duration.to_string(),
+            "-af",
+            "astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level:file=-",
+            "-f",
+            "null",
+            "-",
+        ])
+        .output()
+        .map_err(|e| {
         FFmpegError::ExecutionFailed(format!(
             "Failed to execute ffmpeg for audio analysis: {}",
             e
@@ -243,19 +243,20 @@ pub fn analyze_motion_intensity(
 
     // Sample at 0.2 fps (1 frame every 5 seconds) for faster processing
     // Use scdet with a low threshold to capture more motion data
-    let args = vec![
-        "-i".to_string(),
-        video_path.to_string_lossy().to_string(),
-        "-t".to_string(),
-        analysis_duration.to_string(),
-        "-vf".to_string(),
-        "fps=0.2,scdet=threshold=5.0:sc_pass=1".to_string(),
-        "-f".to_string(),
-        "null".to_string(),
-        "-".to_string(),
-    ];
-
-    let output = Command::new("ffmpeg").args(&args).output().map_err(|e| {
+    let output = Command::new("ffmpeg")
+        .args(["-i"])
+        .arg(video_path)
+        .args([
+            "-t",
+            &analysis_duration.to_string(),
+            "-vf",
+            "fps=0.2,scdet=threshold=5.0:sc_pass=1",
+            "-f",
+            "null",
+            "-",
+        ])
+        .output()
+        .map_err(|e| {
         FFmpegError::ExecutionFailed(format!(
             "Failed to execute ffmpeg for motion analysis: {}",
             e

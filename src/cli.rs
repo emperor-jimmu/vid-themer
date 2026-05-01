@@ -149,7 +149,7 @@ mod tests {
         assert_eq!(args.directory, PathBuf::from("/test/path"));
         assert!(matches!(args.strategy, SelectionStrategy::Random));
         assert!(matches!(args.resolution, Resolution::Hd1080));
-        assert_eq!(args.include_audio, true);
+        assert!(args.include_audio);
     }
 
     #[test]
@@ -266,7 +266,7 @@ mod tests {
         // Test explicit audio inclusion
         let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path", "--audio", "true"]);
 
-        assert_eq!(args.include_audio, true);
+        assert!(args.include_audio);
     }
 
     #[test]
@@ -274,7 +274,7 @@ mod tests {
         // Test audio exclusion
         let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path", "--audio", "false"]);
 
-        assert_eq!(args.include_audio, false);
+        assert!(!args.include_audio);
     }
 
     #[test]
@@ -282,7 +282,7 @@ mod tests {
         // Test short flag for audio
         let args = CliArgs::parse_from(&["video-clip-extractor", "/test/path", "-a", "false"]);
 
-        assert_eq!(args.include_audio, false);
+        assert!(!args.include_audio);
     }
 
     #[test]
@@ -302,7 +302,7 @@ mod tests {
         assert_eq!(args.directory, PathBuf::from("/my/videos"));
         assert!(matches!(args.strategy, SelectionStrategy::IntenseAudio));
         assert!(matches!(args.resolution, Resolution::Hd720));
-        assert_eq!(args.include_audio, false);
+        assert!(!args.include_audio);
     }
 
     #[test]
@@ -322,7 +322,7 @@ mod tests {
         assert_eq!(args.directory, PathBuf::from("/my/videos"));
         assert!(matches!(args.strategy, SelectionStrategy::Random));
         assert!(matches!(args.resolution, Resolution::Hd1080));
-        assert_eq!(args.include_audio, true);
+        assert!(args.include_audio);
     }
 
     #[test]
@@ -341,7 +341,7 @@ mod tests {
 
         assert!(matches!(args.strategy, SelectionStrategy::IntenseAudio));
         assert!(matches!(args.resolution, Resolution::Hd720));
-        assert_eq!(args.include_audio, false);
+        assert!(!args.include_audio);
     }
 
     #[test]

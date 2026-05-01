@@ -39,10 +39,6 @@ fn test_error_recovery_with_corrupted_video() {
         valid_videos_created += 1;
         println!("Created valid test video: {:?}", video3);
     }
-    if create_test_video(&video3, 35, 1280, 720) {
-        valid_videos_created += 1;
-        println!("Created valid test video: {:?}", video3);
-    }
 
     if valid_videos_created == 0 {
         eprintln!("Skipping error recovery test: FFmpeg not available");

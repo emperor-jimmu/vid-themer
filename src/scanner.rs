@@ -6,13 +6,10 @@ use walkdir::WalkDir;
 
 // Constants for output directory and file naming
 const BACKDROPS_DIR: &str = "backdrops";
-const BACKDROP_FILE: &str = "backdrop.mp4";
 const DONE_MARKER: &str = "done.ext";
 
 pub struct VideoScanner {
     pub root_path: PathBuf,
-    #[allow(dead_code)]
-    pub requested_clip_count: u8,
     pub force: bool,
 }
 
@@ -27,12 +24,8 @@ pub struct ScanResult {
 }
 
 impl VideoScanner {
-    pub fn new(root_path: PathBuf, requested_clip_count: u8, force: bool) -> Self {
-        Self {
-            root_path,
-            requested_clip_count,
-            force,
-        }
+    pub fn new(root_path: PathBuf, force: bool) -> Self {
+        Self { root_path, force }
     }
 
     /// Check if a directory should be skipped.
@@ -80,32 +73,6 @@ impl VideoScanner {
             }
         }
         false
-    }
-
-    /// Count the number of valid (non-zero size) backdrop files in sequential order
-    /// Returns the count of backdrop1.mp4, backdrop2.mp4, etc. that exist and are valid
-    #[allow(dead_code)]
-    fn count_valid_backdrop_files(&self, backdrops_dir: &Path) -> u8 {
-        let mut count = 0u8;
-
-        // Check for backdrop files in sequential order (backdrop1.mp4, backdrop2.mp4, etc.)
-        for i in 1..=4 {
-            let backdrop_path = backdrops_dir.join(format!("backdrop{}.mp4", i));
-
-            if let Ok(metadata) = std::fs::metadata(&backdrop_path) {
-                if metadata.is_file() && metadata.len() > 0 {
-                    count += 1;
-                } else {
-                    // Stop counting if we hit a zero-byte or invalid file
-                    break;
-                }
-            } else {
-                // Stop counting if the file doesn't exist
-                break;
-            }
-        }
-
-        count
     }
 
     /// Scan the root directory recursively for video files
@@ -160,7 +127,7 @@ impl VideoScanner {
                             // Skip files named "backdrop.mp4" or "backdrop.mkv" as they're likely output files
                             if let Some(filename) = path.file_name() {
                                 let filename_str = filename.to_string_lossy().to_lowercase();
-                                if filename_str == BACKDROP_FILE || filename_str == "backdrop.mkv" {
+                                if filename_str == "backdrop.mp4" || filename_str == "backdrop.mkv" {
                                     continue;
                                 }
                             }
@@ -291,7 +258,7 @@ mod tests {
             let expected_videos = create_video_files(&created_dirs, files_per_dir).unwrap();
 
             // Create the scanner (with default clip_count of 1 for testing)
-            let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
+            let scanner = VideoScanner::new(temp_dir.clone(), false);
 
             // Scan for videos
             let result = scanner.scan();
@@ -389,7 +356,7 @@ mod tests {
             }
 
             // Create the scanner (with default clip_count of 1 for testing)
-            let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
+            let scanner = VideoScanner::new(temp_dir.clone(), false);
 
             // Scan for videos
             let result = scanner.scan();
@@ -492,7 +459,7 @@ mod tests {
             }
 
             // Create the scanner (with default clip_count of 1 for testing)
-            let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
+            let scanner = VideoScanner::new(temp_dir.clone(), false);
 
             // Scan for videos - this should NOT produce errors despite non-video files
             let result = scanner.scan();
@@ -570,7 +537,7 @@ mod tests {
         let video_path = temp_dir.join("test.mp4");
         fs::File::create(&video_path).unwrap();
 
-        let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
+        let scanner = VideoScanner::new(temp_dir.clone(), false);
         let result = scanner.scan();
 
         assert!(result.is_ok());
@@ -600,7 +567,7 @@ mod tests {
         fs::File::create(&video_a).unwrap();
         fs::File::create(&video_b).unwrap();
 
-        let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
+        let scanner = VideoScanner::new(temp_dir.clone(), false);
         let result = scanner.scan();
 
         assert!(result.is_ok());
@@ -641,7 +608,7 @@ mod tests {
         fs::File::create(&video2).unwrap();
         fs::File::create(&video3).unwrap();
 
-        let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
+        let scanner = VideoScanner::new(temp_dir.clone(), false);
         let result = scanner.scan();
 
         assert!(result.is_ok());
@@ -719,7 +686,7 @@ mod tests {
                 }
             }
 
-            let scanner = VideoScanner::new(temp_dir.clone(), 3, false);
+            let scanner = VideoScanner::new(temp_dir.clone(), false);
 
             let result = scanner.scan();
             prop_assert!(
@@ -817,7 +784,7 @@ mod tests {
         let random_video = random_dir.join("random.mp4");
         fs::File::create(&random_video).unwrap();
 
-        let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
+        let scanner = VideoScanner::new(temp_dir.clone(), false);
         let result = scanner.scan().unwrap();
 
         // Should only find the movie video, not extras or random folder videos
@@ -857,7 +824,7 @@ mod tests {
         let video2 = movie_dir2.join("movie.mp4");
         fs::File::create(&video2).unwrap();
 
-        let scanner = VideoScanner::new(temp_dir.clone(), 1, false);
+        let scanner = VideoScanner::new(temp_dir.clone(), false);
         let result = scanner.scan().unwrap();
 
         // Should only find the video in the undone folder
@@ -914,7 +881,7 @@ mod tests {
         write_done_marker(&backdrops_dir).unwrap();
 
         // With force=true, should still find the video
-        let scanner = VideoScanner::new(temp_dir.clone(), 1, true);
+        let scanner = VideoScanner::new(temp_dir.clone(), true);
         let result = scanner.scan().unwrap();
 
         assert_eq!(result.videos.len(), 1);

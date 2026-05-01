@@ -7,15 +7,12 @@ use std::path::PathBuf;
 
 // Constants for output directory and file naming
 const BACKDROPS_DIR: &str = "backdrops";
-#[allow(dead_code)]
-const BACKDROP_FILE: &str = "backdrop.mp4";
 
 pub struct VideoProcessor {
     selector: Box<dyn ClipSelector>,
     ffmpeg: FFmpegExecutor,
     intro_exclusion_percent: f64,
     outro_exclusion_percent: f64,
-    #[allow(dead_code)]
     clip_count: u8,
     clip_config: crate::selector::ClipConfig,
     force: bool,
@@ -84,7 +81,6 @@ impl VideoProcessor {
                 error_message: None,
                 ffmpeg_stderr: None,
                 clips_generated: 0,
-                clip_filenames: Vec::new(),
             };
         }
 
@@ -108,7 +104,6 @@ impl VideoProcessor {
                     error_message: Some(error_message),
                     ffmpeg_stderr: stderr,
                     clips_generated: 0,
-                    clip_filenames: Vec::new(),
                 };
             }
         };
@@ -134,7 +129,6 @@ impl VideoProcessor {
                     )),
                     ffmpeg_stderr: None,
                     clips_generated: 0,
-                    clip_filenames: Vec::new(),
                 };
             }
             Err(e) => {
@@ -148,7 +142,6 @@ impl VideoProcessor {
                     )),
                     ffmpeg_stderr: None,
                     clips_generated: 0,
-                    clip_filenames: Vec::new(),
                 };
             }
         };
@@ -174,21 +167,18 @@ impl VideoProcessor {
                     error_message: Some(format!("Failed to create output directory: {}", e)),
                     ffmpeg_stderr: None,
                     clips_generated: 0,
-                    clip_filenames: Vec::new(),
                 };
             }
         };
 
         // Step 4: Extract each clip with sequential naming, starting after existing clips
         let mut last_output_path = PathBuf::new();
-        let mut clip_filenames = Vec::new();
         let total_clips = time_ranges.len();
 
         for (index, time_range) in time_ranges.iter().enumerate() {
             // Start numbering from existing_clip_count + 1
             let clip_num = existing_clip_count as usize + index + 1;
             let output_filename = format!("backdrop{}.mp4", clip_num);
-            clip_filenames.push(output_filename.clone());
 
             let output_path = backdrops_dir.join(&output_filename);
             last_output_path = output_path.clone();
@@ -211,7 +201,6 @@ impl VideoProcessor {
                     )),
                     ffmpeg_stderr: stderr,
                     clips_generated: index,
-                    clip_filenames: clip_filenames.clone(),
                 };
             }
 
@@ -235,7 +224,6 @@ impl VideoProcessor {
             error_message: None,
             ffmpeg_stderr: None,
             clips_generated: time_ranges.len(),
-            clip_filenames,
         }
     }
 
@@ -279,15 +267,6 @@ impl VideoProcessor {
         // Return the backdrops directory path
         Ok(backdrops_dir)
     }
-
-    /// Create the backdrops subdirectory and return the full output path
-    /// Returns the path to backdrops/backdrop.mp4 relative to the video's parent directory
-    /// This method is kept for backward compatibility with existing tests
-    #[allow(dead_code)]
-    fn create_output_directory(&self, video: &VideoFile) -> Result<PathBuf, ProcessError> {
-        let backdrops_dir = self.create_backdrops_directory(video)?;
-        Ok(backdrops_dir.join(BACKDROP_FILE))
-    }
 }
 
 pub struct ProcessResult {
@@ -297,35 +276,12 @@ pub struct ProcessResult {
     pub error_message: Option<String>,
     pub ffmpeg_stderr: Option<String>,
     pub clips_generated: usize,
-    #[allow(dead_code)]
-    pub clip_filenames: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
-#[allow(clippy::enum_variant_names)]
 pub enum ProcessError {
-    #[error("Failed to process video: {0}")]
-    #[allow(dead_code)]
-    ProcessingFailed(String),
-
-    #[error("Failed to get video duration: {0}")]
-    #[allow(dead_code)]
-    DurationDetectionFailed(String),
-
-    #[error("Failed to select clip segment: {0}")]
-    #[allow(dead_code)]
-    SegmentSelectionFailed(String),
-
     #[error("Failed to create output directory: {0}")]
     OutputDirectoryCreationFailed(String),
-
-    #[error("Failed to extract clip: {0}")]
-    #[allow(dead_code)]
-    ClipExtractionFailed(String),
-
-    #[error("No valid clips could be selected")]
-    #[allow(dead_code)]
-    NoValidClips,
 }
 
 #[cfg(test)]
@@ -421,13 +377,14 @@ mod tests {
             let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true, false);
             let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1, default_test_config(), false);
 
-            // Call create_output_directory to trigger directory creation
-            let output_path = processor.create_output_directory(&video_file);
+            // Call create_backdrops_directory to trigger directory creation
+            let output_path = processor.create_backdrops_directory(&video_file)
+                .map(|d| d.join("backdrop1.mp4"));
 
             // Property 1: The method should succeed
             prop_assert!(
                 output_path.is_ok(),
-                "create_output_directory should succeed for video {:?}",
+                "create_backdrops_directory should succeed for video {:?}",
                 video_file.path
             );
 
@@ -466,12 +423,12 @@ mod tests {
                 "Directory name should be 'backdrops' in lowercase"
             );
 
-            // Property 6: The output path should point to backdrop.mp4 inside the created directory
-            let expected_output = backdrops_dir.join("backdrop.mp4");
+            // Property 6: The output path should point to backdrop1.mp4 inside the created directory
+            let expected_output = backdrops_dir.join("backdrop1.mp4");
             prop_assert_eq!(
                 &output_path,
                 &expected_output,
-                "Output path should be backdrops/backdrop.mp4"
+                "Output path should be backdrops/backdrop1.mp4"
             );
 
             // Property 7: The parent of the output file should be the backdrops directory
@@ -482,12 +439,13 @@ mod tests {
                 "Output file's parent should be the backdrops directory"
             );
 
-            // Property 8: Calling create_output_directory again should succeed (idempotent)
+            // Property 8: Calling create_backdrops_directory again should succeed (idempotent)
             // The directory already exists now, but the method should still work
-            let output_path_2 = processor.create_output_directory(&video_file);
+            let output_path_2 = processor.create_backdrops_directory(&video_file)
+                .map(|d| d.join("backdrop1.mp4"));
             prop_assert!(
                 output_path_2.is_ok(),
-                "create_output_directory should succeed even when directory already exists (idempotent)"
+                "create_backdrops_directory should succeed even when directory already exists (idempotent)"
             );
 
             // Property 9: The backdrops directory should still exist after second call
@@ -541,27 +499,28 @@ mod tests {
             let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true, false);
             let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1, default_test_config(), false);
 
-            // Call create_output_directory to get the output path
-            let output_path = processor.create_output_directory(&video_file);
+            // Call create_backdrops_directory to get the output path
+            let output_path = processor.create_backdrops_directory(&video_file)
+                .map(|d| d.join("backdrop1.mp4"));
 
             // Property 1: The method should succeed
             prop_assert!(
                 output_path.is_ok(),
-                "create_output_directory should succeed for video {:?}",
+                "create_backdrops_directory should succeed for video {:?}",
                 video_file.path
             );
 
             let output_path = output_path.unwrap();
 
-            // Property 2: The output file name should always be "backdrop.mp4" (lowercase)
+            // Property 2: The output file name should always be "backdrop1.mp4" (lowercase)
             let output_filename = output_path.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
 
             prop_assert_eq!(
                 output_filename,
-                "backdrop.mp4",
-                "Output file name should always be 'backdrop.mp4' (lowercase), \
+                "backdrop1.mp4",
+                "Output file name should always be 'backdrop1.mp4' (lowercase), \
                  regardless of source video name '{}' or parent directory '{}'",
                 video_name,
                 parent_dir_name
@@ -587,8 +546,8 @@ mod tests {
                 "Backdrops directory should be in the video's parent directory"
             );
 
-            // Property 5: The full output path structure should be: parent_dir/backdrops/backdrop.mp4
-            let expected_path = video_file.parent_dir.join("backdrops").join("backdrop.mp4");
+            // Property 5: The full output path structure should be: parent_dir/backdrops/backdrop1.mp4
+            let expected_path = video_file.parent_dir.join("backdrops").join("backdrop1.mp4");
             prop_assert_eq!(
                 &output_path,
                 &expected_path,
@@ -629,16 +588,17 @@ mod tests {
             VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1, default_test_config(), false);
 
         // Get output path
-        let output_path = processor.create_output_directory(&video_file).unwrap();
+        let output_path = processor.create_backdrops_directory(&video_file)
+            .unwrap().join("backdrop1.mp4");
 
-        // Verify the output file name is "backdrop.mp4"
+        // Verify the output file name is "backdrop1.mp4"
         assert_eq!(
             output_path.file_name().unwrap().to_str().unwrap(),
-            "backdrop.mp4"
+            "backdrop1.mp4"
         );
 
         // Verify the structure
-        let expected = temp_dir.join("backdrops").join("backdrop.mp4");
+        let expected = temp_dir.join("backdrops").join("backdrop1.mp4");
         assert_eq!(output_path, expected);
 
         // Verify backdrops directory exists
@@ -671,13 +631,14 @@ mod tests {
 
         for video_name in test_video_names {
             let video_file = create_test_video_structure(&temp_dir, video_name);
-            let output_path = processor.create_output_directory(&video_file).unwrap();
+            let output_path = processor.create_backdrops_directory(&video_file)
+                .unwrap().join("backdrop1.mp4");
 
-            // Always should be "backdrop.mp4" in lowercase
+            // Always should be "backdrop1.mp4" in lowercase
             assert_eq!(
                 output_path.file_name().unwrap().to_str().unwrap(),
-                "backdrop.mp4",
-                "Output should always be 'backdrop.mp4' for source video '{}'",
+                "backdrop1.mp4",
+                "Output should always be 'backdrop1.mp4' for source video '{}'",
                 video_name
             );
         }
@@ -1054,13 +1015,14 @@ mod tests {
             let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true, false);
             let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1, default_test_config(), false);
 
-            // Call create_output_directory to get the output path
-            let output_path = processor.create_output_directory(&video_file);
+            // Call create_backdrops_directory to get the output path
+            let output_path = processor.create_backdrops_directory(&video_file)
+                .map(|d| d.join("backdrop1.mp4"));
 
             // Property 1: The method should succeed
             prop_assert!(
                 output_path.is_ok(),
-                "create_output_directory should succeed for video {:?}",
+                "create_backdrops_directory should succeed for video {:?}",
                 video_file.path
             );
 
@@ -1088,25 +1050,25 @@ mod tests {
                 "Subdirectory name should be 'backdrops' in lowercase (not 'Backdrops' or 'BACKDROPS')"
             );
 
-            // Property 4: The output filename should be "backdrop.mp4" in lowercase
+            // Property 4: The output filename should be "backdrop1.mp4" in lowercase
             let output_filename = output_path.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
 
             prop_assert_eq!(
                 output_filename,
-                "backdrop.mp4",
-                "Output filename should be 'backdrop.mp4' in lowercase (not 'Backdrop.mp4' or 'BACKDROP.MP4')"
+                "backdrop1.mp4",
+                "Output filename should be 'backdrop1.mp4' in lowercase (not 'Backdrop.mp4' or 'BACKDROP.MP4')"
             );
 
             // Property 5: The complete output path structure should be:
-            // <video_parent_dir>/backdrops/backdrop.mp4
-            let expected_output_path = video_file.parent_dir.join("backdrops").join("backdrop.mp4");
+            // <video_parent_dir>/backdrops/backdrop1.mp4
+            let expected_output_path = video_file.parent_dir.join("backdrops").join("backdrop1.mp4");
 
             prop_assert_eq!(
                 &output_path,
                 &expected_output_path,
-                "Complete output path should follow the structure: <video_parent_dir>/backdrops/backdrop.mp4"
+                "Complete output path should follow the structure: <video_parent_dir>/backdrops/backdrop1.mp4"
             );
 
             // Property 6: The backdrops directory should be a direct child of the video's parent directory
@@ -1220,11 +1182,11 @@ mod tests {
             let ffmpeg = FFmpegExecutor::new(Resolution::Hd1080, true, false);
             let processor = VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1, default_test_config(), false);
 
-            // Step 1: Create the backdrops directory and an existing backdrop.mp4 file
+            // Step 1: Create the backdrops directory and an existing backdrop1.mp4 file
             let backdrops_dir = parent_dir.join("backdrops");
             fs::create_dir_all(&backdrops_dir).unwrap();
 
-            let existing_backdrop_path = backdrops_dir.join("backdrop.mp4");
+            let existing_backdrop_path = backdrops_dir.join("backdrop1.mp4");
             let mut existing_file = fs::File::create(&existing_backdrop_path).unwrap();
             existing_file.write_all(existing_content.as_bytes()).unwrap();
             drop(existing_file); // Close the file
@@ -1232,7 +1194,7 @@ mod tests {
             // Verify the existing file was created
             prop_assert!(
                 existing_backdrop_path.exists(),
-                "Existing backdrop.mp4 should exist before processing"
+                "Existing backdrop1.mp4 should exist before processing"
             );
 
             // Read the existing file content to verify it later
@@ -1247,13 +1209,14 @@ mod tests {
             let existing_metadata = fs::metadata(&existing_backdrop_path).unwrap();
             let existing_size = existing_metadata.len();
 
-            // Step 2: Call create_output_directory which should return the path to backdrop.mp4
-            let output_path = processor.create_output_directory(&video_file);
+            // Step 2: Call create_backdrops_directory which should return the path to backdrop1.mp4
+            let output_path = processor.create_backdrops_directory(&video_file)
+                .map(|d| d.join("backdrop1.mp4"));
 
             // Property 1: The method should succeed even when the file already exists
             prop_assert!(
                 output_path.is_ok(),
-                "create_output_directory should succeed even when backdrop.mp4 already exists"
+                "create_backdrops_directory should succeed even when backdrop1.mp4 already exists"
             );
 
             let output_path = output_path.unwrap();
@@ -1262,7 +1225,7 @@ mod tests {
             prop_assert_eq!(
                 &output_path,
                 &existing_backdrop_path,
-                "Output path should be the same as the existing backdrop.mp4 path"
+                "Output path should be the same as the existing backdrop1.mp4 path"
             );
 
             // Step 3: Simulate writing new content to the output path (overwriting)
@@ -1273,7 +1236,7 @@ mod tests {
             // Property 3: The file should still exist after overwriting
             prop_assert!(
                 output_path.exists(),
-                "backdrop.mp4 should still exist after overwriting"
+                "backdrop1.mp4 should still exist after overwriting"
             );
 
             // Property 4: The file content should be the new content (overwritten)
@@ -1315,15 +1278,15 @@ mod tests {
                 "Output should still be in the 'backdrops' subdirectory after overwrite"
             );
 
-            // Property 8: Verify the filename is still "backdrop.mp4"
+            // Property 8: Verify the filename is still "backdrop1.mp4"
             let output_filename = output_path.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
 
             prop_assert_eq!(
                 output_filename,
-                "backdrop.mp4",
-                "Output filename should still be 'backdrop.mp4' after overwrite"
+                "backdrop1.mp4",
+                "Output filename should still be 'backdrop1.mp4' after overwrite"
             );
 
             // Clean up

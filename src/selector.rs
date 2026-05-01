@@ -26,13 +26,6 @@ impl Default for ClipConfig {
 }
 
 impl ClipConfig {
-    /// Get a random duration within the configured range
-    #[allow(dead_code)] // Public API method
-    pub fn random_duration(&self) -> f64 {
-        let mut rng = rand::rng();
-        rng.random_range(self.min_duration..=self.max_duration)
-    }
-
     /// Calculate middle segment as fallback when analysis fails
     pub fn middle_segment(&self, duration: f64) -> Result<TimeRange, SelectionError> {
         let clip_duration = self.max_duration.min(duration);
@@ -99,7 +92,6 @@ impl TimeRange {
     /// let range = TimeRange { start_seconds: 10.0, duration_seconds: 15.0 };
     /// assert_eq!(range.duration(), 15.0);
     /// ```
-    #[allow(dead_code)] // Public API method
     pub fn duration(&self) -> f64 {
         self.duration_seconds
     }
@@ -124,7 +116,7 @@ impl TimeRange {
     /// let too_long = TimeRange { start_seconds: 10.0, duration_seconds: 25.0 };
     /// assert!(!too_long.is_valid_duration());
     /// ```
-    #[allow(dead_code)] // Public API method
+    #[allow(dead_code)]
     pub fn is_valid_duration(&self) -> bool {
         let duration = self.duration();
         (MIN_CLIP_DURATION..=MAX_CLIP_DURATION).contains(&duration)
@@ -288,7 +280,7 @@ impl ClipSelector for RandomSelector {
         }
 
         // Sort clips by start time before returning
-        clips.sort_by(|a, b| a.start_seconds.partial_cmp(&b.start_seconds).unwrap());
+        clips.sort_by(|a, b| a.start_seconds.total_cmp(&b.start_seconds));
 
         Ok(clips)
     }
@@ -316,7 +308,7 @@ impl RandomSelector {
 
         // Sort clips by start time (should already be sorted, but ensure it)
         let mut sorted_clips = existing_clips.to_vec();
-        sorted_clips.sort_by(|a, b| a.start_seconds.partial_cmp(&b.start_seconds).unwrap());
+        sorted_clips.sort_by(|a, b| a.start_seconds.total_cmp(&b.start_seconds));
 
         // Check gap before first clip
         let first_clip_start = sorted_clips[0].start_seconds;
@@ -500,7 +492,7 @@ fn select_clips_from_peaks<T: IntensitySegment>(
     }
 
     // Sort selected clips by start time before returning
-    selected_clips.sort_by(|a, b| a.start_seconds.partial_cmp(&b.start_seconds).unwrap());
+    selected_clips.sort_by(|a, b| a.start_seconds.total_cmp(&b.start_seconds));
 
     Ok(selected_clips)
 }

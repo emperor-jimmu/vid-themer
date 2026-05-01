@@ -125,7 +125,7 @@ fn main() {
     }
 
     // Create VideoScanner and scan for videos
-    let scanner = VideoScanner::new(args.directory.clone(), args.clip_count, args.force);
+    let scanner = VideoScanner::new(args.directory.clone(), args.force);
     let scan_result = exit_on_error(scanner.scan(), "scanning directory");
 
     // Exit early if no videos found
@@ -183,7 +183,7 @@ fn main() {
     ));
 
     // Create ProgressReporter with logger
-    let logger = match FailureLogger::new(&args.directory) {
+    let logger = match FailureLogger::new() {
         Ok(logger) => Some(logger),
         Err(e) => {
             eprintln!("Warning: Failed to create failure log: {}", e);
@@ -252,12 +252,8 @@ mod tests {
         let err = result.unwrap_err();
 
         // Verify it's the correct error type
-        match err {
-            AppError::DirectoryNotFound(path) => {
-                assert_eq!(path, non_existent_path);
-            }
-            _ => panic!("Expected DirectoryNotFound error, got: {:?}", err),
-        }
+        let AppError::DirectoryNotFound(path) = err;
+        assert_eq!(path, non_existent_path);
     }
 
     #[test]
@@ -272,12 +268,8 @@ mod tests {
         let err = result.unwrap_err();
 
         // Verify it's the correct error type
-        match err {
-            AppError::DirectoryNotFound(path) => {
-                assert_eq!(path, file_path);
-            }
-            _ => panic!("Expected DirectoryNotFound error, got: {:?}", err),
-        }
+        let AppError::DirectoryNotFound(path) = err;
+        assert_eq!(path, file_path);
     }
 
     #[test]

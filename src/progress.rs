@@ -3,6 +3,7 @@
 use crate::logger::FailureLogger;
 use crate::processor::ProcessResult;
 use colored::Colorize;
+use std::io::Write;
 
 pub struct ProgressReporter {
     pub total: usize,
@@ -81,7 +82,6 @@ impl ProgressReporter {
         );
 
         // Flush to ensure immediate display
-        use std::io::Write;
         let _ = std::io::stdout().flush();
 
         // On last clip, print newline to move to next line
@@ -158,11 +158,6 @@ mod tests {
             error_message,
             ffmpeg_stderr: None,
             clips_generated: if success { 1 } else { 0 },
-            clip_filenames: if success {
-                vec!["backdrop1.mp4".to_string()]
-            } else {
-                Vec::new()
-            },
         }
     }
 

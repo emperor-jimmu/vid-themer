@@ -12,15 +12,19 @@ fn test_zero_byte_backdrop_regeneration() {
     let _ = fs::remove_dir_all(&temp_dir);
     fs::create_dir_all(&temp_dir).unwrap();
 
-    // Create a fake video file
-    let video_path = temp_dir.join("test_video.mp4");
+    // Create a movie folder (must match "Movie Name (Year)" pattern)
+    let movie_dir = temp_dir.join("Test Movie (2020)");
+    fs::create_dir_all(&movie_dir).unwrap();
+
+    // Create a fake video file inside the movie folder
+    let video_path = movie_dir.join("test_video.mp4");
     let mut video_file = fs::File::create(&video_path).unwrap();
     video_file.write_all(b"fake video content").unwrap();
 
-    // Create backdrops directory with a 0-byte backdrop.mp4
-    let backdrops_dir = temp_dir.join("backdrops");
+    // Create backdrops directory with a 0-byte backdrop1.mp4 (no done.ext marker)
+    let backdrops_dir = movie_dir.join("backdrops");
     fs::create_dir_all(&backdrops_dir).unwrap();
-    let backdrop_path = backdrops_dir.join("backdrop.mp4");
+    let backdrop_path = backdrops_dir.join("backdrop1.mp4");
 
     // Create a 0-byte file
     fs::File::create(&backdrop_path).unwrap();
@@ -30,7 +34,7 @@ fn test_zero_byte_backdrop_regeneration() {
     assert_eq!(metadata.len(), 0, "Backdrop should be 0 bytes initially");
 
     // Run the video-clip-extractor on this directory
-    // It should process the video because the backdrop is 0 bytes
+    // It should process the video because there is no done.ext marker
     let output = Command::new(env!("CARGO_BIN_EXE_video-clip-extractor"))
         .arg(&temp_dir)
         .output();
@@ -44,7 +48,7 @@ fn test_zero_byte_backdrop_regeneration() {
         // Should show "Found 1 videos to process" (not 0)
         assert!(
             stdout.contains("Found 1 videos") || stdout.contains("Found 1 video"),
-            "Should find 1 video to process (0-byte backdrop should not cause skip). stdout: {}, stderr: {}",
+            "Should find 1 video to process (no done.ext means no skip). stdout: {}, stderr: {}",
             stdout,
             stderr
         );
@@ -61,15 +65,19 @@ fn test_non_zero_byte_backdrop_skipped() {
     let _ = fs::remove_dir_all(&temp_dir);
     fs::create_dir_all(&temp_dir).unwrap();
 
-    // Create a fake video file
-    let video_path = temp_dir.join("test_video.mp4");
+    // Create a movie folder (must match "Movie Name (Year)" pattern)
+    let movie_dir = temp_dir.join("Test Movie (2021)");
+    fs::create_dir_all(&movie_dir).unwrap();
+
+    // Create a fake video file inside the movie folder
+    let video_path = movie_dir.join("test_video.mp4");
     let mut video_file = fs::File::create(&video_path).unwrap();
     video_file.write_all(b"fake video content").unwrap();
 
-    // Create backdrops directory with a non-zero backdrop.mp4
-    let backdrops_dir = temp_dir.join("backdrops");
+    // Create backdrops directory with a non-zero backdrop1.mp4 and done.ext marker
+    let backdrops_dir = movie_dir.join("backdrops");
     fs::create_dir_all(&backdrops_dir).unwrap();
-    let backdrop_path = backdrops_dir.join("backdrop.mp4");
+    let backdrop_path = backdrops_dir.join("backdrop1.mp4");
 
     // Create a file with content
     let mut backdrop_file = fs::File::create(&backdrop_path).unwrap();
