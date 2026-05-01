@@ -393,8 +393,8 @@ src/
 - `serde` (1.0) - Serialization for metadata and done markers
 - `serde_json` (1.0) - JSON parsing
 - `colored` (3.1) - Terminal colors for progress output
-- `rayon` (1.11) - Data-level parallelism
-- `tokio` (1.0) - Async runtime
+- `rayon` (1.12) - Data-level parallelism
+- `tokio` (1.52) - Async runtime
 - `async-trait` (0.1) - Async trait support
 - `chrono` (0.4) - Date/time handling for logging
 - `proptest` (1.11) - Property-based testing (dev dependency)

@@ -16,9 +16,9 @@ impl FailureLogger {
         // Get current working directory (where the executable is running from)
         let current_dir = std::env::current_dir()?;
 
-        // Generate timestamp for log filename using local time zone (format: YYYY-MM-DD-HH-MM-SS.log)
+        // Generate timestamp for log filename using local time zone (format: YYYY-MM-DD-HH-MM-SS-micros.log)
         let now = Local::now();
-        let timestamp = now.format("%Y-%m-%d-%H-%M-%S.log").to_string();
+        let timestamp = now.format("%Y-%m-%d-%H-%M-%S-%f.log").to_string();
 
         let log_path = current_dir.join(timestamp);
 
