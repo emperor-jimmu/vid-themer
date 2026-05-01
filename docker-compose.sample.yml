@@ -1,0 +1,16 @@
+services:
+  vid-themer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vid-themer
+    volumes:
+      - ./movies:/videos:ro
+    environment:
+      - VID_THEMER_VIDEO_DIR=/videos
+      - VID_THEMER_CRON_SCHEDULE=0 2 * * *
+      - VID_THEMER_STRATEGY=intense-audio
+      - VID_THEMER_RESOLUTION=1080p
+      - VID_THEMER_AUDIO=true
+      - VID_THEMER_CLIP_COUNT=1
+    restart: unless-stopped

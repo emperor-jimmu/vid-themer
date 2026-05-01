@@ -298,7 +298,6 @@ impl RandomSelector {
     ) -> Vec<(f64, f64)> {
         let mut gaps = Vec::new();
 
-        // If no existing clips, the entire valid zone is available
         if existing_clips.is_empty() {
             if outro_cutoff - intro_cutoff >= clip_duration {
                 gaps.push((intro_cutoff, outro_cutoff));
@@ -306,20 +305,14 @@ impl RandomSelector {
             return gaps;
         }
 
-        // Sort clips by start time (should already be sorted, but ensure it)
-        let mut sorted_clips = existing_clips.to_vec();
-        sorted_clips.sort_by(|a, b| a.start_seconds.total_cmp(&b.start_seconds));
-
-        // Check gap before first clip
-        let first_clip_start = sorted_clips[0].start_seconds;
+        let first_clip_start = existing_clips[0].start_seconds;
         if first_clip_start - intro_cutoff >= clip_duration {
             gaps.push((intro_cutoff, first_clip_start));
         }
 
-        // Check gaps between consecutive clips
-        for i in 0..sorted_clips.len() - 1 {
-            let current_end = sorted_clips[i].start_seconds + sorted_clips[i].duration_seconds;
-            let next_start = sorted_clips[i + 1].start_seconds;
+        for i in 0..existing_clips.len() - 1 {
+            let current_end = existing_clips[i].start_seconds + existing_clips[i].duration_seconds;
+            let next_start = existing_clips[i + 1].start_seconds;
             let gap_size = next_start - current_end;
 
             if gap_size >= clip_duration {
@@ -327,9 +320,8 @@ impl RandomSelector {
             }
         }
 
-        // Check gap after last clip
-        let last_clip_end = sorted_clips[sorted_clips.len() - 1].start_seconds
-            + sorted_clips[sorted_clips.len() - 1].duration_seconds;
+        let last_clip_end = existing_clips[existing_clips.len() - 1].start_seconds
+            + existing_clips[existing_clips.len() - 1].duration_seconds;
         if outro_cutoff - last_clip_end >= clip_duration {
             gaps.push((last_clip_end, outro_cutoff));
         }

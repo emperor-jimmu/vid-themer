@@ -6,11 +6,41 @@ use std::process::Command;
 
 use crate::cli::Resolution;
 use crate::selector::TimeRange;
+use std::path::PathBuf;
 
 use super::command_builder;
 use super::constants::fade;
 use super::error::FFmpegError;
 use super::metadata::{VideoMetadata, get_video_metadata};
+
+struct TempFileGuard {
+    path: Option<PathBuf>,
+    should_clean: bool,
+}
+
+impl TempFileGuard {
+    fn new(path: PathBuf) -> Self {
+        Self {
+            path: Some(path),
+            should_clean: true,
+        }
+    }
+
+    fn take(&mut self) -> Option<PathBuf> {
+        self.should_clean = false;
+        self.path.take()
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if self.should_clean {
+            if let Some(path) = &self.path {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+}
 
 /// FFmpeg executor with configuration
 #[derive(Clone)]
@@ -80,7 +110,8 @@ impl FFmpegExecutor {
         );
         let temp_path = temp_path.with_extension("mp4");
 
-        // First attempt: Standard extraction with hybrid seeking
+        let mut _guard = TempFileGuard::new(temp_path.clone());
+
         match self.extract_clip_internal(
             video_path,
             time_range,
@@ -88,19 +119,16 @@ impl FFmpegExecutor {
             source_resolution,
             codec,
             &metadata,
-            false, // use_conservative_seeking
+            false,
         ) {
             Ok(_) => {
-                // Validate duration
                 if let Err(e) = validate_clip_duration(&temp_path, time_range.duration_seconds) {
                     eprintln!(
                         "Warning: Initial extraction produced incorrect duration for '{}': {}. Retrying with conservative seeking...",
                         video_path.display(),
                         e
                     );
-                    let _ = std::fs::remove_file(&temp_path);
 
-                    // Retry with conservative seeking (no fast seek)
                     self.extract_clip_internal(
                         video_path,
                         time_range,
@@ -108,7 +136,7 @@ impl FFmpegExecutor {
                         source_resolution,
                         codec,
                         &metadata,
-                        true, // use_conservative_seeking
+                        true,
                     )?;
 
                     validate_clip_duration(&temp_path, time_range.duration_seconds)?;
@@ -116,11 +144,11 @@ impl FFmpegExecutor {
 
                 apply_fade_effect(&temp_path, output_path, time_range.duration_seconds)?;
                 validate_output(output_path)?;
+                _guard.take();
                 Ok(())
             }
             Err(e) => {
                 let stderr = e.stderr().map(|s| s.to_string());
-                let _ = std::fs::remove_file(&temp_path);
 
                 if stderr.as_ref().is_some_and(|s| {
                     s.contains("corrupt")

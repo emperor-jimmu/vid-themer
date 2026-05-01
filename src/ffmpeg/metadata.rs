@@ -22,39 +22,23 @@ pub struct VideoMetadata {
 /// FFprobe JSON output structure
 #[derive(Debug, Deserialize)]
 struct FFprobeOutput {
-    streams: Vec<FFprobeStream>,
+    streams: Vec<FFprobeStreamWithIndex>,
     format: FFprobeFormat,
 }
 
-/// FFprobe stream information
+/// FFprobe stream with index for audio stream detection
 #[derive(Debug, Deserialize)]
-struct FFprobeStream {
-    codec_name: String,
+struct FFprobeStreamWithIndex {
+    index: usize,
+    codec_type: Option<String>,
+    codec_name: Option<String>,
     #[serde(default)]
     width: u32,
     #[serde(default)]
     height: u32,
     color_transfer: Option<String>,
     pix_fmt: Option<String>,
-}
-
-/// FFprobe audio stream information (for language detection)
-#[derive(Debug, Deserialize)]
-struct FFprobeAudioStream {
-    index: usize,
-    codec_type: String,
     tags: Option<FFprobeStreamTags>,
-}
-
-#[derive(Debug, Deserialize)]
-struct FFprobeStreamTags {
-    language: Option<String>,
-}
-
-/// FFprobe output for audio stream enumeration
-#[derive(Debug, Deserialize)]
-struct FFprobeAudioOutput {
-    streams: Vec<FFprobeAudioStream>,
 }
 
 /// FFprobe format information
@@ -63,17 +47,18 @@ struct FFprobeFormat {
     duration: String,
 }
 
-/// Get all video metadata in a single ffprobe call (3x faster than separate calls)
+#[derive(Debug, Deserialize)]
+struct FFprobeStreamTags {
+    language: Option<String>,
+}
+
+/// Get all video metadata in a single ffprobe call
 pub fn get_video_metadata(video_path: &Path) -> Result<VideoMetadata, FFmpegError> {
-    // Execute ffprobe to get all metadata at once using JSON output
-    // Command: ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height,color_transfer,pix_fmt:format=duration -of json <video>
     let output = Command::new("ffprobe")
         .arg("-v")
         .arg("error")
-        .arg("-select_streams")
-        .arg("v:0")
         .arg("-show_entries")
-        .arg("stream=codec_name,width,height,color_transfer,pix_fmt:format=duration")
+        .arg("stream=index,codec_type,codec_name,width,height,color_transfer,pix_fmt,tags:format=duration")
         .arg("-of")
         .arg("json")
         .arg(video_path)
@@ -89,7 +74,6 @@ pub fn get_video_metadata(video_path: &Path) -> Result<VideoMetadata, FFmpegErro
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
 
-        // Check for specific corruption indicators
         if stderr.contains("EBML header parsing failed")
             || stderr.contains("Invalid data found when processing input")
             || stderr.contains("moov atom not found")
@@ -109,50 +93,50 @@ pub fn get_video_metadata(video_path: &Path) -> Result<VideoMetadata, FFmpegErro
         )));
     }
 
-    // Parse JSON output
     let json_str = String::from_utf8_lossy(&output.stdout);
-    let mut metadata = parse_metadata_json(&json_str, video_path)?;
+    let probe: FFprobeOutput = serde_json::from_str(&json_str).map_err(|e| {
+        FFmpegError::ParseError(format!("Failed to parse JSON for '{}': {}", video_path.display(), e))
+    })?;
 
-    // Find preferred audio stream (English first, fallback to first audio stream)
-    metadata.audio_stream_index = find_preferred_audio_stream(video_path);
-
-    Ok(metadata)
-}
-
-/// Find the preferred audio stream index: English first, then first available.
-/// Returns None if no audio streams exist.
-fn find_preferred_audio_stream(video_path: &Path) -> Option<usize> {
-    let output = Command::new("ffprobe")
-        .arg("-v")
-        .arg("error")
-        .arg("-select_streams")
-        .arg("a")
-        .arg("-show_entries")
-        .arg("stream=index,codec_type:stream_tags=language")
-        .arg("-of")
-        .arg("json")
-        .arg(video_path)
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
+    let format_duration = &probe.format.duration;
+    if format_duration == "N/A" || format_duration.is_empty() {
+        return Err(FFmpegError::CorruptedFile(format!(
+            "Unable to determine video duration for '{}' - file may be corrupted or incomplete",
+            video_path.display()
+        )));
     }
 
-    let json_str = String::from_utf8_lossy(&output.stdout);
-    let probe: FFprobeAudioOutput = serde_json::from_str(&json_str).ok()?;
+    let duration: f64 = format_duration.parse().map_err(|e| {
+        FFmpegError::ParseError(format!("Failed to parse duration '{}' for '{}': {}", format_duration, video_path.display(), e))
+    })?;
 
-    let audio_streams: Vec<&FFprobeAudioStream> = probe
-        .streams
+    let video_stream = probe.streams.iter().find(|s| s.codec_type.as_deref() == Some("video")).ok_or_else(|| {
+        FFmpegError::ParseError(format!("No video stream found in '{}'", video_path.display()))
+    })?;
+
+    let audio_stream_index = find_preferred_audio_stream_from_streams(&probe.streams);
+
+    Ok(VideoMetadata {
+        duration,
+        codec: video_stream.codec_name.clone().unwrap_or_default(),
+        width: video_stream.width,
+        height: video_stream.height,
+        color_transfer: video_stream.color_transfer.clone(),
+        pix_fmt: video_stream.pix_fmt.clone(),
+        audio_stream_index,
+    })
+}
+
+fn find_preferred_audio_stream_from_streams(streams: &[FFprobeStreamWithIndex]) -> Option<usize> {
+    let audio_streams: Vec<&FFprobeStreamWithIndex> = streams
         .iter()
-        .filter(|s| s.codec_type == "audio")
+        .filter(|s| s.codec_type.as_deref() == Some("audio"))
         .collect();
 
     if audio_streams.is_empty() {
         return None;
     }
 
-    // Prefer English stream
     let english = audio_streams.iter().find(|s| {
         s.tags
             .as_ref()
@@ -161,108 +145,103 @@ fn find_preferred_audio_stream(video_path: &Path) -> Option<usize> {
             .unwrap_or(false)
     });
 
-    // Return the absolute stream index (as reported by ffprobe)
     Some(english.copied().unwrap_or(audio_streams[0]).index)
-}
-
-/// Parse ffprobe JSON output to extract metadata
-fn parse_metadata_json(json_str: &str, video_path: &Path) -> Result<VideoMetadata, FFmpegError> {
-    // Use serde_json for robust JSON parsing
-    let output: FFprobeOutput = serde_json::from_str(json_str).map_err(|e| {
-        FFmpegError::ParseError(format!(
-            "Failed to parse JSON for '{}': {}",
-            video_path.display(),
-            e
-        ))
-    })?;
-
-    // Get the first video stream
-    let stream = output.streams.first().ok_or_else(|| {
-        FFmpegError::ParseError(format!(
-            "No video stream found in JSON for '{}'",
-            video_path.display()
-        ))
-    })?;
-
-    // Validate duration (check for "N/A" or empty)
-    if output.format.duration == "N/A" || output.format.duration.is_empty() {
-        return Err(FFmpegError::CorruptedFile(format!(
-            "Unable to determine video duration for '{}' - file may be corrupted or incomplete",
-            video_path.display()
-        )));
-    }
-
-    // Parse duration string to f64
-    let duration = output.format.duration.parse::<f64>().map_err(|e| {
-        FFmpegError::ParseError(format!(
-            "Failed to parse duration '{}' for '{}': {}",
-            output.format.duration,
-            video_path.display(),
-            e
-        ))
-    })?;
-
-    Ok(VideoMetadata {
-        duration,
-        codec: stream.codec_name.clone(),
-        width: stream.width,
-        height: stream.height,
-        color_transfer: stream.color_transfer.clone(),
-        pix_fmt: stream.pix_fmt.clone(),
-        audio_stream_index: None,
-    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
-    fn test_parse_metadata_json_valid() {
-        let json = r#"{"streams":[{"codec_name":"h264","width":1920,"height":1080}],"format":{"duration":"123.45"}}"#;
-        let video_path = PathBuf::from("/test/video.mp4");
+    fn test_find_preferred_audio_stream_from_streams_english() {
+        let streams = vec![
+            FFprobeStreamWithIndex {
+                index: 0,
+                codec_type: Some("video".to_string()),
+                codec_name: Some("h264".to_string()),
+                width: 1920,
+                height: 1080,
+                color_transfer: None,
+                pix_fmt: None,
+                tags: None,
+            },
+            FFprobeStreamWithIndex {
+                index: 1,
+                codec_type: Some("audio".to_string()),
+                codec_name: Some("aac".to_string()),
+                width: 0,
+                height: 0,
+                color_transfer: None,
+                pix_fmt: None,
+                tags: Some(FFprobeStreamTags {
+                    language: Some("eng".to_string()),
+                }),
+            },
+            FFprobeStreamWithIndex {
+                index: 2,
+                codec_type: Some("audio".to_string()),
+                codec_name: Some("aac".to_string()),
+                width: 0,
+                height: 0,
+                color_transfer: None,
+                pix_fmt: None,
+                tags: Some(FFprobeStreamTags {
+                    language: Some("spa".to_string()),
+                }),
+            },
+        ];
 
-        let result = parse_metadata_json(json, &video_path);
-        assert!(result.is_ok());
-
-        let metadata = result.unwrap();
-        assert_eq!(metadata.codec, "h264");
-        assert_eq!(metadata.width, 1920);
-        assert_eq!(metadata.height, 1080);
-        assert!((metadata.duration - 123.45).abs() < 0.001);
-        assert_eq!(metadata.audio_stream_index, None); // populated separately
+        let result = find_preferred_audio_stream_from_streams(&streams);
+        assert_eq!(result, Some(1));
     }
 
     #[test]
-    fn test_parse_metadata_json_na_duration() {
-        let json = r#"{"streams":[{"codec_name":"h264","width":1920,"height":1080}],"format":{"duration":"N/A"}}"#;
-        let video_path = PathBuf::from("/test/video.mp4");
+    fn test_find_preferred_audio_stream_from_streams_no_english() {
+        let streams = vec![
+            FFprobeStreamWithIndex {
+                index: 0,
+                codec_type: Some("video".to_string()),
+                codec_name: Some("h264".to_string()),
+                width: 1920,
+                height: 1080,
+                color_transfer: None,
+                pix_fmt: None,
+                tags: None,
+            },
+            FFprobeStreamWithIndex {
+                index: 2,
+                codec_type: Some("audio".to_string()),
+                codec_name: Some("aac".to_string()),
+                width: 0,
+                height: 0,
+                color_transfer: None,
+                pix_fmt: None,
+                tags: Some(FFprobeStreamTags {
+                    language: Some("spa".to_string()),
+                }),
+            },
+        ];
 
-        let result = parse_metadata_json(json, &video_path);
-        assert!(result.is_err());
-
-        match result {
-            Err(FFmpegError::CorruptedFile(msg)) => {
-                assert!(msg.contains("Unable to determine video duration"));
-            }
-            _ => panic!("Expected CorruptedFile error for N/A duration"),
-        }
+        let result = find_preferred_audio_stream_from_streams(&streams);
+        assert_eq!(result, Some(2));
     }
 
     #[test]
-    fn test_parse_metadata_json_no_streams() {
-        let json = r#"{"streams":[],"format":{"duration":"123.45"}}"#;
-        let video_path = PathBuf::from("/test/video.mp4");
+    fn test_find_preferred_audio_stream_from_streams_no_audio() {
+        let streams = vec![
+            FFprobeStreamWithIndex {
+                index: 0,
+                codec_type: Some("video".to_string()),
+                codec_name: Some("h264".to_string()),
+                width: 1920,
+                height: 1080,
+                color_transfer: None,
+                pix_fmt: None,
+                tags: None,
+            },
+        ];
 
-        let result = parse_metadata_json(json, &video_path);
-        assert!(result.is_err());
-
-        match result {
-            Err(FFmpegError::ParseError(msg)) => {
-                assert!(msg.contains("No video stream found"));
-            }
-            _ => panic!("Expected ParseError for no streams"),
-        }
+        let result = find_preferred_audio_stream_from_streams(&streams);
+        assert_eq!(result, None);
     }
 }

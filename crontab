@@ -1,0 +1,5 @@
+SHELL=/bin/sh
+PATH=/usr/local/bin:/usr/bin:/bin
+PWD=/app
+
+${CRON_SCHEDULE} /entrypoint.sh >> /var/log/video-clip-extractor.log 2>&1

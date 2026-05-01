@@ -67,3 +67,42 @@ Tests that require FFmpeg: run with `cargo test` (they skip gracefully if FFmpeg
 
 - Windows: `video-clip-extractor.exe`
 - Linux / macOS: `video-clip-extractor`
+
+## Docker
+
+```bash
+docker build -t vid-themer .
+docker run -d \
+  -e VID_THEMER_VIDEO_DIR=/videos \
+  -e VID_THEMER_STRATEGY=intense-audio \
+  -e VID_THEMER_CLIP_COUNT=2 \
+  -v /path/to/movies:/videos:ro \
+  vid-themer
+```
+
+Or use docker-compose:
+```bash
+cp docker-compose.sample.yml docker-compose.yml
+# Edit volume path, then:
+docker compose up -d
+```
+
+### Environment Variables (all prefixed with `VID_THEMER_`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VIDEO_DIR` | *(required)* | Directory to scan |
+| `CRON_SCHEDULE` | `0 2 * * *` | Cron schedule |
+| `STRATEGY` | `random` | `random`, `intense-audio`, `action` |
+| `RESOLUTION` | `1080p` | `720p`, `1080p` |
+| `CLIP_COUNT` | `1` | Number of clips (1-4) |
+| `AUDIO` | `true` | Include audio |
+| `FORCE` | `false` | Force regeneration |
+| `HW_ACCEL` | `false` | Hardware acceleration |
+
+### Docker Files
+
+- `Dockerfile` - Multi-stage build (Rust builder + Alpine runtime with FFmpeg + cron)
+- `docker-compose.sample.yml` - Sample compose configuration
+- `entrypoint.sh` - Entry point script that builds CLI from env vars
+- `crontab` - Cron configuration template

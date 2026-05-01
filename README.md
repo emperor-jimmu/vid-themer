@@ -174,12 +174,13 @@ For each video file in a movie folder, the tool creates a subdirectory with the 
 │       ├── backdrop1.mp4         # First clip from movie1.mp4
 │       ├── backdrop2.mp4         # Second clip (if -c 2 or higher)
 │       ├── backdrop3.mp4         # Third clip (if -c 3 or higher)
-│       └── done.ext              # Marker file (added after successful processing)
+│       └── done.ext              # Marker file - directory is complete
 ├── Movie2 (2021)/
 │   ├── movie2.mkv
 │   └── backdrops/
 │       └── backdrop1.mp4         # First clip from movie2.mkv
-└── 2026-04-17-12-30-00.log      # Timestamped failure log (created only if failures occur)
+│       └── done.ext              # Processed and marked as complete
+└── 2026-04-17-12-30-00.log      # Timestamped failure log (only if failures occur)
 ```
 
 ### Movie Folder Format
@@ -188,7 +189,36 @@ The tool expects directories in the format `"Movie Name (Year)"` (e.g., "The Mat
 
 ### Skip Mechanism
 
-Directories are skipped if they contain `backdrops/done.ext`. Use `--force` to override this and reprocess.
+Directories are automatically skipped when they contain a `backdrops/done.ext` marker file. This allows the tool to resume processing from where it left off without re-processing already-completed videos.
+
+**How it works:**
+
+1. After all requested clips are successfully generated, the tool creates `backdrops/done.ext`
+2. The `done.ext` file contains a JSON timestamp indicating when processing completed:
+   ```json
+   {
+     "completed_at": "2026-04-17T14:30:00+02:00"
+   }
+   ```
+3. On subsequent runs, the scanner checks for this marker and skips the directory entirely
+4. Use `--force` to override this behavior and re-process all videos
+
+**Why use done.ext:**
+
+- **Incremental runs**: Re-running the tool won't re-process already-completed videos
+- **Interruption recovery**: If the tool is interrupted, it can resume cleanly
+- **Manual control**: You can delete `done.ext` to force re-processing of a specific movie
+- **Docker/cron**: Scheduled runs skip completed directories automatically
+
+**To re-process a directory:**
+```bash
+# Option 1: Use --force flag to reprocess all videos
+video-clip-extractor ~/Videos --force
+
+# Option 2: Delete just the done.ext marker for specific movie
+rm "~/Videos/Movie Name (2020)/backdrops/done.ext"
+video-clip-extractor ~/Videos
+```
 
 ### Incremental Clip Generation
 
@@ -241,6 +271,59 @@ Extracted clips are re-encoded with the following settings:
 - **Keyframe Interval**: 30 frames (~1 second for better seeking)
 
 The CRF 26 setting provides a good balance between file size and quality for backdrop/preview clips. Lower values (e.g., 18) produce higher quality but larger files, while higher values (e.g., 28) produce smaller files with reduced quality.
+
+## Docker
+
+You can run the tool as a Docker container with scheduled execution via cron.
+
+### Quick Start
+
+1. Copy the sample compose file:
+   ```bash
+   cp docker-compose.sample.yml docker-compose.yml
+   ```
+
+2. Edit `docker-compose.yml` and update the volume path to point to your movies directory:
+   ```yaml
+   volumes:
+     - /path/to/your/movies:/videos:ro
+   ```
+
+3. Build and start the container:
+   ```bash
+   docker compose up -d
+   ```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VID_THEMER_VIDEO_DIR` | *(required)* | Directory to scan for videos |
+| `VID_THEMER_CRON_SCHEDULE` | `0 2 * * *` | Cron schedule (daily at 2am) |
+| `VID_THEMER_STRATEGY` | `random` | Clip selection: `random`, `intense-audio`, `action` |
+| `VID_THEMER_RESOLUTION` | `1080p` | Output resolution: `720p`, `1080p` |
+| `VID_THEMER_AUDIO` | `true` | Include audio in clips |
+| `VID_THEMER_CLIP_COUNT` | `1` | Number of clips per video (1-4) |
+| `VID_THEMER_INTRO_EXCLUSION` | `2.0` | Intro exclusion percentage |
+| `VID_THEMER_OUTRO_EXCLUSION` | `40.0` | Outro exclusion percentage |
+| `VID_THEMER_MIN_DURATION` | `20.0` | Minimum clip duration (seconds) |
+| `VID_THEMER_MAX_DURATION` | `30.0` | Maximum clip duration (seconds) |
+| `VID_THEMER_FORCE` | `false` | Force regeneration |
+| `VID_THEMER_HW_ACCEL` | `false` | Hardware acceleration |
+
+### Example docker-compose.yml
+
+See [`docker-compose.sample.yml`](docker-compose.sample.yml) for a complete example.
+
+### Viewing Logs
+
+```bash
+# View container logs
+docker compose logs -f
+
+# View application logs inside container
+docker compose exec vid-themer cat /var/log/video-clip-extractor.log
+```
 
 ## Development
 
