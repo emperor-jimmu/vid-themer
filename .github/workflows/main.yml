@@ -108,6 +108,7 @@ jobs:
         uses: actions/download-artifact@v8.0.1
         with:
           path: artifacts
+          pattern: video-clip-extractor*
           merge-multiple: true
 
       - name: Publish Release and Upload Binaries
