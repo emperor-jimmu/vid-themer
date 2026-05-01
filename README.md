@@ -299,14 +299,14 @@ You can run the tool as a Docker container with scheduled execution via cron.
 Pull and run directly from Docker Hub:
 
 ```bash
-docker pull emperorjimmu/vid-themer:latest
+docker pull emperorjimmu/vid-themer:master
 docker run -d \
   --name vid-themer \
   -v /path/to/movies:/videos:ro \
   -e VID_THEMER_VIDEO_DIR=/videos \
   -e VID_THEMER_STRATEGY=intense-audio \
   -e VID_THEMER_CLIP_COUNT=2 \
-  emperorjimmu/vid-themer:latest
+  emperorjimmu/vid-themer:master
 ```
 
 ### Environment Variables

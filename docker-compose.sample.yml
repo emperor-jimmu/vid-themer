@@ -1,6 +1,6 @@
 services:
   vid-themer:
-    image: emperorjimmu/vid-themer:latest
+    image: emperorjimmu/vid-themer:master
     container_name: vid-themer
     volumes:
       - ./local-movies:/videos
