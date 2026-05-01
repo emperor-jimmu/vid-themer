@@ -2,7 +2,7 @@ FROM rust:1-alpine AS builder
 
 WORKDIR /build
 
-RUN apk add --no-cache musl-dev
+RUN apk add --no-cache musl-dev gcc
 
 COPY Cargo.toml Cargo.lock ./
 COPY src/ ./src/
