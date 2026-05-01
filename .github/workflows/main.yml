@@ -161,8 +161,7 @@ jobs:
             ghcr.io/${{ github.repository }}
             ${{ vars.DOCKERHUB_USERNAME }}/vid-themer
           tags: |
-            type=ref,event=branch,enable=false
-            type=sha
+            type=sha,prefix=true
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}},prefix=true
             latest
