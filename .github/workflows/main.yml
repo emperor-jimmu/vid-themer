@@ -161,9 +161,10 @@ jobs:
             ghcr.io/${{ github.repository }}
             ${{ vars.DOCKERHUB_USERNAME }}/vid-themer
           tags: |
-            type=ref,event=branch
+            type=ref,event=branch,enable=false
             type=sha
             type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}},prefix=true
             latest
 
       - name: Build and push Docker image
