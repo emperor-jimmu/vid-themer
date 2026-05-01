@@ -15,7 +15,7 @@ jobs:
       version: ${{ steps.get_version.outputs.VERSION }}
       exists: ${{ steps.check_release.outputs.EXISTS }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.2
 
       - name: Extract Cargo.toml Version
         id: get_version
@@ -54,7 +54,7 @@ jobs:
             asset_name: video-clip-extractor-macos-aarch64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.2
 
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
@@ -67,7 +67,7 @@ jobs:
         run: cp target/${{ matrix.target }}/release/${{ matrix.artifact }} ${{ matrix.asset_name }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: ${{ matrix.asset_name }}
           path: ${{ matrix.asset_name }}
@@ -76,7 +76,7 @@ jobs:
     needs: [check-version, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.2
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
