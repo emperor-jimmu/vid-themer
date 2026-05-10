@@ -20,7 +20,6 @@ use scanner::VideoScanner;
 use selector::{ActionSelector, ClipSelector, IntenseAudioSelector, RandomSelector};
 use std::path::Path;
 use std::process;
-use std::sync::{Arc, Mutex};
 
 /// Validate that the provided directory path exists and is a directory
 fn validate_directory(path: &Path) -> Result<(), AppError> {
@@ -172,7 +171,7 @@ fn main() {
     };
 
     // Create VideoProcessor with selector and executor
-    let processor = Arc::new(VideoProcessor::new(
+    let processor = VideoProcessor::new(
         selector,
         ffmpeg_executor,
         args.intro_exclusion_percent,
@@ -180,7 +179,7 @@ fn main() {
         args.clip_count,
         clip_config,
         args.force,
-    ));
+    );
 
     // Create ProgressReporter with logger
     let logger = match FailureLogger::new() {
@@ -201,85 +200,23 @@ fn main() {
     // Start progress reporting
     reporter.start(videos.len());
 
-    // Wrap reporter in Arc<Mutex<>> for thread-safe access (used by FFmpeg callbacks)
-    let reporter = Arc::new(Mutex::new(reporter));
+    // Process videos sequentially to avoid output interleaving.
+    // FFmpeg itself is multi-threaded internally.
+    for (index, video) in videos.iter().enumerate() {
+        reporter.current = index + 1;
 
-    // Process videos sequentially to avoid output interleaving
-    // Note: FFmpeg itself is multi-threaded, so this doesn't significantly impact performance
-    for video in &videos {
-        // Increment current counter
-        if let Ok(mut reporter) = reporter.lock() {
-            reporter.current += 1;
-        }
-
-        // Create a closure that locks and prints clip progress
-        let reporter_clone = Arc::clone(&reporter);
         let video_path = video.path.clone();
-        let clip_progress = move |clip_num: usize, total_clips: usize, filename: &str| {
-            if let Ok(reporter) = reporter_clone.lock() {
-                reporter.update_clip_progress(clip_num, total_clips, filename, &video_path);
-            }
+        let clip_progress = |clip_num: usize, total_clips: usize, filename: &str| {
+            reporter.update_clip_progress(clip_num, total_clips, filename, &video_path);
         };
 
-        // Process video (FFmpeg operations are still multi-threaded internally)
         let result = processor.process_video(video, clip_progress);
-
-        // Update final status
-        if let Ok(mut reporter) = reporter.lock() {
-            reporter.update(&result);
-        }
+        reporter.update(&result);
     }
 
-    // Display final summary
-    if let Ok(reporter) = reporter.lock() {
-        reporter.finish();
-    }
+    reporter.finish();
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::PathBuf;
-
-    #[test]
-    fn test_directory_not_found_error() {
-        // Test error handling when directory doesn't exist
-        let non_existent_path = PathBuf::from("/this/path/definitely/does/not/exist/12345");
-
-        let result = validate_directory(&non_existent_path);
-
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-
-        // Verify it's the correct error type
-        let AppError::DirectoryNotFound(path) = err;
-        assert_eq!(path, non_existent_path);
-    }
-
-    #[test]
-    fn test_path_is_not_directory() {
-        // Test error handling when path exists but is not a directory
-        // Use Cargo.toml as a file that definitely exists
-        let file_path = PathBuf::from("Cargo.toml");
-
-        let result = validate_directory(&file_path);
-
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-
-        // Verify it's the correct error type
-        let AppError::DirectoryNotFound(path) = err;
-        assert_eq!(path, file_path);
-    }
-
-    #[test]
-    fn test_valid_directory() {
-        // Test that valid directory passes validation
-        // Use src directory which should exist
-        let valid_path = PathBuf::from("src");
-
-        let result = validate_directory(&valid_path);
-
-        assert!(result.is_ok());
-    }
-}
+#[path = "main_tests.rs"]
+mod tests;

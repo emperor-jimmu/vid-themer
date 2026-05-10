@@ -3,7 +3,7 @@
 use crate::ffmpeg::FFmpegExecutor;
 use crate::scanner::VideoFile;
 use crate::selector::ClipSelector;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // Constants for output directory and file naming
 const BACKDROPS_DIR: &str = "backdrops";
@@ -74,14 +74,7 @@ impl VideoProcessor {
                     e
                 );
             }
-            return ProcessResult {
-                video_path,
-                output_path: PathBuf::new(),
-                success: true,
-                error_message: None,
-                ffmpeg_stderr: None,
-                clips_generated: 0,
-            };
+            return ProcessResult::success(&video_path, PathBuf::new(), 0);
         }
 
         let clips_to_generate = self.clip_count - existing_clip_count;
@@ -97,14 +90,13 @@ impl VideoProcessor {
                     }
                     _ => format!("Failed to get video duration: {}", e),
                 };
-                return ProcessResult {
-                    video_path,
-                    output_path: PathBuf::new(),
-                    success: false,
-                    error_message: Some(error_message),
-                    ffmpeg_stderr: stderr,
-                    clips_generated: 0,
-                };
+                return ProcessResult::failure(
+                    &video_path,
+                    PathBuf::new(),
+                    error_message,
+                    stderr,
+                    0,
+                );
             }
         };
 
@@ -119,30 +111,28 @@ impl VideoProcessor {
         ) {
             Ok(ranges) if !ranges.is_empty() => ranges,
             Ok(_) => {
-                return ProcessResult {
-                    video_path,
-                    output_path: PathBuf::new(),
-                    success: false,
-                    error_message: Some(format!(
+                return ProcessResult::failure(
+                    &video_path,
+                    PathBuf::new(),
+                    format!(
                         "No valid clips could be selected (requested: {} clips)",
                         clips_to_generate
-                    )),
-                    ffmpeg_stderr: None,
-                    clips_generated: 0,
-                };
+                    ),
+                    None,
+                    0,
+                );
             }
             Err(e) => {
-                return ProcessResult {
-                    video_path,
-                    output_path: PathBuf::new(),
-                    success: false,
-                    error_message: Some(format!(
+                return ProcessResult::failure(
+                    &video_path,
+                    PathBuf::new(),
+                    format!(
                         "Failed to select clip segment (requested: {} clips): {}",
                         clips_to_generate, e
-                    )),
-                    ffmpeg_stderr: None,
-                    clips_generated: 0,
-                };
+                    ),
+                    None,
+                    0,
+                );
             }
         };
 
@@ -160,14 +150,13 @@ impl VideoProcessor {
         let backdrops_dir = match self.create_backdrops_directory(video) {
             Ok(dir) => dir,
             Err(e) => {
-                return ProcessResult {
-                    video_path,
-                    output_path: PathBuf::new(),
-                    success: false,
-                    error_message: Some(format!("Failed to create output directory: {}", e)),
-                    ffmpeg_stderr: None,
-                    clips_generated: 0,
-                };
+                return ProcessResult::failure(
+                    &video_path,
+                    PathBuf::new(),
+                    format!("Failed to create output directory: {}", e),
+                    None,
+                    0,
+                );
             }
         };
 
@@ -188,20 +177,19 @@ impl VideoProcessor {
                 .extract_clip(&video.path, time_range, &output_path)
             {
                 let stderr = e.stderr().map(|s| s.to_string());
-                return ProcessResult {
-                    video_path,
-                    output_path: output_path.clone(),
-                    success: false,
-                    error_message: Some(format!(
+                return ProcessResult::failure(
+                    &video_path,
+                    output_path,
+                    format!(
                         "Failed to extract clip {} of {} (backdrop{}.mp4): {}",
                         index + 1,
                         time_ranges.len(),
                         clip_num,
                         e
-                    )),
-                    ffmpeg_stderr: stderr,
-                    clips_generated: index,
-                };
+                    ),
+                    stderr,
+                    index,
+                );
             }
 
             // Call progress callback after successful extraction
@@ -217,14 +205,7 @@ impl VideoProcessor {
             );
         }
 
-        ProcessResult {
-            video_path,
-            output_path: last_output_path,
-            success: true,
-            error_message: None,
-            ffmpeg_stderr: None,
-            clips_generated: time_ranges.len(),
-        }
+        ProcessResult::success(&video_path, last_output_path, time_ranges.len())
     }
 
     /// Count existing valid backdrop files in sequential order
@@ -276,6 +257,36 @@ pub struct ProcessResult {
     pub error_message: Option<String>,
     pub ffmpeg_stderr: Option<String>,
     pub clips_generated: usize,
+}
+
+impl ProcessResult {
+    fn success(video_path: &Path, output_path: PathBuf, clips_generated: usize) -> Self {
+        Self {
+            video_path: video_path.to_path_buf(),
+            output_path,
+            success: true,
+            error_message: None,
+            ffmpeg_stderr: None,
+            clips_generated,
+        }
+    }
+
+    fn failure(
+        video_path: &Path,
+        output_path: PathBuf,
+        error_message: String,
+        ffmpeg_stderr: Option<String>,
+        clips_generated: usize,
+    ) -> Self {
+        Self {
+            video_path: video_path.to_path_buf(),
+            output_path,
+            success: false,
+            error_message: Some(error_message),
+            ffmpeg_stderr,
+            clips_generated,
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
