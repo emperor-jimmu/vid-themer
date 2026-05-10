@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 // Constants for output directory and file naming
-const BACKDROPS_DIR: &str = "backdrops";
+pub const BACKDROPS_DIR: &str = "backdrops";
 const DONE_MARKER: &str = "done.ext";
 
 pub struct VideoScanner {
@@ -127,7 +127,8 @@ impl VideoScanner {
                             // Skip files named "backdrop.mp4" or "backdrop.mkv" as they're likely output files
                             if let Some(filename) = path.file_name() {
                                 let filename_str = filename.to_string_lossy().to_lowercase();
-                                if filename_str == "backdrop.mp4" || filename_str == "backdrop.mkv" {
+                                if filename_str == "backdrop.mp4" || filename_str == "backdrop.mkv"
+                                {
                                     continue;
                                 }
                             }

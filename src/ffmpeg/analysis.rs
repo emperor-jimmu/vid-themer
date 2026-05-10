@@ -98,11 +98,11 @@ pub fn analyze_audio_intensity(
         ])
         .output()
         .map_err(|e| {
-        FFmpegError::ExecutionFailed(format!(
-            "Failed to execute ffmpeg for audio analysis: {}",
-            e
-        ))
-    })?;
+            FFmpegError::ExecutionFailed(format!(
+                "Failed to execute ffmpeg for audio analysis: {}",
+                e
+            ))
+        })?;
 
     let stderr = String::from_utf8_lossy(&output.stderr);
 
@@ -257,11 +257,11 @@ pub fn analyze_motion_intensity(
         ])
         .output()
         .map_err(|e| {
-        FFmpegError::ExecutionFailed(format!(
-            "Failed to execute ffmpeg for motion analysis: {}",
-            e
-        ))
-    })?;
+            FFmpegError::ExecutionFailed(format!(
+                "Failed to execute ffmpeg for motion analysis: {}",
+                e
+            ))
+        })?;
 
     let stderr = String::from_utf8_lossy(&output.stderr);
 

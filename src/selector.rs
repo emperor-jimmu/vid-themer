@@ -320,8 +320,8 @@ impl RandomSelector {
             }
         }
 
-        let last_clip_end = existing_clips[existing_clips.len() - 1].start_seconds
-            + existing_clips[existing_clips.len() - 1].duration_seconds;
+        let last_clip = existing_clips.last().unwrap();
+        let last_clip_end = last_clip.start_seconds + last_clip.duration_seconds;
         if outro_cutoff - last_clip_end >= clip_duration {
             gaps.push((last_clip_end, outro_cutoff));
         }
@@ -492,7 +492,7 @@ fn select_clips_from_peaks<T: IntensitySegment>(
 pub struct IntenseAudioSelector;
 
 impl IntenseAudioSelector {
-    pub fn new(_ffmpeg_executor: crate::ffmpeg::FFmpegExecutor) -> Self {
+    pub fn new() -> Self {
         Self
     }
 }
@@ -528,7 +528,7 @@ impl ClipSelector for IntenseAudioSelector {
 pub struct ActionSelector;
 
 impl ActionSelector {
-    pub fn new(_ffmpeg_executor: crate::ffmpeg::FFmpegExecutor) -> Self {
+    pub fn new() -> Self {
         Self
     }
 }
@@ -562,14 +562,7 @@ impl ClipSelector for ActionSelector {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[allow(dead_code)]
-pub enum SelectionError {
-    #[error("Video too short: {0}s")]
-    VideoTooShort(f64),
-
-    #[error("Failed to analyze motion: {0}")]
-    MotionAnalysisFailed(String),
-}
+pub enum SelectionError {}
 
 #[cfg(test)]
 #[path = "selector_tests.rs"]

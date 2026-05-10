@@ -106,7 +106,10 @@ fn test_scanner_sorts_videos_alphabetically() {
     fs::File::create(&video_a).unwrap();
     fs::File::create(&video_b).unwrap();
 
-    let videos = VideoScanner::new(temp_dir.clone(), false).scan().unwrap().videos;
+    let videos = VideoScanner::new(temp_dir.clone(), false)
+        .scan()
+        .unwrap()
+        .videos;
     assert_eq!(videos.len(), 3);
     assert_eq!(videos[0].path, video_a);
     assert_eq!(videos[1].path, video_b);

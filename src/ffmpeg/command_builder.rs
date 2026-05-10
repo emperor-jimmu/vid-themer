@@ -15,7 +15,6 @@ pub struct ExtractConfig<'a> {
     pub source_resolution: (u32, u32),
     pub codec: &'a str,
     pub color_transfer: Option<&'a str>,
-    pub pix_fmt: Option<&'a str>,
     pub target_resolution: Resolution,
     pub include_audio: bool,
     pub use_hw_accel: bool,
@@ -24,98 +23,91 @@ pub struct ExtractConfig<'a> {
 }
 
 /// Build audio-related FFmpeg arguments based on configuration
-pub fn build_audio_args(include_audio: bool) -> Vec<String> {
+pub fn build_audio_args(include_audio: bool) -> Vec<OsString> {
     if !include_audio {
-        // Exclude audio track
-        vec!["-an".to_string()]
+        vec!["-an".into()]
     } else {
-        // Include audio with AAC codec
-        // First decode to PCM (handles DTS/DTS-HD/TrueHD/etc.), then apply filters
-        // Downmix to stereo first to handle complex channel layouts (e.g., 5.1.2 Dolby Atmos, DTS:X)
-        // Then apply loudness normalization (EBU R128) and volume reduction
         vec![
-            "-af".to_string(),
+            "-af".into(),
             format!(
                 "aformat=sample_fmts=fltp:channel_layouts=stereo,loudnorm=I={}:TP={}:LRA={},volume={}",
                 audio::LOUDNESS_TARGET,
                 audio::TRUE_PEAK,
                 audio::LOUDNESS_RANGE,
                 audio::VOLUME_REDUCTION
-            ),
-            "-c:a".to_string(),
-            audio::CODEC.to_string(),
-            "-b:a".to_string(),
-            audio::BITRATE.to_string(),
-            "-ar".to_string(),
-            audio::SAMPLE_RATE.to_string(),
+            ).into(),
+            "-c:a".into(),
+            audio::CODEC.into(),
+            "-b:a".into(),
+            audio::BITRATE.into(),
+            "-ar".into(),
+            audio::SAMPLE_RATE.into(),
         ]
     }
 }
 
 /// Build video codec arguments (hardware or software)
-pub fn build_video_codec_args(use_hw_accel: bool) -> Vec<String> {
+pub fn build_video_codec_args(use_hw_accel: bool) -> Vec<OsString> {
     if use_hw_accel {
-        // Hardware acceleration uses platform-specific encoders
         #[cfg(target_os = "macos")]
         {
             vec![
-                "-c:v".to_string(),
-                "h264_videotoolbox".to_string(),
-                "-b:v".to_string(),
-                encoding::HW_ACCEL_BITRATE.to_string(),
+                "-c:v".into(),
+                "h264_videotoolbox".into(),
+                "-b:v".into(),
+                encoding::HW_ACCEL_BITRATE.into(),
             ]
         }
         #[cfg(not(target_os = "macos"))]
         {
             vec![
-                "-c:v".to_string(),
-                "h264_nvenc".to_string(),
-                "-preset".to_string(),
-                "p4".to_string(),
-                "-b:v".to_string(),
-                encoding::HW_ACCEL_BITRATE.to_string(),
+                "-c:v".into(),
+                "h264_nvenc".into(),
+                "-preset".into(),
+                "p4".into(),
+                "-b:v".into(),
+                encoding::HW_ACCEL_BITRATE.into(),
             ]
         }
     } else {
-        // Software encoding with libx264
         vec![
-            "-c:v".to_string(),
-            "libx264".to_string(),
-            "-preset".to_string(),
-            encoding::PRESET.to_string(),
-            "-crf".to_string(),
-            encoding::CRF.to_string(),
-            "-profile:v".to_string(),
-            encoding::PROFILE.to_string(),
-            "-level:v".to_string(),
-            encoding::LEVEL.to_string(),
+            "-c:v".into(),
+            "libx264".into(),
+            "-preset".into(),
+            encoding::PRESET.into(),
+            "-crf".into(),
+            encoding::CRF.into(),
+            "-profile:v".into(),
+            encoding::PROFILE.into(),
+            "-level:v".into(),
+            encoding::LEVEL.into(),
         ]
     }
 }
 
 /// Build color space arguments for SDR output
-pub fn build_color_args() -> Vec<String> {
+pub fn build_color_args() -> Vec<OsString> {
     vec![
-        "-colorspace".to_string(),
-        color::COLORSPACE.to_string(),
-        "-color_primaries".to_string(),
-        color::COLOR_PRIMARIES.to_string(),
-        "-color_trc".to_string(),
-        color::COLOR_TRC.to_string(),
-        "-color_range".to_string(),
-        color::COLOR_RANGE.to_string(),
+        "-colorspace".into(),
+        color::COLORSPACE.into(),
+        "-color_primaries".into(),
+        color::COLOR_PRIMARIES.into(),
+        "-color_trc".into(),
+        color::COLOR_TRC.into(),
+        "-color_range".into(),
+        color::COLOR_RANGE.into(),
     ]
 }
 
 /// Build GOP (Group of Pictures) arguments for streaming compatibility
-pub fn build_gop_args() -> Vec<String> {
+pub fn build_gop_args() -> Vec<OsString> {
     vec![
-        "-g".to_string(),
-        encoding::GOP_SIZE.to_string(),
-        "-keyint_min".to_string(),
-        encoding::KEYINT_MIN.to_string(),
-        "-sc_threshold".to_string(),
-        encoding::SC_THRESHOLD.to_string(),
+        "-g".into(),
+        encoding::GOP_SIZE.into(),
+        "-keyint_min".into(),
+        encoding::KEYINT_MIN.into(),
+        "-sc_threshold".into(),
+        encoding::SC_THRESHOLD.into(),
     ]
 }
 
@@ -152,9 +144,7 @@ pub fn calculate_scale_filter(
 pub fn build_video_filters(
     source_resolution: (u32, u32),
     target_resolution: Resolution,
-    _codec: &str,
     color_transfer: Option<&str>,
-    _pix_fmt: Option<&str>,
 ) -> String {
     let mut filters = Vec::new();
 
@@ -197,7 +187,7 @@ pub fn build_video_filters(
 }
 
 /// Build seeking arguments based on codec type
-pub fn build_seeking_args(time_range: &TimeRange, codec: &str) -> (Vec<String>, Vec<String>) {
+pub fn build_seeking_args(time_range: &TimeRange, codec: &str) -> (Vec<OsString>, Vec<OsString>) {
     let is_hevc = codec == "hevc" || codec == "h265";
 
     let fast_seek_offset = if is_hevc {
@@ -217,27 +207,27 @@ pub fn build_seeking_args(time_range: &TimeRange, codec: &str) -> (Vec<String>, 
 
     // Add HEVC-specific buffer settings
     if is_hevc {
-        before_input.extend(vec![
-            "-analyzeduration".to_string(),
-            analysis::HEVC_BUFFER_SIZE.to_string(),
-            "-probesize".to_string(),
-            analysis::HEVC_BUFFER_SIZE.to_string(),
+        before_input.extend([
+            OsString::from("-analyzeduration"),
+            analysis::HEVC_BUFFER_SIZE.into(),
+            "-probesize".into(),
+            analysis::HEVC_BUFFER_SIZE.into(),
         ]);
     }
 
     // Add fast seek if applicable
     if fast_seek_pos > 0.0 {
-        before_input.extend(vec![
-            "-ss".to_string(),
-            fast_seek_pos.to_string(),
-            "-noaccurate_seek".to_string(),
+        before_input.extend([
+            OsString::from("-ss"),
+            fast_seek_pos.to_string().into(),
+            "-noaccurate_seek".into(),
         ]);
     }
 
     // Add accurate seek
     let accurate_seek_pos = time_range.start_seconds - fast_seek_pos;
     if accurate_seek_pos > 0.0 {
-        after_input.extend(vec!["-ss".to_string(), accurate_seek_pos.to_string()]);
+        after_input.extend([OsString::from("-ss"), accurate_seek_pos.to_string().into()]);
     }
 
     (before_input, after_input)
@@ -245,21 +235,18 @@ pub fn build_seeking_args(time_range: &TimeRange, codec: &str) -> (Vec<String>, 
 
 /// Build FFmpeg command for extracting a clip
 pub fn build_extract_command(config: &ExtractConfig) -> Vec<OsString> {
-    let mut args: Vec<OsString> = vec![
-        "-err_detect".into(),
-        "ignore_err".into(),
-    ];
+    let mut args: Vec<OsString> = vec!["-err_detect".into(), "ignore_err".into()];
 
     // Build seeking arguments
     let (before_input, after_input) = build_seeking_args(config.time_range, config.codec);
-    args.extend(before_input.into_iter().map(OsString::from));
+    args.extend(before_input);
 
     // Input file (pass as OsStr to preserve non-UTF-8 path bytes)
     args.push("-i".into());
     args.push(config.video_path.into());
 
     // Accurate seek (after input)
-    args.extend(after_input.into_iter().map(OsString::from));
+    args.extend(after_input);
 
     // Timestamp handling - ensure proper timing for browser playback
     args.extend(["-avoid_negative_ts".into(), "make_zero".into()]);
@@ -282,26 +269,24 @@ pub fn build_extract_command(config: &ExtractConfig) -> Vec<OsString> {
     ]);
 
     // Video codec
-    args.extend(build_video_codec_args(config.use_hw_accel).into_iter().map(OsString::from));
+    args.extend(build_video_codec_args(config.use_hw_accel));
 
     // Pixel format and GOP settings
     args.extend(["-pix_fmt".into(), encoding::PIX_FMT.into()]);
-    args.extend(build_gop_args().into_iter().map(OsString::from));
+    args.extend(build_gop_args());
 
-    args.extend(build_color_args().into_iter().map(OsString::from));
+    args.extend(build_color_args());
 
     // Video filters
     let filters = build_video_filters(
         config.source_resolution,
-        config.target_resolution.clone(),
-        config.codec,
+        config.target_resolution,
         config.color_transfer,
-        config.pix_fmt,
     );
     args.extend(["-vf".into(), filters.into()]);
 
     // Audio
-    args.extend(build_audio_args(config.include_audio).into_iter().map(OsString::from));
+    args.extend(build_audio_args(config.include_audio));
 
     // Muxer options - faststart moves moov atom to beginning for browser streaming
     args.extend(["-movflags".into(), muxer::MOVFLAGS.into()]);
@@ -337,13 +322,10 @@ pub fn build_fade_command(input_path: &Path, output_path: &Path, duration: f64) 
         )
         .into(),
     ]);
-    args.extend(build_video_codec_args(false).into_iter().map(OsString::from));
-    args.extend([
-        "-pix_fmt".into(),
-        encoding::PIX_FMT.into(),
-    ]);
-    args.extend(build_gop_args().into_iter().map(OsString::from));
-    args.extend(build_color_args().into_iter().map(OsString::from));
+    args.extend(build_video_codec_args(false));
+    args.extend(["-pix_fmt".into(), encoding::PIX_FMT.into()]);
+    args.extend(build_gop_args());
+    args.extend(build_color_args());
     args.extend([
         "-c:a".into(),
         audio::CODEC.into(),
@@ -380,15 +362,15 @@ mod tests {
     #[test]
     fn test_build_audio_args_with_audio() {
         let args = build_audio_args(true);
-        assert!(args.contains(&"-c:a".to_string()));
-        assert!(args.contains(&"aac".to_string()));
-        assert!(!args.contains(&"-an".to_string()));
+        assert!(args.contains(&OsString::from("-c:a")));
+        assert!(args.contains(&OsString::from("aac")));
+        assert!(!args.contains(&OsString::from("-an")));
     }
 
     #[test]
     fn test_build_audio_args_without_audio() {
         let args = build_audio_args(false);
-        assert!(args.contains(&"-an".to_string()));
-        assert!(!args.contains(&"-c:a".to_string()));
+        assert!(args.contains(&OsString::from("-an")));
+        assert!(!args.contains(&OsString::from("-c:a")));
     }
 }

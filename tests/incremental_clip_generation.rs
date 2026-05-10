@@ -201,7 +201,10 @@ fn test_skip_when_enough_clips_exist() {
         .expect("Failed to execute command");
 
     assert!(output.status.success(), "Run with -c 2 should succeed");
-    assert!(backdrops_dir.join("done.ext").exists(), "done.ext should be written");
+    assert!(
+        backdrops_dir.join("done.ext").exists(),
+        "done.ext should be written"
+    );
 
     // Run with -c 1 - scanner should now skip due to done.ext
     let output = Command::new("cargo")

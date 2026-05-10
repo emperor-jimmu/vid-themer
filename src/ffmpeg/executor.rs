@@ -34,10 +34,10 @@ impl TempFileGuard {
 
 impl Drop for TempFileGuard {
     fn drop(&mut self) {
-        if self.should_clean {
-            if let Some(path) = &self.path {
-                let _ = std::fs::remove_file(path);
-            }
+        if self.should_clean
+            && let Some(path) = &self.path
+        {
+            let _ = std::fs::remove_file(path);
         }
     }
 }
@@ -193,8 +193,7 @@ impl FFmpegExecutor {
             source_resolution,
             codec,
             color_transfer: metadata.color_transfer.as_deref(),
-            pix_fmt: metadata.pix_fmt.as_deref(),
-            target_resolution: self.resolution.clone(),
+            target_resolution: self.resolution,
             include_audio: self.include_audio,
             use_hw_accel: self.use_hw_accel,
             audio_stream_index: metadata.audio_stream_index,
@@ -202,11 +201,8 @@ impl FFmpegExecutor {
 
         let args = if use_conservative_seeking {
             // Conservative seeking: only accurate seek, no fast seek
-            let mut args: Vec<OsString> = vec![
-                "-err_detect".into(),
-                "ignore_err".into(),
-                "-i".into(),
-            ];
+            let mut args: Vec<OsString> =
+                vec!["-err_detect".into(), "ignore_err".into(), "-i".into()];
             args.push(video_path.into());
             args.extend([
                 "-ss".into(),
@@ -220,10 +216,7 @@ impl FFmpegExecutor {
             // Add remaining standard args (mapping, codec, filters, etc.)
             let standard_args = command_builder::build_extract_command(&config);
             // Skip to -map (standard args start with -err_detect, -i, seeking, -avoid_negative_ts, -t, then -map)
-            let skip_until = standard_args
-                .iter()
-                .position(|s| s == "-map")
-                .unwrap_or(0);
+            let skip_until = standard_args.iter().position(|s| s == "-map").unwrap_or(0);
             args.extend(standard_args.into_iter().skip(skip_until));
 
             args
@@ -243,7 +236,7 @@ impl FFmpegExecutor {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
 
-            if let Some(e) = classify_stderr_error(&stderr, video_path, time_range) {
+            if let Some(e) = classify_stderr_error(&stderr) {
                 return Err(e);
             }
 
@@ -282,8 +275,7 @@ impl FFmpegExecutor {
             source_resolution,
             codec,
             color_transfer: metadata.color_transfer.as_deref(),
-            pix_fmt: metadata.pix_fmt.as_deref(),
-            target_resolution: self.resolution.clone(),
+            target_resolution: self.resolution,
             include_audio: self.include_audio,
             use_hw_accel: self.use_hw_accel,
             audio_stream_index: metadata.audio_stream_index,
@@ -311,7 +303,7 @@ impl FFmpegExecutor {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
 
-            if let Some(e) = classify_stderr_error(&stderr, video_path, time_range) {
+            if let Some(e) = classify_stderr_error(&stderr) {
                 return Err(e);
             }
 
@@ -361,8 +353,7 @@ impl FFmpegExecutor {
             source_resolution,
             codec,
             color_transfer: metadata.color_transfer.as_deref(),
-            pix_fmt: metadata.pix_fmt.as_deref(),
-            target_resolution: self.resolution.clone(),
+            target_resolution: self.resolution,
             include_audio: false, // Force no audio
             use_hw_accel: self.use_hw_accel,
             audio_stream_index: metadata.audio_stream_index,
@@ -403,7 +394,7 @@ impl FFmpegExecutor {
 
 /// Classify an FFmpeg stderr string into a typed error.
 /// Returns None if none of the known patterns match (caller should use a generic error).
-fn classify_stderr_error(stderr: &str, video_path: &Path, time_range: &TimeRange) -> Option<FFmpegError> {
+fn classify_stderr_error(stderr: &str) -> Option<FFmpegError> {
     // Use contains() directly — FFmpeg messages have consistent casing, no need to lowercase the whole string.
     if stderr.contains("Unknown encoder")
         || stderr.contains("Encoder") && stderr.contains("not found")
@@ -430,10 +421,8 @@ fn classify_stderr_error(stderr: &str, video_path: &Path, time_range: &TimeRange
     {
         return Some(FFmpegError::HWAccelNotAvailable(stderr.trim().to_string()));
     }
-    let _ = (video_path, time_range); // suppress unused warnings when caller uses generic fallback
     None
 }
-
 
 fn apply_fade_effect(
     input_path: &Path,
@@ -588,57 +577,25 @@ mod tests {
 
     #[test]
     fn test_classify_stderr_error_codec_not_found() {
-        let err = classify_stderr_error(
-            "Unknown encoder 'h264_videotoolbox'",
-            Path::new("video.mp4"),
-            &TimeRange {
-                start_seconds: 0.0,
-                duration_seconds: 10.0,
-            },
-        );
-
+        let err = classify_stderr_error("Unknown encoder 'h264_videotoolbox'");
         assert!(matches!(err, Some(FFmpegError::CodecNotFound(_))));
     }
 
     #[test]
     fn test_classify_stderr_error_invalid_format() {
-        let err = classify_stderr_error(
-            "Invalid data found when processing input",
-            Path::new("video.mp4"),
-            &TimeRange {
-                start_seconds: 0.0,
-                duration_seconds: 10.0,
-            },
-        );
-
+        let err = classify_stderr_error("Invalid data found when processing input");
         assert!(matches!(err, Some(FFmpegError::InvalidFormat(_))));
     }
 
     #[test]
     fn test_classify_stderr_error_hw_accel_not_available() {
-        let err = classify_stderr_error(
-            "Hardware acceleration not available for this device",
-            Path::new("video.mp4"),
-            &TimeRange {
-                start_seconds: 0.0,
-                duration_seconds: 10.0,
-            },
-        );
-
+        let err = classify_stderr_error("Hardware acceleration not available for this device");
         assert!(matches!(err, Some(FFmpegError::HWAccelNotAvailable(_))));
     }
 
     #[test]
     fn test_classify_stderr_error_unknown_returns_none() {
-        let err = classify_stderr_error(
-            "some unrelated ffmpeg output",
-            Path::new("video.mp4"),
-            &TimeRange {
-                start_seconds: 0.0,
-                duration_seconds: 10.0,
-            },
-        );
-
+        let err = classify_stderr_error("some unrelated ffmpeg output");
         assert!(err.is_none());
     }
 

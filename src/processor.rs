@@ -1,12 +1,9 @@
 // Video processing pipeline coordination
 
 use crate::ffmpeg::FFmpegExecutor;
-use crate::scanner::VideoFile;
+use crate::scanner::{self, BACKDROPS_DIR, VideoFile};
 use crate::selector::ClipSelector;
 use std::path::{Path, PathBuf};
-
-// Constants for output directory and file naming
-const BACKDROPS_DIR: &str = "backdrops";
 
 pub struct VideoProcessor {
     selector: Box<dyn ClipSelector>,
@@ -66,7 +63,7 @@ impl VideoProcessor {
         if existing_clip_count >= self.clip_count {
             // Ensure backdrops dir exists before writing marker
             if backdrops_dir.exists()
-                && let Err(e) = crate::scanner::write_done_marker(&backdrops_dir)
+                && let Err(e) = scanner::write_done_marker(&backdrops_dir)
             {
                 eprintln!(
                     "Warning: Failed to write done marker for {}: {}",
@@ -197,7 +194,7 @@ impl VideoProcessor {
         }
 
         // Write done.ext marker — we've now rendered all needed clips
-        if let Err(e) = crate::scanner::write_done_marker(&backdrops_dir) {
+        if let Err(e) = scanner::write_done_marker(&backdrops_dir) {
             eprintln!(
                 "Warning: Failed to write done marker for {}: {}",
                 video.path.display(),
@@ -365,8 +362,10 @@ mod tests {
             VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1, default_test_config(), false);
 
         // Get output path
-        let output_path = processor.create_backdrops_directory(&video_file)
-            .unwrap().join("backdrop1.mp4");
+        let output_path = processor
+            .create_backdrops_directory(&video_file)
+            .unwrap()
+            .join("backdrop1.mp4");
 
         // Verify the output file name is "backdrop1.mp4"
         assert_eq!(
@@ -609,7 +608,10 @@ mod tests {
             VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 2, default_test_config(), true);
 
         let result = processor.process_video(&video_file, |_, _, _| {});
-        assert!(!result.success, "force mode should not short-circuit on existing clips");
+        assert!(
+            !result.success,
+            "force mode should not short-circuit on existing clips"
+        );
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

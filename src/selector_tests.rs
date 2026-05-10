@@ -521,9 +521,7 @@ fn test_random_selector_long_video() {
 
     // Verify start time respects exclusion zones
     assert!(time_range.start_seconds >= intro_exclusion); // After intro exclusion
-    assert!(
-        time_range.start_seconds + time_range.duration_seconds <= duration - outro_exclusion
-    ); // Before outro exclusion
+    assert!(time_range.start_seconds + time_range.duration_seconds <= duration - outro_exclusion); // Before outro exclusion
 }
 
 #[test]
@@ -1164,14 +1162,11 @@ fn test_clip_config_middle_segment_very_short_video() {
 fn test_intense_audio_selector_no_audio_fallback() {
     // Test fallback to middle segment when video has no audio
     // Validates Requirement 4.4
-    use crate::cli::Resolution;
+
     use std::path::PathBuf;
 
-    // Create an FFmpegExecutor
-    let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
-
     // Create IntenseAudioSelector
-    let selector = IntenseAudioSelector::new(ffmpeg_executor);
+    let selector = IntenseAudioSelector::new();
 
     // Use a non-existent video path - this will cause audio analysis to fail
     // which simulates a video with no audio track
@@ -1380,11 +1375,10 @@ fn test_intense_audio_selector_tie_breaking() {
 fn test_intense_audio_selector_single_clip() {
     // Test single clip selection
     // Requirement 2.1
-    use crate::cli::Resolution;
+
     use std::path::PathBuf;
 
-    let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
-    let selector = IntenseAudioSelector::new(ffmpeg_executor);
+    let selector = IntenseAudioSelector::new();
 
     // Use a non-existent video path - will fall back to middle segment
     let video_path = PathBuf::from("/nonexistent/video.mp4");
@@ -1509,11 +1503,10 @@ fn test_intense_audio_selector_peak_selection_overlapping() {
 fn test_intense_audio_selector_graceful_degradation() {
     // Test graceful degradation for short videos
     // Requirement 2.3
-    use crate::cli::Resolution;
+
     use std::path::PathBuf;
 
-    let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
-    let selector = IntenseAudioSelector::new(ffmpeg_executor);
+    let selector = IntenseAudioSelector::new();
 
     // Use a short video duration that can only fit 1 clip
     let video_path = PathBuf::from("/nonexistent/short_video.mp4");
@@ -1556,11 +1549,10 @@ fn test_intense_audio_selector_graceful_degradation() {
 fn test_intense_audio_selector_very_short_video() {
     // Test very short video that cannot fit any clips with exclusion zones
     // Requirement 2.3
-    use crate::cli::Resolution;
+
     use std::path::PathBuf;
 
-    let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
-    let selector = IntenseAudioSelector::new(ffmpeg_executor);
+    let selector = IntenseAudioSelector::new();
 
     let video_path = PathBuf::from("/nonexistent/very_short.mp4");
     let duration = 5.0; // 5 seconds - too short for minimum clip duration
@@ -1637,14 +1629,13 @@ proptest! {
 #[test]
 fn test_action_selector_no_motion_fallback() {
     // Test fallback to middle segment when video has no motion
-    use crate::cli::Resolution;
+
     use std::path::PathBuf;
 
     // Create an FFmpegExecutor
-    let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
 
     // Create ActionSelector
-    let selector = ActionSelector::new(ffmpeg_executor);
+    let selector = ActionSelector::new();
 
     // Use a non-existent video path - this will cause motion analysis to fail
     // which simulates a video with no motion
@@ -1917,15 +1908,14 @@ proptest! {
     fn test_action_clip_duration_constraints(
         duration in 415.0..3600.0f64,
     ) {
-        use crate::cli::Resolution;
+
         use std::path::PathBuf;
 
         const MIN_CLIP_DURATION: f64 = 10.0;
         const MAX_CLIP_DURATION: f64 = 15.0;
 
         // Create an FFmpegExecutor and ActionSelector
-        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
-        let selector = ActionSelector::new(ffmpeg_executor);
+            let selector = ActionSelector::new();
 
         // Use a non-existent video path (will fall back to middle segment)
         let video_path = PathBuf::from("/nonexistent/video.mp4");
@@ -1965,12 +1955,11 @@ proptest! {
         intro_percent in 0.0..=10.0f64,
         outro_percent in 0.0..=50.0f64,
     ) {
-        use crate::cli::Resolution;
+
         use std::path::PathBuf;
 
         // Create an FFmpegExecutor and ActionSelector
-        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
-        let selector = ActionSelector::new(ffmpeg_executor);
+            let selector = ActionSelector::new();
 
         // Use a non-existent video path (will fall back to middle segment)
         let video_path = PathBuf::from("/nonexistent/video.mp4");
@@ -2004,12 +1993,11 @@ proptest! {
         intro_percent in 0.0..=10.0f64,
         outro_percent in 0.0..=50.0f64,
     ) {
-        use crate::cli::Resolution;
+
         use std::path::PathBuf;
 
         // Create an FFmpegExecutor and ActionSelector
-        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
-        let selector = ActionSelector::new(ffmpeg_executor);
+            let selector = ActionSelector::new();
 
         // Use a non-existent video path (will fall back to middle segment)
         let video_path = PathBuf::from("/nonexistent/video.mp4");
@@ -2113,12 +2101,11 @@ proptest! {
         duration1 in 100.0..600.0f64,
         duration2 in 100.0..600.0f64,
     ) {
-        use crate::cli::Resolution;
+
         use std::path::PathBuf;
 
         // Create a single ActionSelector instance
-        let ffmpeg_executor = crate::ffmpeg::FFmpegExecutor::new(Resolution::Hd1080, true, false);
-        let selector = ActionSelector::new(ffmpeg_executor);
+            let selector = ActionSelector::new();
 
         // Process first video (non-existent, will fall back to middle segment)
         let video_path1 = PathBuf::from("/nonexistent/video1.mp4");

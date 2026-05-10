@@ -23,7 +23,10 @@ fn parse_err_kind(args: &[&str]) -> clap::error::ErrorKind {
 #[test]
 fn test_strategy_variants() {
     let cases = [
-        (&["video-clip-extractor", "/test/path", "--strategy", "random"][..], "random"),
+        (
+            &["video-clip-extractor", "/test/path", "--strategy", "random"][..],
+            "random",
+        ),
         (
             &[
                 "video-clip-extractor",
@@ -37,8 +40,14 @@ fn test_strategy_variants() {
             &["video-clip-extractor", "/test/path", "-s", "intense-audio"][..],
             "intense-audio",
         ),
-        (&["video-clip-extractor", "/test/path", "--strategy", "action"][..], "action"),
-        (&["video-clip-extractor", "/test/path", "-s", "action"][..], "action"),
+        (
+            &["video-clip-extractor", "/test/path", "--strategy", "action"][..],
+            "action",
+        ),
+        (
+            &["video-clip-extractor", "/test/path", "-s", "action"][..],
+            "action",
+        ),
         (
             &[
                 "video-clip-extractor",
@@ -72,7 +81,12 @@ fn test_resolution_variants() {
     let args = parse_ok(&["video-clip-extractor", "/test/path", "--resolution", "720p"]);
     assert!(matches!(args.resolution, Resolution::Hd720));
 
-    let args = parse_ok(&["video-clip-extractor", "/test/path", "--resolution", "1080p"]);
+    let args = parse_ok(&[
+        "video-clip-extractor",
+        "/test/path",
+        "--resolution",
+        "1080p",
+    ]);
     assert!(matches!(args.resolution, Resolution::Hd1080));
 
     let args = parse_ok(&["video-clip-extractor", "/test/path", "-r", "720p"]);
@@ -266,32 +280,35 @@ fn test_duration_params_and_validation() {
         "--max-duration",
         "10.0",
     ]);
-    assert!(invalid
-        .validate_duration_range()
-        .unwrap_err()
-        .contains("cannot be greater than"));
+    assert!(
+        invalid
+            .validate_duration_range()
+            .unwrap_err()
+            .contains("cannot be greater than")
+    );
 
-    assert!(CliArgs::try_parse_from([
-        "video-clip-extractor",
-        "/test/path",
-        "--min-duration",
-        "0"
-    ])
-    .is_err());
-    assert!(CliArgs::try_parse_from([
-        "video-clip-extractor",
-        "/test/path",
-        "--min-duration",
-        "-5.0"
-    ])
-    .is_err());
-    assert!(CliArgs::try_parse_from([
-        "video-clip-extractor",
-        "/test/path",
-        "--max-duration",
-        "301.0"
-    ])
-    .is_err());
+    assert!(
+        CliArgs::try_parse_from(["video-clip-extractor", "/test/path", "--min-duration", "0"])
+            .is_err()
+    );
+    assert!(
+        CliArgs::try_parse_from([
+            "video-clip-extractor",
+            "/test/path",
+            "--min-duration",
+            "-5.0"
+        ])
+        .is_err()
+    );
+    assert!(
+        CliArgs::try_parse_from([
+            "video-clip-extractor",
+            "/test/path",
+            "--max-duration",
+            "301.0"
+        ])
+        .is_err()
+    );
 }
 
 #[test]
@@ -364,10 +381,11 @@ fn test_exclusion_values_and_validation() {
         "--outro-exclusion",
         "40",
     ]);
-    assert!(args
-        .validate_exclusion_zones()
-        .unwrap_err()
-        .contains("must be less than 100%"));
+    assert!(
+        args.validate_exclusion_zones()
+            .unwrap_err()
+            .contains("must be less than 100%")
+    );
 
     let args = parse_ok(&[
         "video-clip-extractor",
@@ -381,34 +399,42 @@ fn test_exclusion_values_and_validation() {
     assert!(err.contains("must be less than 100%"));
     assert!(err.contains("120%"));
 
-    assert!(CliArgs::try_parse_from([
-        "video-clip-extractor",
-        "/test/path",
-        "--intro-exclusion",
-        "-5.0"
-    ])
-    .is_err());
-    assert!(CliArgs::try_parse_from([
-        "video-clip-extractor",
-        "/test/path",
-        "--intro-exclusion",
-        "101.0"
-    ])
-    .is_err());
-    assert!(CliArgs::try_parse_from([
-        "video-clip-extractor",
-        "/test/path",
-        "--outro-exclusion",
-        "-10.0"
-    ])
-    .is_err());
-    assert!(CliArgs::try_parse_from([
-        "video-clip-extractor",
-        "/test/path",
-        "--outro-exclusion",
-        "150.0"
-    ])
-    .is_err());
+    assert!(
+        CliArgs::try_parse_from([
+            "video-clip-extractor",
+            "/test/path",
+            "--intro-exclusion",
+            "-5.0"
+        ])
+        .is_err()
+    );
+    assert!(
+        CliArgs::try_parse_from([
+            "video-clip-extractor",
+            "/test/path",
+            "--intro-exclusion",
+            "101.0"
+        ])
+        .is_err()
+    );
+    assert!(
+        CliArgs::try_parse_from([
+            "video-clip-extractor",
+            "/test/path",
+            "--outro-exclusion",
+            "-10.0"
+        ])
+        .is_err()
+    );
+    assert!(
+        CliArgs::try_parse_from([
+            "video-clip-extractor",
+            "/test/path",
+            "--outro-exclusion",
+            "150.0"
+        ])
+        .is_err()
+    );
 
     let boundary = parse_ok(&[
         "video-clip-extractor",
@@ -437,23 +463,16 @@ fn test_clip_count_values() {
 
     let invalid = ["0", "5", "abc"];
     for value in invalid {
-        let err = CliArgs::try_parse_from([
-            "video-clip-extractor",
-            "/test/path",
-            "--clip-count",
-            value,
-        ])
-        .unwrap_err();
+        let err =
+            CliArgs::try_parse_from(["video-clip-extractor", "/test/path", "--clip-count", value])
+                .unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
     }
 
-    assert!(CliArgs::try_parse_from([
-        "video-clip-extractor",
-        "/test/path",
-        "--clip-count",
-        "-1"
-    ])
-    .is_err());
+    assert!(
+        CliArgs::try_parse_from(["video-clip-extractor", "/test/path", "--clip-count", "-1"])
+            .is_err()
+    );
 }
 
 #[test]

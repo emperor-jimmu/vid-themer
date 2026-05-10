@@ -127,7 +127,7 @@ pub enum SelectionStrategy {
     Action,
 }
 
-#[derive(Debug, Clone, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum Resolution {
     #[value(name = "720p")]
     Hd720,

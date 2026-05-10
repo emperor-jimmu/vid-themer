@@ -34,18 +34,6 @@ fn validate_directory(path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Helper function to handle errors and exit with appropriate error code
-/// Prints error message and exits the process with code 1
-fn exit_on_error<T, E: std::fmt::Display>(result: Result<T, E>, context: &str) -> T {
-    match result {
-        Ok(value) => value,
-        Err(e) => {
-            eprintln!("Error {}: {}", context, e);
-            process::exit(1);
-        }
-    }
-}
-
 /// Display configuration summary
 fn display_config_summary(args: &CliArgs) {
     use colored::Colorize;
@@ -110,7 +98,10 @@ fn main() {
     }
 
     // Validate directory exists (exit with error code 1 if not)
-    exit_on_error(validate_directory(&args.directory), "validating directory");
+    if let Err(e) = validate_directory(&args.directory) {
+        eprintln!("Error validating directory: {}", e);
+        process::exit(1);
+    }
 
     // Display configuration summary
     display_config_summary(&args);
@@ -125,7 +116,13 @@ fn main() {
 
     // Create VideoScanner and scan for videos
     let scanner = VideoScanner::new(args.directory.clone(), args.force);
-    let scan_result = exit_on_error(scanner.scan(), "scanning directory");
+    let scan_result = match scanner.scan() {
+        Ok(result) => result,
+        Err(e) => {
+            eprintln!("Error scanning directory: {}", e);
+            process::exit(1);
+        }
+    };
 
     // Exit early if no videos found
     if scan_result.videos.is_empty() {
@@ -152,16 +149,13 @@ fn main() {
     let videos = scan_result.videos;
 
     // Create FFmpegExecutor with resolution and audio settings
-    let ffmpeg_executor =
-        FFmpegExecutor::new(args.resolution.clone(), args.include_audio, args.hw_accel);
+    let ffmpeg_executor = FFmpegExecutor::new(args.resolution, args.include_audio, args.hw_accel);
 
     // Create appropriate ClipSelector based on strategy flag
     let selector: Box<dyn ClipSelector> = match args.strategy {
         SelectionStrategy::Random => Box::new(RandomSelector),
-        SelectionStrategy::IntenseAudio => {
-            Box::new(IntenseAudioSelector::new(ffmpeg_executor.clone()))
-        }
-        SelectionStrategy::Action => Box::new(ActionSelector::new(ffmpeg_executor.clone())),
+        SelectionStrategy::IntenseAudio => Box::new(IntenseAudioSelector::new()),
+        SelectionStrategy::Action => Box::new(ActionSelector::new()),
     };
 
     // Create ClipConfig from CLI arguments
