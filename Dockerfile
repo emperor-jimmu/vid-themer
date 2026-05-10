@@ -8,7 +8,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY src/ ./src/
 COPY tests/ ./tests/
 
-RUN cargo build --release --target x86_64-unknown-linux-musl
+RUN cargo build --release
 
 FROM alpine:3.19
 
@@ -16,7 +16,7 @@ RUN apk add --no-cache ffmpeg dcron curl
 
 WORKDIR /app
 
-COPY --from=builder /build/target/x86_64-unknown-linux-musl/release/video-clip-extractor /usr/local/bin/video-clip-extractor
+COPY --from=builder /build/target/release/video-clip-extractor /usr/local/bin/video-clip-extractor
 
 RUN chmod +x /usr/local/bin/video-clip-extractor
 
@@ -44,4 +44,4 @@ RUN chmod 0600 /etc/crontabs/root
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-CMD ["crond", "-f", "-l", "2"]
+CMD ["busybox", "crond", "-f", "-l", "2"]
