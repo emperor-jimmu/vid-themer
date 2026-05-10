@@ -559,6 +559,16 @@ fn validate_clip_duration(output_path: &Path, expected_duration: f64) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    fn make_temp_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "executor_test_{}_{}_{}",
+            name,
+            std::process::id(),
+            rand::random::<u32>()
+        ))
+    }
 
     #[test]
     fn test_ffmpeg_availability() {
@@ -574,5 +584,100 @@ mod tests {
     fn test_executor_creation() {
         let executor = FFmpegExecutor::new(Resolution::Hd1080, true, false);
         assert!(!executor.use_hw_accel);
+    }
+
+    #[test]
+    fn test_classify_stderr_error_codec_not_found() {
+        let err = classify_stderr_error(
+            "Unknown encoder 'h264_videotoolbox'",
+            Path::new("video.mp4"),
+            &TimeRange {
+                start_seconds: 0.0,
+                duration_seconds: 10.0,
+            },
+        );
+
+        assert!(matches!(err, Some(FFmpegError::CodecNotFound(_))));
+    }
+
+    #[test]
+    fn test_classify_stderr_error_invalid_format() {
+        let err = classify_stderr_error(
+            "Invalid data found when processing input",
+            Path::new("video.mp4"),
+            &TimeRange {
+                start_seconds: 0.0,
+                duration_seconds: 10.0,
+            },
+        );
+
+        assert!(matches!(err, Some(FFmpegError::InvalidFormat(_))));
+    }
+
+    #[test]
+    fn test_classify_stderr_error_hw_accel_not_available() {
+        let err = classify_stderr_error(
+            "Hardware acceleration not available for this device",
+            Path::new("video.mp4"),
+            &TimeRange {
+                start_seconds: 0.0,
+                duration_seconds: 10.0,
+            },
+        );
+
+        assert!(matches!(err, Some(FFmpegError::HWAccelNotAvailable(_))));
+    }
+
+    #[test]
+    fn test_classify_stderr_error_unknown_returns_none() {
+        let err = classify_stderr_error(
+            "some unrelated ffmpeg output",
+            Path::new("video.mp4"),
+            &TimeRange {
+                start_seconds: 0.0,
+                duration_seconds: 10.0,
+            },
+        );
+
+        assert!(err.is_none());
+    }
+
+    #[test]
+    fn test_validate_output_missing_file() {
+        let path = make_temp_path("missing.mp4");
+        let err = validate_output(&path).unwrap_err();
+        assert!(matches!(err, FFmpegError::ExecutionFailed(_)));
+    }
+
+    #[test]
+    fn test_validate_output_zero_byte_file() {
+        let path = make_temp_path("zero.mp4");
+        fs::File::create(&path).unwrap();
+
+        let err = validate_output(&path).unwrap_err();
+        assert!(matches!(err, FFmpegError::ExecutionFailed(_)));
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_validate_output_too_small_file() {
+        let path = make_temp_path("tiny.mp4");
+        fs::write(&path, b"small").unwrap();
+
+        let err = validate_output(&path).unwrap_err();
+        assert!(matches!(err, FFmpegError::ExecutionFailed(_)));
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_validate_output_valid_size_file() {
+        let path = make_temp_path("valid.mp4");
+        fs::write(&path, vec![0u8; 2048]).unwrap();
+
+        assert!(validate_output(&path).is_ok());
+
+        let _ = fs::remove_file(&path);
     }
 }

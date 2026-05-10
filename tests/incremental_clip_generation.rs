@@ -166,7 +166,6 @@ fn test_incremental_clip_generation() {
 }
 
 #[test]
-#[ignore] // Requires FFmpeg and real video files
 fn test_skip_when_enough_clips_exist() {
     // Test that videos with enough clips are skipped during scanning
 
@@ -177,10 +176,11 @@ fn test_skip_when_enough_clips_exist() {
 
     // Create a test video
     let video_path = test_dir.join("test_video.mp4");
-    assert!(
-        common::create_test_video(&video_path, 30, 1920, 1080),
-        "Failed to create test video"
-    );
+    if !common::create_test_video(&video_path, 30, 1920, 1080) {
+        eprintln!("Skipping test_skip_when_enough_clips_exist: FFmpeg not available");
+        let _ = fs::remove_dir_all(&test_dir);
+        return;
+    }
 
     // Manually create 2 backdrop files
     let backdrops_dir = test_dir.join("backdrops");
@@ -193,28 +193,28 @@ fn test_skip_when_enough_clips_exist() {
     fs::write(&backdrop1, b"dummy backdrop 1 content").unwrap();
     fs::write(&backdrop2, b"dummy backdrop 2 content").unwrap();
 
-    // Run with -c 2 - should skip the video
+    // Run with -c 2. Without done.ext, scanner should not skip; processor should detect
+    // enough clips and short-circuit by writing done.ext.
     let output = Command::new("cargo")
         .args(&["run", "--", test_dir.to_str().unwrap(), "-c", "2"])
         .output()
         .expect("Failed to execute command");
 
     assert!(output.status.success(), "Run with -c 2 should succeed");
+    assert!(backdrops_dir.join("done.ext").exists(), "done.ext should be written");
 
-    // Verify output indicates the video was skipped
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("already have backdrop clips") || stdout.contains("Skipped"),
-        "Output should indicate video was skipped"
-    );
-
-    // Run with -c 1 - should also skip
+    // Run with -c 1 - scanner should now skip due to done.ext
     let output = Command::new("cargo")
         .args(&["run", "--", test_dir.to_str().unwrap(), "-c", "1"])
         .output()
         .expect("Failed to execute command");
 
     assert!(output.status.success(), "Run with -c 1 should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("already have backdrop clips") || stdout.contains("Skipped"),
+        "Output should indicate video was skipped after done.ext is present"
+    );
 
     // Clean up
     let _ = fs::remove_dir_all(&test_dir);
