@@ -14,7 +14,7 @@ COPY tests/ ./tests/
 
 RUN cargo build --release
 
-FROM --platform=$TARGETPLATFORM alpine:3.22
+FROM --platform=$TARGETPLATFORM alpine:3.23
 
 RUN apk add --no-cache ffmpeg dcron curl
 

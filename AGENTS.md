@@ -21,14 +21,27 @@ cargo check                   # Type check without building
 
 ## Supported Platforms
 
-- Windows 10/11
-- Linux
-- macOS (Apple Silicon)
+- Native binaries (release assets):
+  - Windows 10/11 (`x86_64`)
+  - Linux (`x86_64`)
+  - macOS (Apple Silicon, `aarch64`)
+- Docker image architectures:
+  - `linux/amd64`
+  - `linux/arm64/v8`
 
 ## Requirements
 
-- **Rust** (Edition 2024 - requires nightly or recent stable)
+- **Rust** (Edition 2024; stable toolchain with 2024 edition support, e.g. Rust 1.85+)
 - **FFmpeg** (must be in PATH): `ffmpeg` and `ffprobe` commands
+
+## Build and Release Process
+
+GitHub Actions workflow (`.github/workflows/main.yml`) currently:
+
+- Runs tests on Linux, Windows, and macOS
+- Builds release binaries for `x86_64-unknown-linux-gnu`, `x86_64-pc-windows-msvc`, and `aarch64-apple-darwin`
+- Publishes GitHub Releases using `Cargo.toml` version as `v<version>`
+- Builds and publishes multi-arch Docker images (`linux/amd64`, `linux/arm64/v8`) to GHCR and Docker Hub
 
 ## Architecture
 
@@ -73,12 +86,13 @@ Tests that require FFmpeg: run with `cargo test` (they skip gracefully if FFmpeg
 ```bash
 docker build -t vid-themer .
 docker run -d \
-  -e VID_THEMER_VIDEO_DIR=/videos \
   -e VID_THEMER_STRATEGY=intense-audio \
   -e VID_THEMER_CLIP_COUNT=2 \
-  -v /path/to/movies:/videos:ro \
+  -v /path/to/movies:/videos \
   vid-themer
 ```
+
+`VID_THEMER_VIDEO_DIR` defaults to `/videos` in the image.
 
 Or use docker-compose:
 ```bash
@@ -91,11 +105,11 @@ docker compose up -d
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VIDEO_DIR` | *(required)* | Directory to scan |
+| `VIDEO_DIR` | `/videos` | Directory to scan |
 | `CRON_SCHEDULE` | `0 2 * * *` | Cron schedule |
-| `STRATEGY` | `random` | `random`, `intense-audio`, `action` |
+| `STRATEGY` | `random` | `random`, `intense-audio`, `action` (`intense-action` alias supported) |
 | `RESOLUTION` | `1080p` | `720p`, `1080p` |
-| `CLIP_COUNT` | `1` | Number of clips (1-4) |
+| `CLIP_COUNT` | `2` | Number of clips (1-4) |
 | `AUDIO` | `true` | Include audio |
 | `FORCE` | `false` | Force regeneration |
 | `HW_ACCEL` | `false` | Hardware acceleration |

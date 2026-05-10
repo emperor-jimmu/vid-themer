@@ -24,13 +24,17 @@ A command-line tool that recursively scans directories for video files and autom
 
 ## Supported Platforms
 
-- Windows 10/11
-- Linux
-- macOS (Apple Silicon)
+- Native binaries (release assets):
+  - Windows 10/11 (`x86_64`)
+  - Linux (`x86_64`)
+  - macOS (Apple Silicon, `aarch64`)
+- Docker image architectures:
+  - `linux/amd64`
+  - `linux/arm64/v8`
 
 ## Requirements
 
-- **Rust** (Edition 2024 - requires nightly or recent stable)
+- **Rust** (Edition 2024; stable toolchain with 2024 edition support, e.g. Rust 1.85+)
 - **FFmpeg** - Must be installed and available in your system PATH
   - Includes `ffmpeg` and `ffprobe` commands
 
@@ -45,8 +49,23 @@ cargo build --release
 ```
 
 The compiled binary will be available at:
+
 - Windows: `target/release/video-clip-extractor.exe`
 - Unix: `target/release/video-clip-extractor`
+
+## Build and Release Process
+
+GitHub Actions (`.github/workflows/main.yml`) currently does the following on push/tag/release events:
+
+- Runs tests on Linux, Windows, and macOS
+- Builds release binaries for:
+  - `x86_64-unknown-linux-gnu`
+  - `x86_64-pc-windows-msvc`
+  - `aarch64-apple-darwin`
+- Publishes GitHub Releases tagged as `v<version>` from `Cargo.toml`
+- Builds and publishes multi-arch Docker images to:
+  - `ghcr.io/emperor-jimmu/vid-themer`
+  - `emperorjimmu/vid-themer`
 
 ## Usage
 
@@ -211,6 +230,7 @@ Directories are automatically skipped when they contain a `backdrops/done.ext` m
 - **Docker/cron**: Scheduled runs skip completed directories automatically
 
 **To re-process a directory:**
+
 ```bash
 # Option 1: Use --force flag to reprocess all videos
 video-clip-extractor ~/Videos --force
@@ -234,6 +254,7 @@ The tool supports incremental clip generation, allowing you to add more clips wi
    - Skips videos that already have 2 or more valid clips
 
 This feature is useful when you want to:
+
 - Start with fewer clips and add more later
 - Experiment with different clip counts without wasting processing time
 - Incrementally build up your clip library
@@ -274,19 +295,21 @@ The CRF 26 setting provides a good balance between file size and quality for bac
 
 ## Docker
 
-You can run the tool as a Docker container with scheduled execution via cron.
+The container runs as a scheduled job via cron and executes `video-clip-extractor` through `/entrypoint.sh`.
 
 ### Quick Start
 
 1. Copy the sample compose file:
+
    ```bash
    cp docker-compose.sample.yml docker-compose.yml
    ```
 
 2. Edit `docker-compose.yml` and update the volume path to point to your movies directory:
+
    ```yaml
    volumes:
-     - /path/to/your/movies:/videos:ro
+     - /path/to/your/movies:/videos
    ```
 
 3. Start the container:
@@ -302,29 +325,40 @@ Pull and run directly from Docker Hub:
 docker pull emperorjimmu/vid-themer:latest
 docker run -d \
   --name vid-themer \
-  -v /path/to/movies:/videos:ro \
-  -e VID_THEMER_VIDEO_DIR=/videos \
+  -v /path/to/movies:/videos \
   -e VID_THEMER_STRATEGY=intense-audio \
   -e VID_THEMER_CLIP_COUNT=2 \
   emperorjimmu/vid-themer:latest
 ```
 
+Build locally instead of pulling:
+
+```bash
+docker build -t vid-themer .
+docker run -d \
+  --name vid-themer \
+  -v /path/to/movies:/videos \
+  vid-themer
+```
+
+The image defaults `VID_THEMER_VIDEO_DIR` to `/videos`, so it is optional if you mount your library there.
+
 ### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `VID_THEMER_VIDEO_DIR` | *(required)* | Directory to scan for videos |
-| `VID_THEMER_CRON_SCHEDULE` | `0 2 * * *` | Cron schedule (daily at 2am) |
-| `VID_THEMER_STRATEGY` | `random` | Clip selection: `random`, `intense-audio`, `action` |
-| `VID_THEMER_RESOLUTION` | `1080p` | Output resolution: `720p`, `1080p` |
-| `VID_THEMER_AUDIO` | `true` | Include audio in clips |
-| `VID_THEMER_CLIP_COUNT` | `1` | Number of clips per video (1-4) |
-| `VID_THEMER_INTRO_EXCLUSION` | `2.0` | Intro exclusion percentage |
-| `VID_THEMER_OUTRO_EXCLUSION` | `40.0` | Outro exclusion percentage |
-| `VID_THEMER_MIN_DURATION` | `20.0` | Minimum clip duration (seconds) |
-| `VID_THEMER_MAX_DURATION` | `30.0` | Maximum clip duration (seconds) |
-| `VID_THEMER_FORCE` | `false` | Force regeneration |
-| `VID_THEMER_HW_ACCEL` | `false` | Hardware acceleration |
+| Variable                     | Default     | Description                                                                              |
+| ---------------------------- | ----------- | ---------------------------------------------------------------------------------------- |
+| `VID_THEMER_VIDEO_DIR`       | `/videos`   | Directory to scan for videos                                                             |
+| `VID_THEMER_CRON_SCHEDULE`   | `0 2 * * *` | Cron schedule (daily at 2am)                                                             |
+| `VID_THEMER_STRATEGY`        | `random`    | Clip selection: `random`, `intense-audio`, `action` (`intense-action` alias is accepted) |
+| `VID_THEMER_RESOLUTION`      | `1080p`     | Output resolution: `720p`, `1080p`                                                       |
+| `VID_THEMER_AUDIO`           | `true`      | Include audio in clips                                                                   |
+| `VID_THEMER_CLIP_COUNT`      | `2`         | Number of clips per video (1-4)                                                          |
+| `VID_THEMER_INTRO_EXCLUSION` | `2.0`       | Intro exclusion percentage                                                               |
+| `VID_THEMER_OUTRO_EXCLUSION` | `40.0`      | Outro exclusion percentage                                                               |
+| `VID_THEMER_MIN_DURATION`    | `20.0`      | Minimum clip duration (seconds)                                                          |
+| `VID_THEMER_MAX_DURATION`    | `30.0`      | Maximum clip duration (seconds)                                                          |
+| `VID_THEMER_FORCE`           | `false`     | Force regeneration                                                                       |
+| `VID_THEMER_HW_ACCEL`        | `false`     | Hardware acceleration                                                                    |
 
 ### Example docker-compose.yml
 
@@ -337,7 +371,7 @@ See [`docker-compose.sample.yml`](docker-compose.sample.yml) for a complete exam
 docker compose logs -f
 
 # View application logs inside container
-docker compose exec vid-themer cat /var/log/video-clip-extractor.log
+docker compose exec vid-themer sh -c 'tail -n 200 /var/log/video-clip-extractor.log'
 ```
 
 ## Development
