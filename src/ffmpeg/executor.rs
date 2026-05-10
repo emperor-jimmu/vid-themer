@@ -43,7 +43,6 @@ impl Drop for TempFileGuard {
 }
 
 /// FFmpeg executor with configuration
-#[derive(Clone)]
 pub struct FFmpegExecutor {
     pub resolution: Resolution,
     pub include_audio: bool,
@@ -76,7 +75,7 @@ impl FFmpegExecutor {
     }
 
     /// Get video metadata
-    pub fn get_video_metadata(&self, video_path: &Path) -> Result<VideoMetadata, FFmpegError> {
+    fn get_video_metadata(&self, video_path: &Path) -> Result<VideoMetadata, FFmpegError> {
         get_video_metadata(video_path)
     }
 
@@ -97,18 +96,7 @@ impl FFmpegExecutor {
         let source_resolution = (metadata.width, metadata.height);
         let codec = &metadata.codec;
 
-        let temp_filename = format!("tmp.{}.mp4", std::process::id());
-        let temp_path = output_path.with_file_name(
-            output_path
-                .file_stem()
-                .map(|s| {
-                    let mut name = s.to_os_string();
-                    name.push(format!(".{}.tmp", std::process::id()));
-                    name
-                })
-                .unwrap_or_else(|| OsString::from(&temp_filename)),
-        );
-        let temp_path = temp_path.with_extension("mp4");
+        let temp_path = output_path.with_extension(format!("{}.tmp.mp4", std::process::id()));
 
         let mut _guard = TempFileGuard::new(temp_path.clone());
 
@@ -253,7 +241,7 @@ impl FFmpegExecutor {
         Ok(())
     }
 
-    /// Extract clip with error recovery
+    /// Extract clip with error recovery, optionally stripping audio
     fn extract_clip_with_recovery(
         &self,
         video_path: &Path,
@@ -262,12 +250,29 @@ impl FFmpegExecutor {
         source_resolution: (u32, u32),
         codec: &str,
     ) -> Result<(), FFmpegError> {
+        self.extract_clip_error_tolerant(
+            video_path,
+            time_range,
+            output_path,
+            source_resolution,
+            codec,
+            self.include_audio,
+        )
+    }
+
+    /// Error-tolerant extraction with configurable audio
+    fn extract_clip_error_tolerant(
+        &self,
+        video_path: &Path,
+        time_range: &TimeRange,
+        output_path: &Path,
+        source_resolution: (u32, u32),
+        codec: &str,
+        include_audio: bool,
+    ) -> Result<(), FFmpegError> {
         // Get metadata for color information
         let metadata = self.get_video_metadata(video_path)?;
 
-        // Build the standard extraction command, then prepend error-tolerance flags.
-        // The standard command already begins with "-err_detect ignore_err"; we replace
-        // just that prefix with our expanded error-tolerance flags.
         let config = command_builder::ExtractConfig {
             video_path,
             time_range,
@@ -276,13 +281,12 @@ impl FFmpegExecutor {
             codec,
             color_transfer: metadata.color_transfer.as_deref(),
             target_resolution: self.resolution,
-            include_audio: self.include_audio,
+            include_audio,
             use_hw_accel: self.use_hw_accel,
             audio_stream_index: metadata.audio_stream_index,
         };
 
         // Prepend extra error-tolerance flags before the standard args.
-        // standard_args starts with ["-err_detect", "ignore_err", ...]; we keep that and add more.
         let standard_args = command_builder::build_extract_command(&config);
         let mut args: Vec<OsString> = vec![
             "-fflags".into(),
@@ -307,79 +311,24 @@ impl FFmpegExecutor {
                 return Err(e);
             }
 
-            // If audio decoding failed, try without audio
-            if self.include_audio
+            // If audio decoding failed and we haven't already stripped it, try without audio
+            if include_audio
                 && (stderr.contains("Error submitting packet to decoder")
                     || stderr.contains("aac")
                     || stderr.contains("Could not open encoder before EOF"))
             {
-                return self.extract_clip_without_audio(
+                return self.extract_clip_error_tolerant(
                     video_path,
                     time_range,
                     output_path,
                     source_resolution,
                     codec,
-                    &metadata,
+                    false,
                 );
             }
 
             return Err(FFmpegError::ExecutionFailed(format!(
                 "FFmpeg clip extraction failed even with recovery for '{}' at {:.2}s-{:.2}s: {}",
-                video_path.display(),
-                time_range.start_seconds,
-                time_range.start_seconds + time_range.duration_seconds,
-                stderr
-            )));
-        }
-
-        validate_output(output_path)?;
-        Ok(())
-    }
-
-    /// Extract clip without audio (last resort for corrupted audio streams)
-    fn extract_clip_without_audio(
-        &self,
-        video_path: &Path,
-        time_range: &TimeRange,
-        output_path: &Path,
-        source_resolution: (u32, u32),
-        codec: &str,
-        metadata: &VideoMetadata,
-    ) -> Result<(), FFmpegError> {
-        let config = command_builder::ExtractConfig {
-            video_path,
-            time_range,
-            output_path,
-            source_resolution,
-            codec,
-            color_transfer: metadata.color_transfer.as_deref(),
-            target_resolution: self.resolution,
-            include_audio: false, // Force no audio
-            use_hw_accel: self.use_hw_accel,
-            audio_stream_index: metadata.audio_stream_index,
-        };
-
-        let standard_args = command_builder::build_extract_command(&config);
-        let mut args: Vec<OsString> = vec![
-            "-fflags".into(),
-            "+genpts+igndts".into(),
-            "-max_error_rate".into(),
-            "1.0".into(),
-        ];
-        args.extend(standard_args);
-
-        let output = Command::new("ffmpeg").args(&args).output().map_err(|e| {
-            FFmpegError::ExecutionFailed(format!(
-                "Failed to execute ffmpeg without audio for '{}': {}",
-                video_path.display(),
-                e
-            ))
-        })?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(FFmpegError::ExecutionFailed(format!(
-                "FFmpeg clip extraction failed even without audio for '{}' at {:.2}s-{:.2}s: {}",
                 video_path.display(),
                 time_range.start_seconds,
                 time_range.start_seconds + time_range.duration_seconds,
@@ -397,7 +346,7 @@ impl FFmpegExecutor {
 fn classify_stderr_error(stderr: &str) -> Option<FFmpegError> {
     // Use contains() directly — FFmpeg messages have consistent casing, no need to lowercase the whole string.
     if stderr.contains("Unknown encoder")
-        || stderr.contains("Encoder") && stderr.contains("not found")
+        || (stderr.contains("Encoder") && stderr.contains("not found"))
         || stderr.contains("Codec not found")
         || stderr.contains("codec not found")
         || stderr.contains("encoder not found")

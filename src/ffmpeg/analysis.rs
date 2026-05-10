@@ -117,17 +117,15 @@ pub fn analyze_audio_intensity(
     let mut current_time = 0.0;
 
     for line in stderr.lines() {
-        #[allow(clippy::collapsible_if)]
-        if line.contains("pts_time:") {
-            if let Some(time) = extract_value_after(line, "pts_time:") {
-                current_time = time;
-            }
+        if line.contains("pts_time:")
+            && let Some(time) = extract_value_after(line, "pts_time:")
+        {
+            current_time = time;
         }
-        #[allow(clippy::collapsible_if)]
-        if line.contains("lavfi.astats.Overall.RMS_level") {
-            if let Some(level) = extract_value_after(line, "lavfi.astats.Overall.RMS_level=") {
-                measurements.push((current_time, level));
-            }
+        if line.contains("lavfi.astats.Overall.RMS_level")
+            && let Some(level) = extract_value_after(line, "lavfi.astats.Overall.RMS_level=")
+        {
+            measurements.push((current_time, level));
         }
     }
 
@@ -194,14 +192,12 @@ fn analyze_audio_intensity_fallback(
     let mut measurements: Vec<(f64, f64)> = Vec::new();
 
     for line in stderr.lines() {
-        #[allow(clippy::collapsible_if)]
-        if line.contains("Parsed_ebur128") && line.contains("t:") {
-            #[allow(clippy::collapsible_if)]
-            if let Some(time) = extract_value_after(line, "t:") {
-                if let Some(peak) = extract_value_after(line, "FTPK:") {
-                    measurements.push((time, peak));
-                }
-            }
+        if line.contains("Parsed_ebur128")
+            && line.contains("t:")
+            && let Some(time) = extract_value_after(line, "t:")
+            && let Some(peak) = extract_value_after(line, "FTPK:")
+        {
+            measurements.push((time, peak));
         }
     }
 

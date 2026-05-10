@@ -127,12 +127,31 @@ pub enum SelectionStrategy {
     Action,
 }
 
+impl std::fmt::Display for SelectionStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Random => f.write_str("Random"),
+            Self::IntenseAudio => f.write_str("Intense Audio"),
+            Self::Action => f.write_str("Action"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum Resolution {
     #[value(name = "720p")]
     Hd720,
     #[value(name = "1080p")]
     Hd1080,
+}
+
+impl std::fmt::Display for Resolution {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Hd720 => f.write_str("720p"),
+            Self::Hd1080 => f.write_str("1080p"),
+        }
+    }
 }
 
 #[cfg(test)]

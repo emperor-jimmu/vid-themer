@@ -3,7 +3,7 @@
 use crate::ffmpeg::FFmpegExecutor;
 use crate::scanner::{self, BACKDROPS_DIR, VideoFile};
 use crate::selector::ClipSelector;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub struct VideoProcessor {
     selector: Box<dyn ClipSelector>,
@@ -48,8 +48,6 @@ impl VideoProcessor {
     where
         F: FnMut(usize, usize, &str),
     {
-        let video_path = video.path.clone();
-
         // Step 0: Check for existing clips and determine how many more we need
         // Target comes from CLI argument
         let backdrops_dir = video.parent_dir.join(BACKDROPS_DIR);
@@ -71,7 +69,7 @@ impl VideoProcessor {
                     e
                 );
             }
-            return ProcessResult::success(&video_path, PathBuf::new(), 0);
+            return ProcessResult::success(video.path.clone(), PathBuf::new(), 0);
         }
 
         let clips_to_generate = self.clip_count - existing_clip_count;
@@ -88,7 +86,7 @@ impl VideoProcessor {
                     _ => format!("Failed to get video duration: {}", e),
                 };
                 return ProcessResult::failure(
-                    &video_path,
+                    video.path.clone(),
                     PathBuf::new(),
                     error_message,
                     stderr,
@@ -98,40 +96,27 @@ impl VideoProcessor {
         };
 
         // Step 2: Select segments using ClipSelector strategy (only for the clips we need)
-        let time_ranges = match self.selector.select_clips(
+        let time_ranges = self.selector.select_clips(
             &video.path,
             duration,
             self.intro_exclusion_percent,
             self.outro_exclusion_percent,
             clips_to_generate,
             &self.clip_config,
-        ) {
-            Ok(ranges) if !ranges.is_empty() => ranges,
-            Ok(_) => {
-                return ProcessResult::failure(
-                    &video_path,
-                    PathBuf::new(),
-                    format!(
-                        "No valid clips could be selected (requested: {} clips)",
-                        clips_to_generate
-                    ),
-                    None,
-                    0,
-                );
-            }
-            Err(e) => {
-                return ProcessResult::failure(
-                    &video_path,
-                    PathBuf::new(),
-                    format!(
-                        "Failed to select clip segment (requested: {} clips): {}",
-                        clips_to_generate, e
-                    ),
-                    None,
-                    0,
-                );
-            }
-        };
+        );
+
+        if time_ranges.is_empty() {
+            return ProcessResult::failure(
+                video.path.clone(),
+                PathBuf::new(),
+                format!(
+                    "No valid clips could be selected (requested: {} clips)",
+                    clips_to_generate
+                ),
+                None,
+                0,
+            );
+        }
 
         // Warn if fewer clips generated than requested
         if time_ranges.len() < clips_to_generate as usize {
@@ -144,22 +129,22 @@ impl VideoProcessor {
         }
 
         // Step 3: Create output directory
-        let backdrops_dir = match self.create_backdrops_directory(video) {
-            Ok(dir) => dir,
-            Err(e) => {
-                return ProcessResult::failure(
-                    &video_path,
-                    PathBuf::new(),
-                    format!("Failed to create output directory: {}", e),
-                    None,
-                    0,
-                );
-            }
-        };
+        if let Err(e) = std::fs::create_dir_all(&backdrops_dir) {
+            return ProcessResult::failure(
+                video.path.clone(),
+                PathBuf::new(),
+                format!(
+                    "Failed to create output directory {:?}: {}",
+                    backdrops_dir, e
+                ),
+                None,
+                0,
+            );
+        }
 
         // Step 4: Extract each clip with sequential naming, starting after existing clips
-        let mut last_output_path = PathBuf::new();
         let total_clips = time_ranges.len();
+        let mut last_output_path = PathBuf::new();
 
         for (index, time_range) in time_ranges.iter().enumerate() {
             // Start numbering from existing_clip_count + 1
@@ -167,7 +152,6 @@ impl VideoProcessor {
             let output_filename = format!("backdrop{}.mp4", clip_num);
 
             let output_path = backdrops_dir.join(&output_filename);
-            last_output_path = output_path.clone();
 
             if let Err(e) = self
                 .ffmpeg
@@ -175,7 +159,7 @@ impl VideoProcessor {
             {
                 let stderr = e.stderr().map(|s| s.to_string());
                 return ProcessResult::failure(
-                    &video_path,
+                    video.path.clone(),
                     output_path,
                     format!(
                         "Failed to extract clip {} of {} (backdrop{}.mp4): {}",
@@ -188,6 +172,8 @@ impl VideoProcessor {
                     index,
                 );
             }
+
+            last_output_path = output_path;
 
             // Call progress callback after successful extraction
             progress_callback(index + 1, total_clips, &output_filename);
@@ -202,7 +188,7 @@ impl VideoProcessor {
             );
         }
 
-        ProcessResult::success(&video_path, last_output_path, time_ranges.len())
+        ProcessResult::success(video.path.clone(), last_output_path, time_ranges.len())
     }
 
     /// Count existing valid backdrop files in sequential order
@@ -228,23 +214,6 @@ impl VideoProcessor {
 
         count
     }
-
-    /// Create the backdrops subdirectory and return the directory path
-    /// Returns the path to the backdrops directory relative to the video's parent directory
-    fn create_backdrops_directory(&self, video: &VideoFile) -> Result<PathBuf, ProcessError> {
-        // Create backdrops subdirectory in video's parent directory
-        let backdrops_dir = video.parent_dir.join(BACKDROPS_DIR);
-
-        std::fs::create_dir_all(&backdrops_dir).map_err(|e| {
-            ProcessError::OutputDirectoryCreationFailed(format!(
-                "Failed to create directory {:?}: {}",
-                backdrops_dir, e
-            ))
-        })?;
-
-        // Return the backdrops directory path
-        Ok(backdrops_dir)
-    }
 }
 
 pub struct ProcessResult {
@@ -257,9 +226,9 @@ pub struct ProcessResult {
 }
 
 impl ProcessResult {
-    fn success(video_path: &Path, output_path: PathBuf, clips_generated: usize) -> Self {
+    fn success(video_path: PathBuf, output_path: PathBuf, clips_generated: usize) -> Self {
         Self {
-            video_path: video_path.to_path_buf(),
+            video_path,
             output_path,
             success: true,
             error_message: None,
@@ -269,14 +238,14 @@ impl ProcessResult {
     }
 
     fn failure(
-        video_path: &Path,
+        video_path: PathBuf,
         output_path: PathBuf,
         error_message: String,
         ffmpeg_stderr: Option<String>,
         clips_generated: usize,
     ) -> Self {
         Self {
-            video_path: video_path.to_path_buf(),
+            video_path,
             output_path,
             success: false,
             error_message: Some(error_message),
@@ -284,12 +253,6 @@ impl ProcessResult {
             clips_generated,
         }
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ProcessError {
-    #[error("Failed to create output directory: {0}")]
-    OutputDirectoryCreationFailed(String),
 }
 
 #[cfg(test)]
@@ -314,12 +277,12 @@ mod tests {
             _outro_exclusion_percent: f64,
             _clip_count: u8,
             config: &crate::selector::ClipConfig,
-        ) -> Result<Vec<TimeRange>, crate::selector::SelectionError> {
+        ) -> Vec<TimeRange> {
             // Return a simple time range for testing (single clip for backward compatibility)
-            Ok(vec![TimeRange {
+            vec![TimeRange {
                 start_seconds: 0.0,
                 duration_seconds: duration.min(config.max_duration),
-            }])
+            }]
         }
     }
 
@@ -362,10 +325,9 @@ mod tests {
             VideoProcessor::new(selector, ffmpeg, 1.0, 40.0, 1, default_test_config(), false);
 
         // Get output path
-        let output_path = processor
-            .create_backdrops_directory(&video_file)
-            .unwrap()
-            .join("backdrop1.mp4");
+        let backdrops_dir = temp_dir.join("backdrops");
+        std::fs::create_dir_all(&backdrops_dir).unwrap();
+        let output_path = backdrops_dir.join("backdrop1.mp4");
 
         // Verify the output file name is "backdrop1.mp4"
         assert_eq!(

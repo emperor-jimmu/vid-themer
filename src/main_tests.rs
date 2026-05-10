@@ -10,8 +10,7 @@ fn test_directory_not_found_error() {
     assert!(result.is_err());
     let err = result.unwrap_err();
 
-    let AppError::DirectoryNotFound(path) = err;
-    assert_eq!(path, non_existent_path);
+    assert!(matches!(err, AppError::DirectoryNotFound(ref path) if path == &non_existent_path));
 }
 
 #[test]
@@ -23,8 +22,7 @@ fn test_path_is_not_directory() {
     assert!(result.is_err());
     let err = result.unwrap_err();
 
-    let AppError::DirectoryNotFound(path) = err;
-    assert_eq!(path, file_path);
+    assert!(matches!(err, AppError::NotADirectory(ref path) if path == &file_path));
 }
 
 #[test]

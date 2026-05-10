@@ -3,10 +3,12 @@
 use rand::RngExt;
 use std::path::Path;
 
-/// Minimum clip duration in seconds
+/// Default minimum clip duration in seconds (used by tests; CLI defaults differ)
+#[cfg(test)]
 pub const MIN_CLIP_DURATION: f64 = 10.0;
 
-/// Maximum clip duration in seconds
+/// Default maximum clip duration in seconds (used by tests; CLI defaults differ)
+#[cfg(test)]
 pub const MAX_CLIP_DURATION: f64 = 15.0;
 
 /// Configuration for clip duration constraints
@@ -19,23 +21,23 @@ pub struct ClipConfig {
 impl Default for ClipConfig {
     fn default() -> Self {
         Self {
-            min_duration: MIN_CLIP_DURATION,
-            max_duration: MAX_CLIP_DURATION,
+            min_duration: 10.0,
+            max_duration: 15.0,
         }
     }
 }
 
 impl ClipConfig {
     /// Calculate middle segment as fallback when analysis fails
-    pub fn middle_segment(&self, duration: f64) -> Result<TimeRange, SelectionError> {
+    pub fn middle_segment(&self, duration: f64) -> TimeRange {
         let clip_duration = self.max_duration.min(duration);
         let actual_duration = clip_duration.max(self.min_duration).min(duration);
         let start = ((duration - actual_duration) / 2.0).max(0.0);
 
-        Ok(TimeRange {
+        TimeRange {
             start_seconds: start,
             duration_seconds: actual_duration,
-        })
+        }
     }
 }
 
@@ -85,41 +87,18 @@ impl TimeRange {
     ///
     /// # Returns
     /// The duration in seconds
-    ///
-    /// # Examples
-    /// ```
-    /// # use video_clip_extractor::selector::TimeRange;
-    /// let range = TimeRange { start_seconds: 10.0, duration_seconds: 15.0 };
-    /// assert_eq!(range.duration(), 15.0);
-    /// ```
+    #[cfg(test)]
     pub fn duration(&self) -> f64 {
         self.duration_seconds
     }
 
     /// Check if the duration of this time range is within valid clip bounds.
     ///
-    /// Valid clip durations are between MIN_CLIP_DURATION (10 seconds) and
-    /// MAX_CLIP_DURATION (15 seconds) inclusive.
-    ///
-    /// # Returns
-    /// `true` if the duration is valid, `false` otherwise
-    ///
-    /// # Examples
-    /// ```
-    /// # use video_clip_extractor::selector::TimeRange;
-    /// let valid_range = TimeRange { start_seconds: 10.0, duration_seconds: 12.0 };
-    /// assert!(valid_range.is_valid_duration());
-    ///
-    /// let too_short = TimeRange { start_seconds: 10.0, duration_seconds: 5.0 };
-    /// assert!(!too_short.is_valid_duration());
-    ///
-    /// let too_long = TimeRange { start_seconds: 10.0, duration_seconds: 25.0 };
-    /// assert!(!too_long.is_valid_duration());
-    /// ```
-    #[allow(dead_code)]
+    /// Valid clip durations are between 10 seconds and 15 seconds inclusive
+    /// (the test-default bounds from ClipConfig::default()).
+    #[cfg(test)]
     pub fn is_valid_duration(&self) -> bool {
-        let duration = self.duration();
-        (MIN_CLIP_DURATION..=MAX_CLIP_DURATION).contains(&duration)
+        (MIN_CLIP_DURATION..=MAX_CLIP_DURATION).contains(&self.duration_seconds)
     }
 }
 
@@ -179,7 +158,7 @@ pub trait ClipSelector: Send + Sync {
         outro_exclusion_percent: f64,
         clip_count: u8,
         config: &ClipConfig,
-    ) -> Result<Vec<TimeRange>, SelectionError>;
+    ) -> Vec<TimeRange>;
 }
 
 pub struct RandomSelector;
@@ -193,7 +172,7 @@ impl ClipSelector for RandomSelector {
         outro_exclusion_percent: f64,
         clip_count: u8,
         config: &ClipConfig,
-    ) -> Result<Vec<TimeRange>, SelectionError> {
+    ) -> Vec<TimeRange> {
         const MAX_ATTEMPTS: u32 = 1000;
 
         // Calculate valid selection zone (intro/outro exclusion)
@@ -213,7 +192,7 @@ impl ClipSelector for RandomSelector {
 
         // If no clips can be generated, return empty vector
         if actual_clip_count == 0 || valid_duration < config.min_duration {
-            return Ok(vec![]);
+            return vec![];
         }
 
         let mut clips = Vec::new();
@@ -282,7 +261,7 @@ impl ClipSelector for RandomSelector {
         // Sort clips by start time before returning
         clips.sort_by(|a, b| a.start_seconds.total_cmp(&b.start_seconds));
 
-        Ok(clips)
+        clips
     }
 }
 
@@ -310,9 +289,9 @@ impl RandomSelector {
             gaps.push((intro_cutoff, first_clip_start));
         }
 
-        for i in 0..existing_clips.len() - 1 {
-            let current_end = existing_clips[i].start_seconds + existing_clips[i].duration_seconds;
-            let next_start = existing_clips[i + 1].start_seconds;
+        for pair in existing_clips.windows(2) {
+            let current_end = pair[0].start_seconds + pair[0].duration_seconds;
+            let next_start = pair[1].start_seconds;
             let gap_size = next_start - current_end;
 
             if gap_size >= clip_duration {
@@ -365,7 +344,7 @@ fn select_clips_from_peaks<T: IntensitySegment>(
     outro_exclusion_percent: f64,
     clip_count: u8,
     config: &ClipConfig,
-) -> Result<Vec<TimeRange>, SelectionError> {
+) -> Vec<TimeRange> {
     const MAX_ATTEMPTS: u32 = 1000;
 
     // Calculate valid selection zone
@@ -385,7 +364,7 @@ fn select_clips_from_peaks<T: IntensitySegment>(
 
     // If no clips can be generated within exclusion zones, fall back to middle segment
     if actual_clip_count == 0 || valid_duration < config.min_duration {
-        return Ok(vec![config.middle_segment(duration)?]);
+        return vec![config.middle_segment(duration)];
     }
 
     // Calculate exclusion zone boundaries
@@ -403,7 +382,7 @@ fn select_clips_from_peaks<T: IntensitySegment>(
 
     // If no valid peaks found, fall back to middle segment
     if valid_peaks.is_empty() {
-        return Ok(vec![config.middle_segment(duration)?]);
+        return vec![config.middle_segment(duration)];
     }
 
     // Select top N non-overlapping peaks
@@ -469,7 +448,6 @@ fn select_clips_from_peaks<T: IntensitySegment>(
         if !selected_clips
             .iter()
             .any(|existing| candidate.overlaps(existing))
-            && (config.min_duration..=config.max_duration).contains(&candidate.duration_seconds)
         {
             selected_clips.push(candidate);
             consecutive_failures = 0; // Reset on success
@@ -480,22 +458,16 @@ fn select_clips_from_peaks<T: IntensitySegment>(
 
     // If we couldn't generate any clips from peaks, fall back to middle segment
     if selected_clips.is_empty() {
-        return Ok(vec![config.middle_segment(duration)?]);
+        return vec![config.middle_segment(duration)];
     }
 
     // Sort selected clips by start time before returning
     selected_clips.sort_by(|a, b| a.start_seconds.total_cmp(&b.start_seconds));
 
-    Ok(selected_clips)
+    selected_clips
 }
 
 pub struct IntenseAudioSelector;
-
-impl IntenseAudioSelector {
-    pub fn new() -> Self {
-        Self
-    }
-}
 
 impl ClipSelector for IntenseAudioSelector {
     fn select_clips(
@@ -506,7 +478,7 @@ impl ClipSelector for IntenseAudioSelector {
         outro_exclusion_percent: f64,
         clip_count: u8,
         config: &ClipConfig,
-    ) -> Result<Vec<TimeRange>, SelectionError> {
+    ) -> Vec<TimeRange> {
         // Try to analyze audio intensity
         match crate::ffmpeg::analyze_audio_intensity(video_path, duration) {
             Ok(segments) => select_clips_from_peaks(
@@ -519,19 +491,13 @@ impl ClipSelector for IntenseAudioSelector {
             ),
             Err(_e) => {
                 // Audio analysis failed, fall back to middle segment
-                Ok(vec![config.middle_segment(duration)?])
+                vec![config.middle_segment(duration)]
             }
         }
     }
 }
 
 pub struct ActionSelector;
-
-impl ActionSelector {
-    pub fn new() -> Self {
-        Self
-    }
-}
 
 impl ClipSelector for ActionSelector {
     fn select_clips(
@@ -542,7 +508,7 @@ impl ClipSelector for ActionSelector {
         outro_exclusion_percent: f64,
         clip_count: u8,
         config: &ClipConfig,
-    ) -> Result<Vec<TimeRange>, SelectionError> {
+    ) -> Vec<TimeRange> {
         // Try to analyze motion intensity
         match crate::ffmpeg::analyze_motion_intensity(video_path, duration) {
             Ok(segments) => select_clips_from_peaks(
@@ -555,14 +521,11 @@ impl ClipSelector for ActionSelector {
             ),
             Err(_e) => {
                 // Motion analysis failed, fall back to middle segment
-                Ok(vec![config.middle_segment(duration)?])
+                vec![config.middle_segment(duration)]
             }
         }
     }
 }
-
-#[derive(Debug, thiserror::Error)]
-pub enum SelectionError {}
 
 #[cfg(test)]
 #[path = "selector_tests.rs"]

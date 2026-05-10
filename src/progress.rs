@@ -91,21 +91,12 @@ impl ProgressReporter {
     }
 
     pub fn update(&mut self, result: &ProcessResult) {
-        // Note: current counter is already incremented before processing
-        // Buffer all output for this video completion to print atomically
-        let mut output = String::new();
-
         if result.success {
             self.successful += 1;
-            // No summary needed - individual clips already printed in real-time
         } else {
             self.failed += 1;
             if let Some(error) = &result.error_message {
-                output.push_str(&format!(
-                    "  {} {}\n",
-                    "X".bright_red().bold(),
-                    error.bright_red()
-                ));
+                println!("  {} {}", "X".bright_red().bold(), error.bright_red());
             }
 
             // Log failure to file if logger is available
@@ -113,9 +104,6 @@ impl ProgressReporter {
                 logger.log_failure(result, result.ffmpeg_stderr.as_deref());
             }
         }
-
-        // Print all output atomically (single print call prevents interleaving)
-        print!("{}", output);
     }
 
     pub fn finish(&self) {

@@ -137,7 +137,11 @@ fn parse_metadata_json(video_path: &Path, json_str: &str) -> Result<VideoMetadat
 
     Ok(VideoMetadata {
         duration,
-        codec: video_stream.codec_name.clone().unwrap_or_default(),
+        codec: video_stream
+            .codec_name
+            .as_deref()
+            .unwrap_or_default()
+            .to_owned(),
         width: video_stream.width,
         height: video_stream.height,
         color_transfer: video_stream.color_transfer.clone(),

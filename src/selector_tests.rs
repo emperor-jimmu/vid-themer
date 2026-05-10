@@ -461,10 +461,9 @@ proptest! {
         let intro_exclusion = duration * (INTRO_EXCLUSION_PERCENT / 100.0);
         let outro_exclusion = duration * (OUTRO_EXCLUSION_PERCENT / 100.0);
 
-        let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
-        prop_assert!(result.is_ok(), "Selection should succeed for valid duration");
+        let clips = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
 
-        let time_ranges = result.unwrap();
+        let time_ranges = clips;
         prop_assert!(!time_ranges.is_empty(), "Should return at least one clip");
         let time_range = &time_ranges[0];
 
@@ -497,7 +496,7 @@ fn test_random_selector_long_video() {
     let video_path = PathBuf::from("test.mp4");
     let duration = 600.0; // 10 minutes
 
-    let result = selector.select_clips(
+    let clips = selector.select_clips(
         &video_path,
         duration,
         INTRO_EXCLUSION_PERCENT,
@@ -505,9 +504,8 @@ fn test_random_selector_long_video() {
         1,
         &ClipConfig::default(),
     );
-    assert!(result.is_ok());
 
-    let time_ranges = result.unwrap();
+    let time_ranges = clips;
     assert!(!time_ranges.is_empty());
     let time_range = &time_ranges[0];
 
@@ -530,7 +528,7 @@ fn test_random_selector_short_video_fallback() {
     let video_path = PathBuf::from("test.mp4");
     let duration = 10.0; // 10 seconds - too short for 1% intro (0.1s) + 10-15s clip + 40% outro (4s) = needs >14.1s
 
-    let result = selector.select_clips(
+    let clips = selector.select_clips(
         &video_path,
         duration,
         INTRO_EXCLUSION_PERCENT,
@@ -538,9 +536,8 @@ fn test_random_selector_short_video_fallback() {
         1,
         &ClipConfig::default(),
     );
-    assert!(result.is_ok());
 
-    let time_ranges = result.unwrap();
+    let time_ranges = clips;
     // With the new implementation, videos too short for exclusion zones return empty vector
     assert_eq!(
         time_ranges.len(),
@@ -555,7 +552,7 @@ fn test_random_selector_very_short_video() {
     let video_path = PathBuf::from("test.mp4");
     let duration = 3.0; // 3 seconds - shorter than minimum clip duration
 
-    let result = selector.select_clips(
+    let clips = selector.select_clips(
         &video_path,
         duration,
         INTRO_EXCLUSION_PERCENT,
@@ -563,9 +560,8 @@ fn test_random_selector_very_short_video() {
         1,
         &ClipConfig::default(),
     );
-    assert!(result.is_ok());
 
-    let time_ranges = result.unwrap();
+    let time_ranges = clips;
     // With the new implementation, videos too short return empty vector
     assert_eq!(
         time_ranges.len(),
@@ -583,7 +579,7 @@ fn test_random_selector_variety() {
     // Run multiple times and collect start times
     let mut start_times = Vec::new();
     for _ in 0..10 {
-        let result = selector.select_clips(
+        let clips = selector.select_clips(
             &video_path,
             duration,
             INTRO_EXCLUSION_PERCENT,
@@ -591,8 +587,7 @@ fn test_random_selector_variety() {
             1,
             &ClipConfig::default(),
         );
-        assert!(result.is_ok());
-        let time_ranges = result.unwrap();
+        let time_ranges = clips;
         assert!(!time_ranges.is_empty());
         start_times.push(time_ranges[0].start_seconds);
     }
@@ -619,7 +614,7 @@ fn test_random_selector_multiple_clips_two() {
     let video_path = PathBuf::from("test.mp4");
     let duration = 600.0; // 10 minutes
 
-    let result = selector.select_clips(
+    let clips = selector.select_clips(
         &video_path,
         duration,
         INTRO_EXCLUSION_PERCENT,
@@ -627,9 +622,7 @@ fn test_random_selector_multiple_clips_two() {
         2,
         &ClipConfig::default(),
     );
-    assert!(result.is_ok(), "Two clip selection should succeed");
 
-    let clips = result.unwrap();
     assert_eq!(
         clips.len(),
         2,
@@ -660,7 +653,7 @@ fn test_random_selector_multiple_clips_three() {
     let video_path = PathBuf::from("test.mp4");
     let duration = 600.0; // 10 minutes
 
-    let result = selector.select_clips(
+    let clips = selector.select_clips(
         &video_path,
         duration,
         INTRO_EXCLUSION_PERCENT,
@@ -668,9 +661,7 @@ fn test_random_selector_multiple_clips_three() {
         3,
         &ClipConfig::default(),
     );
-    assert!(result.is_ok(), "Three clip selection should succeed");
 
-    let clips = result.unwrap();
     assert_eq!(
         clips.len(),
         3,
@@ -712,7 +703,7 @@ fn test_random_selector_multiple_clips_four() {
     let video_path = PathBuf::from("test.mp4");
     let duration = 600.0; // 10 minutes
 
-    let result = selector.select_clips(
+    let clips = selector.select_clips(
         &video_path,
         duration,
         INTRO_EXCLUSION_PERCENT,
@@ -720,9 +711,7 @@ fn test_random_selector_multiple_clips_four() {
         4,
         &ClipConfig::default(),
     );
-    assert!(result.is_ok(), "Four clip selection should succeed");
 
-    let clips = result.unwrap();
     assert_eq!(
         clips.len(),
         4,
@@ -765,7 +754,7 @@ fn test_random_selector_graceful_degradation_short_video() {
     let duration = 30.0; // 30 seconds - can fit 2 clips at minimum (2 * 12s = 24s)
 
     // Request 4 clips but video can only fit 2
-    let result = selector.select_clips(
+    let clips = selector.select_clips(
         &video_path,
         duration,
         INTRO_EXCLUSION_PERCENT,
@@ -773,12 +762,6 @@ fn test_random_selector_graceful_degradation_short_video() {
         4,
         &ClipConfig::default(),
     );
-    assert!(
-        result.is_ok(),
-        "Should succeed even when video is too short for all clips"
-    );
-
-    let clips = result.unwrap();
 
     // Should generate fewer clips than requested
     assert!(
@@ -820,7 +803,7 @@ fn test_random_selector_exclusion_zone_compliance_multiple_clips() {
     let intro_percent = 5.0; // 5% intro exclusion
     let outro_percent = 30.0; // 30% outro exclusion
 
-    let result = selector.select_clips(
+    let clips = selector.select_clips(
         &video_path,
         duration,
         intro_percent,
@@ -828,9 +811,7 @@ fn test_random_selector_exclusion_zone_compliance_multiple_clips() {
         3,
         &ClipConfig::default(),
     );
-    assert!(result.is_ok(), "Selection should succeed");
 
-    let clips = result.unwrap();
     assert_eq!(clips.len(), 3, "Should generate 3 clips");
 
     // Calculate exclusion boundaries
@@ -868,7 +849,7 @@ fn test_random_selector_clips_sorted_chronologically() {
 
     // Run multiple times to ensure sorting is consistent
     for _ in 0..5 {
-        let result = selector.select_clips(
+        let clips = selector.select_clips(
             &video_path,
             duration,
             INTRO_EXCLUSION_PERCENT,
@@ -876,9 +857,7 @@ fn test_random_selector_clips_sorted_chronologically() {
             3,
             &ClipConfig::default(),
         );
-        assert!(result.is_ok(), "Selection should succeed");
 
-        let clips = result.unwrap();
         assert_eq!(clips.len(), 3, "Should generate 3 clips");
 
         // Verify chronological ordering
@@ -908,9 +887,8 @@ proptest! {
         // Run selection multiple times (10 iterations)
         let mut start_times = Vec::new();
         for _ in 0..10 {
-            let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
-            prop_assert!(result.is_ok(), "Selection should succeed");
-            let time_ranges = result.unwrap();
+            let clips = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
+            let time_ranges = clips;
             prop_assert!(!time_ranges.is_empty(), "Should return at least one clip");
             start_times.push(time_ranges[0].start_seconds);
         }
@@ -949,10 +927,8 @@ proptest! {
         // Calculate minimum required duration for N clips
         let min_required = (clip_count as f64) * MIN_CLIP_DURATION;
 
-        let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, clip_count, &ClipConfig::default());
-        prop_assert!(result.is_ok(), "Selection should succeed");
+        let clips = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, clip_count, &ClipConfig::default());
 
-        let clips = result.unwrap();
 
         // Property: If video has sufficient duration with generous margin, should generate exactly clip_count clips
         // We need a generous margin because random selection is probabilistic and may not always
@@ -1036,10 +1012,8 @@ proptest! {
         let intro_cutoff = duration * (intro_percent / 100.0);
         let outro_cutoff = duration - (duration * (outro_percent / 100.0));
 
-        let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, clip_count, &ClipConfig::default());
-        prop_assert!(result.is_ok(), "Selection should succeed");
+        let clips = selector.select_clips(&video_path, duration, intro_percent, outro_percent, clip_count, &ClipConfig::default());
 
-        let clips = result.unwrap();
 
         // Property: All clips must respect exclusion zones
         for (i, clip) in clips.iter().enumerate() {
@@ -1077,10 +1051,8 @@ proptest! {
         let selector = RandomSelector;
         let video_path = PathBuf::from("test.mp4");
 
-        let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, clip_count, &ClipConfig::default());
-        prop_assert!(result.is_ok(), "Selection should succeed");
+        let clips = selector.select_clips(&video_path, duration, intro_percent, outro_percent, clip_count, &ClipConfig::default());
 
-        let clips = result.unwrap();
 
         // Property: All clips must have valid durations (10-15 seconds)
         for (i, clip) in clips.iter().enumerate() {
@@ -1110,10 +1082,7 @@ fn test_clip_config_middle_segment_fallback() {
     let config = ClipConfig::default();
     let duration = 600.0; // 10 minutes
 
-    let result = config.middle_segment(duration);
-    assert!(result.is_ok());
-
-    let time_range = result.unwrap();
+    let time_range = config.middle_segment(duration);
 
     // Should use 15 seconds (max clip duration)
     assert_eq!(time_range.duration_seconds, 15.0);
@@ -1128,10 +1097,7 @@ fn test_clip_config_middle_segment_short_video() {
     let config = ClipConfig::default();
     let duration = 12.0; // 12 seconds
 
-    let result = config.middle_segment(duration);
-    assert!(result.is_ok());
-
-    let time_range = result.unwrap();
+    let time_range = config.middle_segment(duration);
 
     // Should use full video duration (12 seconds)
     assert_eq!(time_range.duration_seconds, 12.0);
@@ -1146,10 +1112,7 @@ fn test_clip_config_middle_segment_very_short_video() {
     let config = ClipConfig::default();
     let duration = 3.0; // 3 seconds
 
-    let result = config.middle_segment(duration);
-    assert!(result.is_ok());
-
-    let time_range = result.unwrap();
+    let time_range = config.middle_segment(duration);
 
     // Should use full video duration
     assert_eq!(time_range.duration_seconds, 3.0);
@@ -1166,7 +1129,7 @@ fn test_intense_audio_selector_no_audio_fallback() {
     use std::path::PathBuf;
 
     // Create IntenseAudioSelector
-    let selector = IntenseAudioSelector::new();
+    let selector = IntenseAudioSelector;
 
     // Use a non-existent video path - this will cause audio analysis to fail
     // which simulates a video with no audio track
@@ -1174,7 +1137,7 @@ fn test_intense_audio_selector_no_audio_fallback() {
     let duration = 600.0; // 10 minutes
 
     // The selector should fall back to middle segment when audio analysis fails
-    let result = selector.select_clips(
+    let clips = selector.select_clips(
         &video_path,
         duration,
         INTRO_EXCLUSION_PERCENT,
@@ -1184,12 +1147,7 @@ fn test_intense_audio_selector_no_audio_fallback() {
     );
 
     // The result should be Ok (fallback to middle segment)
-    assert!(
-        result.is_ok(),
-        "Should fall back to middle segment when no audio track"
-    );
-
-    let time_ranges = result.unwrap();
+    let time_ranges = clips;
     assert!(!time_ranges.is_empty());
     let time_range = &time_ranges[0];
 
@@ -1207,7 +1165,7 @@ fn test_intense_audio_selector_no_audio_fallback() {
 
     // Test with a shorter video
     let short_duration = 120.0; // 2 minutes
-    let result_short = selector.select_clips(
+    let clips_short = selector.select_clips(
         &video_path,
         short_duration,
         INTRO_EXCLUSION_PERCENT,
@@ -1216,12 +1174,7 @@ fn test_intense_audio_selector_no_audio_fallback() {
         &ClipConfig::default(),
     );
 
-    assert!(
-        result_short.is_ok(),
-        "Should fall back to middle segment for short video"
-    );
-
-    let time_ranges_short = result_short.unwrap();
+    let time_ranges_short = clips_short;
     assert!(!time_ranges_short.is_empty());
     let time_range_short = &time_ranges_short[0];
 
@@ -1232,7 +1185,7 @@ fn test_intense_audio_selector_no_audio_fallback() {
 
     // Test with a very short video (< 18 seconds)
     let very_short_duration = 7.0; // 7 seconds
-    let result_very_short = selector.select_clips(
+    let clips_very_short = selector.select_clips(
         &video_path,
         very_short_duration,
         INTRO_EXCLUSION_PERCENT,
@@ -1241,12 +1194,7 @@ fn test_intense_audio_selector_no_audio_fallback() {
         &ClipConfig::default(),
     );
 
-    assert!(
-        result_very_short.is_ok(),
-        "Should fall back to middle segment for very short video"
-    );
-
-    let time_ranges_very_short = result_very_short.unwrap();
+    let time_ranges_very_short = clips_very_short;
     assert!(!time_ranges_very_short.is_empty());
     let time_range_very_short = &time_ranges_very_short[0];
 
@@ -1378,13 +1326,13 @@ fn test_intense_audio_selector_single_clip() {
 
     use std::path::PathBuf;
 
-    let selector = IntenseAudioSelector::new();
+    let selector = IntenseAudioSelector;
 
     // Use a non-existent video path - will fall back to middle segment
     let video_path = PathBuf::from("/nonexistent/video.mp4");
     let duration = 600.0; // 10 minutes
 
-    let result = selector.select_clips(
+    let clips = selector.select_clips(
         &video_path,
         duration,
         INTRO_EXCLUSION_PERCENT,
@@ -1392,9 +1340,7 @@ fn test_intense_audio_selector_single_clip() {
         1,
         &ClipConfig::default(),
     );
-    assert!(result.is_ok(), "Single clip selection should succeed");
 
-    let clips = result.unwrap();
     assert_eq!(
         clips.len(),
         1,
@@ -1506,14 +1452,14 @@ fn test_intense_audio_selector_graceful_degradation() {
 
     use std::path::PathBuf;
 
-    let selector = IntenseAudioSelector::new();
+    let selector = IntenseAudioSelector;
 
     // Use a short video duration that can only fit 1 clip
     let video_path = PathBuf::from("/nonexistent/short_video.mp4");
     let duration = 30.0; // 30 seconds
 
     // Request 4 clips but video can only fit 2
-    let result = selector.select_clips(
+    let clips = selector.select_clips(
         &video_path,
         duration,
         INTRO_EXCLUSION_PERCENT,
@@ -1521,12 +1467,6 @@ fn test_intense_audio_selector_graceful_degradation() {
         4,
         &ClipConfig::default(),
     );
-    assert!(
-        result.is_ok(),
-        "Should succeed even when video is too short for all clips"
-    );
-
-    let clips = result.unwrap();
 
     // Should generate fewer clips than requested (or fall back to middle segment)
     assert!(clips.len() <= 4, "Should generate at most 4 clips");
@@ -1552,12 +1492,12 @@ fn test_intense_audio_selector_very_short_video() {
 
     use std::path::PathBuf;
 
-    let selector = IntenseAudioSelector::new();
+    let selector = IntenseAudioSelector;
 
     let video_path = PathBuf::from("/nonexistent/very_short.mp4");
     let duration = 5.0; // 5 seconds - too short for minimum clip duration
 
-    let result = selector.select_clips(
+    let clips = selector.select_clips(
         &video_path,
         duration,
         INTRO_EXCLUSION_PERCENT,
@@ -1565,12 +1505,6 @@ fn test_intense_audio_selector_very_short_video() {
         2,
         &ClipConfig::default(),
     );
-    assert!(
-        result.is_ok(),
-        "Should succeed even when video is too short"
-    );
-
-    let clips = result.unwrap();
     // Should return empty vector or fall back to middle segment
     assert!(
         clips.len() <= 1,
@@ -1635,7 +1569,7 @@ fn test_action_selector_no_motion_fallback() {
     // Create an FFmpegExecutor
 
     // Create ActionSelector
-    let selector = ActionSelector::new();
+    let selector = ActionSelector;
 
     // Use a non-existent video path - this will cause motion analysis to fail
     // which simulates a video with no motion
@@ -1643,7 +1577,7 @@ fn test_action_selector_no_motion_fallback() {
     let duration = 600.0; // 10 minutes
 
     // The selector should fall back to middle segment when motion analysis fails
-    let result = selector.select_clips(
+    let clips = selector.select_clips(
         &video_path,
         duration,
         INTRO_EXCLUSION_PERCENT,
@@ -1653,12 +1587,7 @@ fn test_action_selector_no_motion_fallback() {
     );
 
     // The result should be Ok (fallback to middle segment)
-    assert!(
-        result.is_ok(),
-        "Should fall back to middle segment when no motion detected"
-    );
-
-    let time_ranges = result.unwrap();
+    let time_ranges = clips;
     assert!(!time_ranges.is_empty());
     let time_range = &time_ranges[0];
 
@@ -1915,17 +1844,16 @@ proptest! {
         const MAX_CLIP_DURATION: f64 = 15.0;
 
         // Create an FFmpegExecutor and ActionSelector
-            let selector = ActionSelector::new();
+            let selector = ActionSelector;
 
         // Use a non-existent video path (will fall back to middle segment)
         let video_path = PathBuf::from("/nonexistent/video.mp4");
 
         // Test with default exclusion zones
-        let result = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
+        let clips = selector.select_clips(&video_path, duration, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
 
-        prop_assert!(result.is_ok(), "Selection should succeed");
 
-        let time_ranges = result.unwrap();
+        let time_ranges = clips;
         prop_assert!(!time_ranges.is_empty(), "Should return at least one clip");
         let time_range = &time_ranges[0];
 
@@ -1959,17 +1887,16 @@ proptest! {
         use std::path::PathBuf;
 
         // Create an FFmpegExecutor and ActionSelector
-            let selector = ActionSelector::new();
+            let selector = ActionSelector;
 
         // Use a non-existent video path (will fall back to middle segment)
         let video_path = PathBuf::from("/nonexistent/video.mp4");
 
         // Test with various exclusion zones
-        let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, 1, &ClipConfig::default());
+        let clips = selector.select_clips(&video_path, duration, intro_percent, outro_percent, 1, &ClipConfig::default());
 
-        prop_assert!(result.is_ok(), "Selection should succeed");
 
-        let time_ranges = result.unwrap();
+        let time_ranges = clips;
         prop_assert!(!time_ranges.is_empty(), "Should return at least one clip");
         let time_range = &time_ranges[0];
 
@@ -1997,17 +1924,16 @@ proptest! {
         use std::path::PathBuf;
 
         // Create an FFmpegExecutor and ActionSelector
-            let selector = ActionSelector::new();
+            let selector = ActionSelector;
 
         // Use a non-existent video path (will fall back to middle segment)
         let video_path = PathBuf::from("/nonexistent/video.mp4");
 
         // Test with various exclusion zones
-        let result = selector.select_clips(&video_path, duration, intro_percent, outro_percent, 1, &ClipConfig::default());
+        let clips = selector.select_clips(&video_path, duration, intro_percent, outro_percent, 1, &ClipConfig::default());
 
-        prop_assert!(result.is_ok(), "Selection should succeed for valid inputs");
 
-        let time_ranges = result.unwrap();
+        let time_ranges = clips;
         prop_assert!(!time_ranges.is_empty(), "Should return at least one clip");
         let time_range = &time_ranges[0];
 
@@ -2035,11 +1961,10 @@ proptest! {
         // Test that middle_segment produces consistent results regardless of selector
         let config = ClipConfig::default();
 
-        let result = config.middle_segment(duration);
+        let time_range = config.middle_segment(duration);
 
-        prop_assert!(result.is_ok(), "middle_segment should succeed");
 
-        let time_range = result.unwrap();
+
 
         // Property: Result should be valid
         prop_assert!(time_range.start_seconds >= 0.0, "start_seconds should be >= 0");
@@ -2105,31 +2030,28 @@ proptest! {
         use std::path::PathBuf;
 
         // Create a single ActionSelector instance
-            let selector = ActionSelector::new();
+            let selector = ActionSelector;
 
         // Process first video (non-existent, will fall back to middle segment)
         let video_path1 = PathBuf::from("/nonexistent/video1.mp4");
-        let result1 = selector.select_clips(&video_path1, duration1, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
+        let clips1 = selector.select_clips(&video_path1, duration1, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
 
-        prop_assert!(result1.is_ok(), "First selection should succeed");
-        let time_ranges1 = result1.unwrap();
+        let time_ranges1 = clips1;
         prop_assert!(!time_ranges1.is_empty(), "Should return at least one clip");
         let time_range1 = &time_ranges1[0];
 
         // Process second video (non-existent, will fall back to middle segment)
         let video_path2 = PathBuf::from("/nonexistent/video2.mp4");
-        let result2 = selector.select_clips(&video_path2, duration2, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
+        let clips2_result = selector.select_clips(&video_path2, duration2, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
 
-        prop_assert!(result2.is_ok(), "Second selection should succeed");
-        let time_ranges2 = result2.unwrap();
+        let time_ranges2 = clips2_result;
         prop_assert!(!time_ranges2.is_empty(), "Should return at least one clip");
         let time_range2 = &time_ranges2[0];
 
         // Process the second video again with the same selector
-        let result2_again = selector.select_clips(&video_path2, duration2, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
+        let clips2_again = selector.select_clips(&video_path2, duration2, INTRO_EXCLUSION_PERCENT, OUTRO_EXCLUSION_PERCENT, 1, &ClipConfig::default());
 
-        prop_assert!(result2_again.is_ok(), "Second selection (repeated) should succeed");
-        let time_ranges2_again = result2_again.unwrap();
+        let time_ranges2_again = clips2_again;
         prop_assert!(!time_ranges2_again.is_empty(), "Should return at least one clip");
         let time_range2_again = &time_ranges2_again[0];
 
@@ -2182,7 +2104,7 @@ proptest! {
         let video_path = PathBuf::from("/test/video.mp4");
 
         // Select clips
-        let result = selector.select_clips(
+        let clips = selector.select_clips(
             &video_path,
             duration,
             INTRO_EXCLUSION_PERCENT,
@@ -2192,12 +2114,6 @@ proptest! {
         );
 
         // Property 1: The operation should succeed (not fail/panic)
-        prop_assert!(
-            result.is_ok(),
-            "Selection should succeed even when video is too short for all requested clips"
-        );
-
-        let clips = result.unwrap();
 
         // Property 2: Should return at most the maximum possible clips
         prop_assert!(
@@ -2267,7 +2183,7 @@ proptest! {
         let selector = RandomSelector;
         let video_path = PathBuf::from("/test/video.mp4");
 
-        let result = selector.select_clips(
+        let clips = selector.select_clips(
             &video_path,
             duration,
             INTRO_EXCLUSION_PERCENT,
@@ -2276,8 +2192,6 @@ proptest! {
             &ClipConfig::default(),
         );
 
-        prop_assert!(result.is_ok(), "Selection should succeed");
-        let clips = result.unwrap();
 
         // Property 1: Clips should be sorted by start time
         for i in 0..(clips.len().saturating_sub(1)) {
@@ -2307,7 +2221,7 @@ proptest! {
 
         // Property 3: The ordering should be stable across multiple calls
         // (for RandomSelector, we can't guarantee same clips, but they should always be sorted)
-        let result2 = selector.select_clips(
+        let clips2_result = selector.select_clips(
             &video_path,
             duration,
             INTRO_EXCLUSION_PERCENT,
@@ -2316,7 +2230,8 @@ proptest! {
             &ClipConfig::default(),
         );
 
-        if let Ok(clips2) = result2 {
+        {
+            let clips2 = &clips2_result;
             for i in 0..(clips2.len().saturating_sub(1)) {
                 prop_assert!(
                     clips2[i].start_seconds < clips2[i + 1].start_seconds,
@@ -2357,7 +2272,7 @@ proptest! {
         // Calculate maximum possible clips
         let max_possible_clips = (valid_duration / MIN_CLIP_DURATION).floor() as u8;
 
-        let result = selector.select_clips(
+        let clips = selector.select_clips(
             &video_path,
             duration,
             INTRO_EXCLUSION_PERCENT,
@@ -2366,8 +2281,6 @@ proptest! {
             &ClipConfig::default(),
         );
 
-        prop_assert!(result.is_ok(), "Selection should succeed");
-        let clips = result.unwrap();
 
         // Property 1: When video is too short, fewer clips should be returned
         if max_possible_clips < clip_count {
@@ -2425,7 +2338,7 @@ proptest! {
         let video_path = PathBuf::from("/test/video.mp4");
 
         // Attempt to select clips - this should never panic
-        let result = selector.select_clips(
+        let clips = selector.select_clips(
             &video_path,
             duration,
             intro_exclusion,
@@ -2436,12 +2349,6 @@ proptest! {
 
         // Property 1: The operation should always return a Result (not panic)
         // If we reach this point, the no-panic property is satisfied
-        prop_assert!(
-            result.is_ok(),
-            "Selection should always succeed and return a Result, even for constrained videos"
-        );
-
-        let clips = result.unwrap();
 
         // Property 2: The result should be a valid vector (possibly empty)
         prop_assert!(

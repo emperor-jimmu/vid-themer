@@ -32,45 +32,20 @@ impl FFmpegError {
     ///
     /// Returns the stderr content if this is an ExecutionFailed error.
     /// For other error types, returns None.
-    ///
-    /// # Behavior
-    /// - For ExecutionFailed errors, attempts to strip known prefixes to extract raw stderr
-    /// - If no known prefix is found, returns the entire error message
-    /// - For all other error variants, returns None
     pub fn stderr(&self) -> Option<&str> {
         match self {
             FFmpegError::ExecutionFailed(msg) => {
-                // Try to extract stderr by stripping known prefixes
-                // Format: "FFmpeg clip extraction failed for '<path>' at <start>s-<end>s: <stderr>"
-                msg.strip_prefix("FFmpeg clip extraction failed for ")
-                    .and_then(|s| s.split_once(": ").map(|(_, stderr)| stderr))
-                    // Format: "FFmpeg clip extraction failed even with recovery for '<path>' at <start>s-<end>s: <stderr>"
-                    .or_else(|| {
-                        msg.strip_prefix("FFmpeg clip extraction failed even with recovery for ")
-                            .and_then(|s| s.split_once(": ").map(|(_, stderr)| stderr))
-                    })
-                    // Format: "ffprobe failed on '<path>': <stderr>"
-                    .or_else(|| {
-                        msg.strip_prefix("ffprobe failed on ")
-                            .and_then(|s| s.split_once(": ").map(|(_, stderr)| stderr))
-                    })
-                    // Format: "Failed to execute ffprobe on '<path>': <stderr>"
-                    .or_else(|| {
-                        msg.strip_prefix("Failed to execute ffprobe on ")
-                            .and_then(|s| s.split_once(": ").map(|(_, stderr)| stderr))
-                    })
-                    // Format: "Failed to execute ffmpeg for '<path>': <stderr>"
-                    .or_else(|| {
-                        msg.strip_prefix("Failed to execute ffmpeg for ")
-                            .and_then(|s| s.split_once(": ").map(|(_, stderr)| stderr))
-                    })
-                    // Format: "Failed to execute ffmpeg recovery for '<path>': <stderr>"
-                    .or_else(|| {
-                        msg.strip_prefix("Failed to execute ffmpeg recovery for ")
-                            .and_then(|s| s.split_once(": ").map(|(_, stderr)| stderr))
-                    })
-                    // Fallback: return entire message if no known prefix matches
-                    .or(Some(msg.as_str()))
+                // Try to extract stderr by finding the last ": " separator after a path/context prefix
+                // Common formats:
+                //   "... for '<path>' at <start>s-<end>s: <stderr>"
+                //   "... on '<path>': <stderr>"
+                //   "... for '<path>': <stderr>"
+                // Fall back to entire message if no known separator found.
+                if let Some(idx) = msg.find("': ") {
+                    Some(&msg[idx + 3..])
+                } else {
+                    Some(msg.as_str())
+                }
             }
             _ => None,
         }

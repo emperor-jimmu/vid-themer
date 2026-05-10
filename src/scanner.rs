@@ -121,25 +121,23 @@ impl VideoScanner {
                     }
 
                     // Check for video file extensions (.mp4 or .mkv)
-                    if let Some(extension) = path.extension() {
-                        let ext = extension.to_string_lossy().to_lowercase();
-                        if ext == "mp4" || ext == "mkv" {
-                            // Skip files named "backdrop.mp4" or "backdrop.mkv" as they're likely output files
-                            if let Some(filename) = path.file_name() {
-                                let filename_str = filename.to_string_lossy().to_lowercase();
-                                if filename_str == "backdrop.mp4" || filename_str == "backdrop.mkv"
-                                {
-                                    continue;
-                                }
-                            }
+                    if let Some(extension) = path.extension()
+                        && (extension.eq_ignore_ascii_case("mp4")
+                            || extension.eq_ignore_ascii_case("mkv"))
+                    {
+                        // Skip files named "backdrop.mp4" or "backdrop.mkv" as they're likely output files
+                        if let Some(stem) = path.file_stem()
+                            && stem.eq_ignore_ascii_case("backdrop")
+                        {
+                            continue;
+                        }
 
-                            // Get the parent directory
-                            if let Some(parent) = path.parent() {
-                                videos.push(VideoFile {
-                                    path: path.to_path_buf(),
-                                    parent_dir: parent.to_path_buf(),
-                                });
-                            }
+                        // Get the parent directory
+                        if let Some(parent) = path.parent() {
+                            videos.push(VideoFile {
+                                path: path.to_path_buf(),
+                                parent_dir: parent.to_path_buf(),
+                            });
                         }
                     }
                     // Non-video files are silently skipped (no error)
