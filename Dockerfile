@@ -1,4 +1,8 @@
-FROM rust:1-alpine AS builder
+# syntax=docker/dockerfile:1.7
+
+FROM --platform=$TARGETPLATFORM rust:1-alpine AS builder
+
+ARG TARGETPLATFORM
 
 WORKDIR /build
 
@@ -10,7 +14,7 @@ COPY tests/ ./tests/
 
 RUN cargo build --release
 
-FROM alpine:3.19
+FROM --platform=$TARGETPLATFORM alpine:3.21
 
 RUN apk add --no-cache ffmpeg dcron curl
 
