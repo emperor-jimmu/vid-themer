@@ -14,7 +14,7 @@ COPY tests/ ./tests/
 
 RUN cargo build --release
 
-FROM --platform=$TARGETPLATFORM alpine:3.21
+FROM --platform=$TARGETPLATFORM alpine:3.22
 
 RUN apk add --no-cache ffmpeg dcron curl
 
@@ -48,4 +48,4 @@ RUN chmod 0600 /etc/crontabs/root
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-CMD ["busybox", "crond", "-f", "-l", "2"]
+CMD ["/bin/sh", "-c", "echo \"[$(date '+%Y-%m-%d %H:%M:%S %Z')] Container Vid-Themer started\"; echo \"[$(date '+%Y-%m-%d %H:%M:%S %Z')] Cron schedule: ${VID_THEMER_CRON_SCHEDULE}\"; echo \"[$(date '+%Y-%m-%d %H:%M:%S %Z')] Job log file: /var/log/video-clip-extractor.log\"; echo \"[$(date '+%Y-%m-%d %H:%M:%S %Z')] Starting cron daemon...\"; exec busybox crond -f -l 2 -L /dev/stdout"]
