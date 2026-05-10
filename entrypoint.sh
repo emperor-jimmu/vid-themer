@@ -63,18 +63,7 @@ if [ "$VID_THEMER_HW_ACCEL" = "true" ]; then
 fi
 
 echo "[$(timestamp)] Vid-Themer job started"
-echo "[$(timestamp)] Effective config:"
-echo "[$(timestamp)]   video_dir=${VID_THEMER_VIDEO_DIR}"
-echo "[$(timestamp)]   strategy=${VID_THEMER_STRATEGY:-random}"
-echo "[$(timestamp)]   resolution=${VID_THEMER_RESOLUTION:-1080p}"
-echo "[$(timestamp)]   audio=${VID_THEMER_AUDIO:-true}"
-echo "[$(timestamp)]   clip_count=${VID_THEMER_CLIP_COUNT:-2}"
-echo "[$(timestamp)]   intro_exclusion=${VID_THEMER_INTRO_EXCLUSION:-2.0}"
-echo "[$(timestamp)]   outro_exclusion=${VID_THEMER_OUTRO_EXCLUSION:-40.0}"
-echo "[$(timestamp)]   min_duration=${VID_THEMER_MIN_DURATION:-20.0}"
-echo "[$(timestamp)]   max_duration=${VID_THEMER_MAX_DURATION:-30.0}"
-echo "[$(timestamp)]   force=${VID_THEMER_FORCE:-false}"
-echo "[$(timestamp)]   hw_accel=${VID_THEMER_HW_ACCEL:-false}"
+echo "[$(timestamp)] Running on video directory: ${VID_THEMER_VIDEO_DIR}"
 echo "[$(timestamp)] Running: $*"
 
 set +e
