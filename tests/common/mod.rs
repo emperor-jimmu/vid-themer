@@ -44,7 +44,6 @@ pub fn create_test_video(path: &Path, duration_secs: u32, width: u32, height: u3
 }
 
 /// Helper function to get video duration using ffprobe
-#[allow(dead_code)]
 pub fn get_video_duration(path: &Path) -> Option<f64> {
     let output = Command::new("ffprobe")
         .arg("-v")
@@ -66,7 +65,6 @@ pub fn get_video_duration(path: &Path) -> Option<f64> {
 }
 
 /// Helper function to get video resolution using ffprobe
-#[allow(dead_code)]
 pub fn get_video_resolution(path: &Path) -> Option<(u32, u32)> {
     let output = Command::new("ffprobe")
         .arg("-v")
@@ -97,7 +95,6 @@ pub fn get_video_resolution(path: &Path) -> Option<(u32, u32)> {
     }
 }
 
-#[allow(dead_code)]
 /// Get the path to the compiled binary
 pub fn get_binary_path() -> std::path::PathBuf {
     if cfg!(windows) {
@@ -107,7 +104,6 @@ pub fn get_binary_path() -> std::path::PathBuf {
     }
 }
 
-#[allow(dead_code)]
 /// Build the project binary
 pub fn build_binary() -> Result<(), String> {
     let build_output = Command::new("cargo")

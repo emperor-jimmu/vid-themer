@@ -2,6 +2,10 @@
 
 set -e
 
+timestamp() {
+    date '+%Y-%m-%d %H:%M:%S %Z'
+}
+
 if [ -z "$VID_THEMER_VIDEO_DIR" ]; then
     echo "ERROR: VID_THEMER_VIDEO_DIR environment variable is required"
     exit 1
@@ -9,7 +13,7 @@ fi
 
 validate_arg() {
     case "$1" in
-        *\'*|*\"*|*\`*|*\$;*) return 1 ;;
+        *\'*|*\"*|*\`*|*\$\;*) return 1 ;;
         *) return 0 ;;
     esac
 }
@@ -58,5 +62,14 @@ if [ "$VID_THEMER_HW_ACCEL" = "true" ]; then
     set -- "$@" --hw-accel
 fi
 
-echo "Running: $*"
-exec "$@"
+echo "[$(timestamp)] Vid-Themer job started"
+echo "[$(timestamp)] Running on video directory: ${VID_THEMER_VIDEO_DIR}"
+echo "[$(timestamp)] Running: $*"
+
+set +e
+"$@"
+status=$?
+set -e
+
+echo "[$(timestamp)] Vid-Themer job finished with status ${status}"
+exit "$status"

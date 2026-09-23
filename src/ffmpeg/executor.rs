@@ -216,7 +216,7 @@ impl FFmpegExecutor {
             source_resolution: (metadata.width, metadata.height),
             codec: &metadata.codec,
             color_transfer: metadata.color_transfer.as_deref(),
-            pix_fmt: metadata.pix_fmt.as_deref(),
+            pix_fmt: None,
             target_resolution: self.resolution.clone(),
             include_audio: attempt.include_audio,
             use_hw_accel: self.use_hw_accel,
