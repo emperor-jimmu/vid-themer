@@ -64,33 +64,33 @@ pub fn get_video_metadata(video_path: &Path) -> Result<VideoMetadata, FFmpegErro
         .arg(video_path)
         .output()
         .map_err(|e| {
-            FFmpegError::ExecutionFailed(format!(
-                "Failed to execute ffprobe on '{}': {}",
-                video_path.display(),
-                e
-            ))
+            FFmpegError::failed(
+                format!("Failed to execute ffprobe on '{}': {}", video_path.display(), e),
+                None,
+            )
         })?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
         if stderr.contains("EBML header parsing failed")
             || stderr.contains("Invalid data found when processing input")
             || stderr.contains("moov atom not found")
             || stderr.contains("End of file")
         {
-            return Err(FFmpegError::CorruptedFile(format!(
-                "Video file '{}' appears to be corrupted or incomplete: {}",
-                video_path.display(),
-                stderr
-            )));
+            return Err(FFmpegError::corrupted(
+                format!(
+                    "Video file '{}' appears to be corrupted or incomplete",
+                    video_path.display()
+                ),
+                Some(stderr),
+            ));
         }
 
-        return Err(FFmpegError::ExecutionFailed(format!(
-            "ffprobe failed on '{}': {}",
-            video_path.display(),
-            stderr
-        )));
+        return Err(FFmpegError::failed(
+            format!("ffprobe failed on '{}'", video_path.display()),
+            Some(stderr),
+        ));
     }
 
     let json_str = String::from_utf8_lossy(&output.stdout);
@@ -100,10 +100,13 @@ pub fn get_video_metadata(video_path: &Path) -> Result<VideoMetadata, FFmpegErro
 
     let format_duration = &probe.format.duration;
     if format_duration == "N/A" || format_duration.is_empty() {
-        return Err(FFmpegError::CorruptedFile(format!(
-            "Unable to determine video duration for '{}' - file may be corrupted or incomplete",
-            video_path.display()
-        )));
+        return Err(FFmpegError::corrupted(
+            format!(
+                "Unable to determine video duration for '{}' - file may be corrupted or incomplete",
+                video_path.display()
+            ),
+            None,
+        ));
     }
 
     let duration: f64 = format_duration.parse().map_err(|e| {

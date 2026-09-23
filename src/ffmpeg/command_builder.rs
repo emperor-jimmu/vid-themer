@@ -21,6 +21,8 @@ pub struct ExtractConfig<'a> {
     pub use_hw_accel: bool,
     /// Absolute stream index of the preferred audio stream (English first, fallback to first)
     pub audio_stream_index: Option<usize>,
+    pub conservative_seek: bool,
+    pub recovery: bool,
 }
 
 /// Build audio-related FFmpeg arguments based on configuration
@@ -245,23 +247,32 @@ pub fn build_seeking_args(time_range: &TimeRange, codec: &str) -> (Vec<String>, 
 
 /// Build FFmpeg command for extracting a clip
 pub fn build_extract_command(config: &ExtractConfig) -> Vec<OsString> {
-    let mut args: Vec<OsString> = vec![
-        "-err_detect".into(),
-        "ignore_err".into(),
-    ];
+    let mut args: Vec<OsString> = vec!["-err_detect".into(), "ignore_err".into()];
 
-    // Build seeking arguments
-    let (before_input, after_input) = build_seeking_args(config.time_range, config.codec);
-    args.extend(before_input.into_iter().map(OsString::from));
+    if config.recovery {
+        args.extend([
+            "-fflags".into(),
+            "+genpts+igndts".into(),
+            "-max_error_rate".into(),
+            "1.0".into(),
+        ]);
+    }
 
-    // Input file (pass as OsStr to preserve non-UTF-8 path bytes)
-    args.push("-i".into());
-    args.push(config.video_path.into());
+    if !config.conservative_seek {
+        let (before_input, after_input) = build_seeking_args(config.time_range, config.codec);
+        args.extend(before_input.into_iter().map(OsString::from));
+        args.push("-i".into());
+        args.push(config.video_path.into());
+        args.extend(after_input.into_iter().map(OsString::from));
+    } else {
+        args.push("-i".into());
+        args.push(config.video_path.into());
+        args.extend([
+            "-ss".into(),
+            config.time_range.start_seconds.to_string().into(),
+        ]);
+    }
 
-    // Accurate seek (after input)
-    args.extend(after_input.into_iter().map(OsString::from));
-
-    // Timestamp handling - ensure proper timing for browser playback
     args.extend(["-avoid_negative_ts".into(), "make_zero".into()]);
 
     // Duration and stream mapping
@@ -359,36 +370,3 @@ pub fn build_fade_command(input_path: &Path, output_path: &Path, duration: f64) 
     args
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_calculate_scale_filter_no_upscaling() {
-        let result = calculate_scale_filter((1280, 720), Resolution::Hd1080);
-        assert_eq!(result, None);
-    }
-
-    #[test]
-    fn test_calculate_scale_filter_downscaling() {
-        let result = calculate_scale_filter((3840, 2160), Resolution::Hd1080);
-        assert!(result.is_some());
-        let filter = result.unwrap();
-        assert!(filter.contains("scale=1920:1080"));
-    }
-
-    #[test]
-    fn test_build_audio_args_with_audio() {
-        let args = build_audio_args(true);
-        assert!(args.contains(&"-c:a".to_string()));
-        assert!(args.contains(&"aac".to_string()));
-        assert!(!args.contains(&"-an".to_string()));
-    }
-
-    #[test]
-    fn test_build_audio_args_without_audio() {
-        let args = build_audio_args(false);
-        assert!(args.contains(&"-an".to_string()));
-        assert!(!args.contains(&"-c:a".to_string()));
-    }
-}

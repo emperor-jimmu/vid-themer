@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use super::command_builder;
 use super::constants::fade;
 use super::error::FFmpegError;
-use super::metadata::{VideoMetadata, get_video_metadata};
+use super::metadata::VideoMetadata;
 
 struct TempFileGuard {
     path: Option<PathBuf>,
@@ -34,15 +34,94 @@ impl TempFileGuard {
 
 impl Drop for TempFileGuard {
     fn drop(&mut self) {
-        if self.should_clean {
-            if let Some(path) = &self.path {
-                let _ = std::fs::remove_file(path);
-            }
+        if self.should_clean
+            && let Some(path) = &self.path
+        {
+            let _ = std::fs::remove_file(path);
         }
     }
 }
 
-/// FFmpeg executor with configuration
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SeekMode {
+    Hybrid,
+    Conservative,
+    Recovery,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Attempt {
+    pub seek: SeekMode,
+    pub include_audio: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Outcome {
+    DurationOk,
+    DurationMiss,
+    Corrupt,
+    AudioFail,
+    Fail,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Decision {
+    Run(Attempt),
+    Fade,
+    Fail,
+}
+
+/// Next extract step given the attempts already tried. Pure: tests feed outcomes, production runs them.
+pub(crate) fn decide(want_audio: bool, history: &[(Attempt, Outcome)]) -> Decision {
+    let Some((last, outcome)) = history.last() else {
+        return Decision::Run(Attempt {
+            seek: SeekMode::Hybrid,
+            include_audio: want_audio,
+        });
+    };
+    match outcome {
+        Outcome::DurationOk => Decision::Fade,
+        Outcome::DurationMiss => {
+            if history
+                .iter()
+                .any(|(attempt, _)| attempt.seek == SeekMode::Conservative)
+            {
+                Decision::Fail
+            } else {
+                Decision::Run(Attempt {
+                    seek: SeekMode::Conservative,
+                    include_audio: last.include_audio,
+                })
+            }
+        }
+        Outcome::Corrupt => {
+            if history
+                .iter()
+                .any(|(attempt, _)| attempt.seek == SeekMode::Recovery)
+            {
+                Decision::Fail
+            } else {
+                Decision::Run(Attempt {
+                    seek: SeekMode::Recovery,
+                    include_audio: last.include_audio,
+                })
+            }
+        }
+        Outcome::AudioFail => {
+            let dropped = history.iter().any(|(attempt, _)| !attempt.include_audio);
+            if want_audio && last.include_audio && !dropped {
+                Decision::Run(Attempt {
+                    seek: last.seek,
+                    include_audio: false,
+                })
+            } else {
+                Decision::Fail
+            }
+        }
+        Outcome::Fail => Decision::Fail,
+    }
+}
+
 #[derive(Clone)]
 pub struct FFmpegExecutor {
     pub resolution: Resolution,
@@ -59,354 +138,148 @@ impl FFmpegExecutor {
         }
     }
 
-    /// Check if FFmpeg is available in the system PATH
     pub fn check_availability() -> Result<(), FFmpegError> {
-        let result = Command::new("ffmpeg").arg("-version").output();
-
-        match result {
-            Ok(output) => {
-                if output.status.success() {
-                    Ok(())
-                } else {
-                    Err(FFmpegError::NotFound)
-                }
-            }
-            Err(_) => Err(FFmpegError::NotFound),
+        match Command::new("ffmpeg").arg("-version").output() {
+            Ok(output) if output.status.success() => Ok(()),
+            _ => Err(FFmpegError::NotFound),
         }
     }
 
-    /// Get video metadata
-    pub fn get_video_metadata(&self, video_path: &Path) -> Result<VideoMetadata, FFmpegError> {
-        get_video_metadata(video_path)
-    }
-
-    /// Get video duration (legacy method)
-    pub fn get_duration(&self, video_path: &Path) -> Result<f64, FFmpegError> {
-        let metadata = self.get_video_metadata(video_path)?;
-        Ok(metadata.duration)
-    }
-
-    /// Extract a clip from a video file
     pub fn extract_clip(
         &self,
         video_path: &Path,
         time_range: &TimeRange,
         output_path: &Path,
+        metadata: &VideoMetadata,
     ) -> Result<(), FFmpegError> {
-        let metadata = self.get_video_metadata(video_path)?;
-        let source_resolution = (metadata.width, metadata.height);
-        let codec = &metadata.codec;
-
-        let temp_filename = format!("tmp.{}.mp4", std::process::id());
         let temp_path = output_path.with_file_name(
             output_path
                 .file_stem()
-                .map(|s| {
-                    let mut name = s.to_os_string();
+                .map(|stem| {
+                    let mut name = stem.to_os_string();
                     name.push(format!(".{}.tmp", std::process::id()));
                     name
                 })
-                .unwrap_or_else(|| OsString::from(&temp_filename)),
+                .unwrap_or_else(|| OsString::from(format!("tmp.{}.mp4", std::process::id()))),
         );
         let temp_path = temp_path.with_extension("mp4");
+        let mut guard = TempFileGuard::new(temp_path.clone());
+        let mut history = Vec::new();
+        let mut last_stderr = None;
 
-        let mut _guard = TempFileGuard::new(temp_path.clone());
-
-        match self.extract_clip_internal(
-            video_path,
-            time_range,
-            &temp_path,
-            source_resolution,
-            codec,
-            &metadata,
-            false,
-        ) {
-            Ok(_) => {
-                if let Err(e) = validate_clip_duration(&temp_path, time_range.duration_seconds) {
-                    eprintln!(
-                        "Warning: Initial extraction produced incorrect duration for '{}': {}. Retrying with conservative seeking...",
-                        video_path.display(),
-                        e
-                    );
-
-                    self.extract_clip_internal(
-                        video_path,
-                        time_range,
-                        &temp_path,
-                        source_resolution,
-                        codec,
-                        &metadata,
-                        true,
-                    )?;
-
-                    validate_clip_duration(&temp_path, time_range.duration_seconds)?;
+        loop {
+            if history.len() > 8 {
+                return Err(FFmpegError::failed(
+                    format!("Extract gave up for '{}'", video_path.display()),
+                    last_stderr,
+                ));
+            }
+            match decide(self.include_audio, &history) {
+                Decision::Fade => {
+                    apply_fade_effect(&temp_path, output_path, time_range.duration_seconds)?;
+                    validate_output(output_path)?;
+                    guard.take();
+                    return Ok(());
                 }
-
-                apply_fade_effect(&temp_path, output_path, time_range.duration_seconds)?;
-                validate_output(output_path)?;
-                _guard.take();
-                Ok(())
-            }
-            Err(e) => {
-                let stderr = e.stderr().map(|s| s.to_string());
-
-                if stderr.as_ref().is_some_and(|s| {
-                    s.contains("corrupt")
-                        || s.contains("Invalid NAL unit")
-                        || s.contains("concealing")
-                        || s.contains("error while decoding")
-                        || s.contains("missing picture in access unit")
-                        || s.contains("Error submitting packet to decoder")
-                        || s.contains("Error splitting the input into NAL units")
-                        || s.contains("Invalid data found when processing input")
-                }) {
-                    return self.extract_clip_with_recovery(
-                        video_path,
-                        time_range,
-                        output_path,
-                        source_resolution,
-                        codec,
-                    );
+                Decision::Fail => {
+                    return Err(FFmpegError::failed(
+                        format!(
+                            "FFmpeg clip extraction failed for '{}' at {:.2}s",
+                            video_path.display(),
+                            time_range.start_seconds
+                        ),
+                        last_stderr,
+                    ));
                 }
-
-                Err(e)
+                Decision::Run(attempt) => {
+                    let (outcome, stderr) =
+                        self.run_attempt(video_path, time_range, &temp_path, metadata, attempt)?;
+                    last_stderr = stderr.or(last_stderr);
+                    history.push((attempt, outcome));
+                }
             }
         }
     }
 
-    /// Internal extraction method with configurable seeking strategy
-    #[allow(clippy::too_many_arguments)]
-    fn extract_clip_internal(
+    fn run_attempt(
         &self,
         video_path: &Path,
         time_range: &TimeRange,
         output_path: &Path,
-        source_resolution: (u32, u32),
-        codec: &str,
         metadata: &VideoMetadata,
-        use_conservative_seeking: bool,
-    ) -> Result<(), FFmpegError> {
+        attempt: Attempt,
+    ) -> Result<(Outcome, Option<String>), FFmpegError> {
         let config = command_builder::ExtractConfig {
             video_path,
             time_range,
             output_path,
-            source_resolution,
-            codec,
+            source_resolution: (metadata.width, metadata.height),
+            codec: &metadata.codec,
             color_transfer: metadata.color_transfer.as_deref(),
             pix_fmt: metadata.pix_fmt.as_deref(),
             target_resolution: self.resolution.clone(),
-            include_audio: self.include_audio,
+            include_audio: attempt.include_audio,
             use_hw_accel: self.use_hw_accel,
             audio_stream_index: metadata.audio_stream_index,
+            conservative_seek: attempt.seek == SeekMode::Conservative,
+            recovery: attempt.seek == SeekMode::Recovery,
         };
-
-        let args = if use_conservative_seeking {
-            // Conservative seeking: only accurate seek, no fast seek
-            let mut args: Vec<OsString> = vec![
-                "-err_detect".into(),
-                "ignore_err".into(),
-                "-i".into(),
-            ];
-            args.push(video_path.into());
-            args.extend([
-                "-ss".into(),
-                time_range.start_seconds.to_string().into(),
-                "-avoid_negative_ts".into(),
-                "make_zero".into(),
-                "-t".into(),
-                time_range.duration_seconds.to_string().into(),
-            ]);
-
-            // Add remaining standard args (mapping, codec, filters, etc.)
-            let standard_args = command_builder::build_extract_command(&config);
-            // Skip to -map (standard args start with -err_detect, -i, seeking, -avoid_negative_ts, -t, then -map)
-            let skip_until = standard_args
-                .iter()
-                .position(|s| s == "-map")
-                .unwrap_or(0);
-            args.extend(standard_args.into_iter().skip(skip_until));
-
-            args
-        } else {
-            // Standard hybrid seeking
-            command_builder::build_extract_command(&config)
-        };
-
+        let args = command_builder::build_extract_command(&config);
         let output = Command::new("ffmpeg").args(&args).output().map_err(|e| {
-            FFmpegError::ExecutionFailed(format!(
-                "Failed to execute ffmpeg for '{}': {}",
-                video_path.display(),
-                e
-            ))
+            FFmpegError::failed(
+                format!("Failed to execute ffmpeg for '{}': {}", video_path.display(), e),
+                None,
+            )
         })?;
-
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-
-            if let Some(e) = classify_stderr_error(&stderr, video_path, time_range) {
-                return Err(e);
+            if let Some(outcome) = outcome_from_failure(attempt, &stderr) {
+                return Ok((outcome, Some(stderr)));
             }
-
-            return Err(FFmpegError::ExecutionFailed(format!(
-                "FFmpeg clip extraction failed for '{}' at {:.2}s-{:.2}s: {}",
-                video_path.display(),
-                time_range.start_seconds,
-                time_range.start_seconds + time_range.duration_seconds,
-                stderr
-            )));
-        }
-
-        validate_output(output_path)?;
-        Ok(())
-    }
-
-    /// Extract clip with error recovery
-    fn extract_clip_with_recovery(
-        &self,
-        video_path: &Path,
-        time_range: &TimeRange,
-        output_path: &Path,
-        source_resolution: (u32, u32),
-        codec: &str,
-    ) -> Result<(), FFmpegError> {
-        // Get metadata for color information
-        let metadata = self.get_video_metadata(video_path)?;
-
-        // Build the standard extraction command, then prepend error-tolerance flags.
-        // The standard command already begins with "-err_detect ignore_err"; we replace
-        // just that prefix with our expanded error-tolerance flags.
-        let config = command_builder::ExtractConfig {
-            video_path,
-            time_range,
-            output_path,
-            source_resolution,
-            codec,
-            color_transfer: metadata.color_transfer.as_deref(),
-            pix_fmt: metadata.pix_fmt.as_deref(),
-            target_resolution: self.resolution.clone(),
-            include_audio: self.include_audio,
-            use_hw_accel: self.use_hw_accel,
-            audio_stream_index: metadata.audio_stream_index,
-        };
-
-        // Prepend extra error-tolerance flags before the standard args.
-        // standard_args starts with ["-err_detect", "ignore_err", ...]; we keep that and add more.
-        let standard_args = command_builder::build_extract_command(&config);
-        let mut args: Vec<OsString> = vec![
-            "-fflags".into(),
-            "+genpts+igndts".into(),
-            "-max_error_rate".into(),
-            "1.0".into(),
-        ];
-        args.extend(standard_args);
-
-        let output = Command::new("ffmpeg").args(&args).output().map_err(|e| {
-            FFmpegError::ExecutionFailed(format!(
-                "Failed to execute ffmpeg recovery for '{}': {}",
-                video_path.display(),
-                e
-            ))
-        })?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-
-            if let Some(e) = classify_stderr_error(&stderr, video_path, time_range) {
-                return Err(e);
+            if let Some(error) = classify_stderr_error(&stderr) {
+                return Err(error);
             }
-
-            // If audio decoding failed, try without audio
-            if self.include_audio
-                && (stderr.contains("Error submitting packet to decoder")
-                    || stderr.contains("aac")
-                    || stderr.contains("Could not open encoder before EOF"))
-            {
-                return self.extract_clip_without_audio(
-                    video_path,
-                    time_range,
-                    output_path,
-                    source_resolution,
-                    codec,
-                    &metadata,
-                );
-            }
-
-            return Err(FFmpegError::ExecutionFailed(format!(
-                "FFmpeg clip extraction failed even with recovery for '{}' at {:.2}s-{:.2}s: {}",
-                video_path.display(),
-                time_range.start_seconds,
-                time_range.start_seconds + time_range.duration_seconds,
-                stderr
-            )));
+            return Ok((Outcome::Fail, Some(stderr)));
         }
-
-        validate_output(output_path)?;
-        Ok(())
-    }
-
-    /// Extract clip without audio (last resort for corrupted audio streams)
-    fn extract_clip_without_audio(
-        &self,
-        video_path: &Path,
-        time_range: &TimeRange,
-        output_path: &Path,
-        source_resolution: (u32, u32),
-        codec: &str,
-        metadata: &VideoMetadata,
-    ) -> Result<(), FFmpegError> {
-        let config = command_builder::ExtractConfig {
-            video_path,
-            time_range,
-            output_path,
-            source_resolution,
-            codec,
-            color_transfer: metadata.color_transfer.as_deref(),
-            pix_fmt: metadata.pix_fmt.as_deref(),
-            target_resolution: self.resolution.clone(),
-            include_audio: false, // Force no audio
-            use_hw_accel: self.use_hw_accel,
-            audio_stream_index: metadata.audio_stream_index,
-        };
-
-        let standard_args = command_builder::build_extract_command(&config);
-        let mut args: Vec<OsString> = vec![
-            "-fflags".into(),
-            "+genpts+igndts".into(),
-            "-max_error_rate".into(),
-            "1.0".into(),
-        ];
-        args.extend(standard_args);
-
-        let output = Command::new("ffmpeg").args(&args).output().map_err(|e| {
-            FFmpegError::ExecutionFailed(format!(
-                "Failed to execute ffmpeg without audio for '{}': {}",
-                video_path.display(),
-                e
-            ))
-        })?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(FFmpegError::ExecutionFailed(format!(
-                "FFmpeg clip extraction failed even without audio for '{}' at {:.2}s-{:.2}s: {}",
-                video_path.display(),
-                time_range.start_seconds,
-                time_range.start_seconds + time_range.duration_seconds,
-                stderr
-            )));
+        match duration_matches(output_path, time_range.duration_seconds)? {
+            true => Ok((Outcome::DurationOk, None)),
+            false => Ok((Outcome::DurationMiss, Some(stderr))),
         }
-
-        validate_output(output_path)?;
-        Ok(())
     }
 }
 
-/// Classify an FFmpeg stderr string into a typed error.
-/// Returns None if none of the known patterns match (caller should use a generic error).
-fn classify_stderr_error(stderr: &str, video_path: &Path, time_range: &TimeRange) -> Option<FFmpegError> {
-    // Use contains() directly — FFmpeg messages have consistent casing, no need to lowercase the whole string.
+fn is_corrupt(stderr: &str) -> bool {
+    stderr.contains("corrupt")
+        || stderr.contains("Invalid NAL unit")
+        || stderr.contains("concealing")
+        || stderr.contains("error while decoding")
+        || stderr.contains("missing picture in access unit")
+        || stderr.contains("Error submitting packet to decoder")
+        || stderr.contains("Error splitting the input into NAL units")
+        || stderr.contains("Invalid data found when processing input")
+}
+
+fn is_audio_failure(stderr: &str) -> bool {
+    stderr.contains("Error submitting packet to decoder")
+        || stderr.contains("aac")
+        || stderr.contains("Could not open encoder before EOF")
+}
+fn outcome_from_failure(attempt: Attempt, stderr: &str) -> Option<Outcome> {
+    if attempt.seek == SeekMode::Recovery && attempt.include_audio && is_audio_failure(stderr) {
+        return Some(Outcome::AudioFail);
+    }
+    if is_corrupt(stderr) {
+        return Some(Outcome::Corrupt);
+    }
+    if attempt.include_audio && is_audio_failure(stderr) {
+        return Some(Outcome::AudioFail);
+    }
+    None
+}
+
+fn classify_stderr_error(stderr: &str) -> Option<FFmpegError> {
     if stderr.contains("Unknown encoder")
-        || stderr.contains("Encoder") && stderr.contains("not found")
+        || (stderr.contains("Encoder") && stderr.contains("not found"))
         || stderr.contains("Codec not found")
         || stderr.contains("codec not found")
         || stderr.contains("encoder not found")
@@ -414,8 +287,7 @@ fn classify_stderr_error(stderr: &str, video_path: &Path, time_range: &TimeRange
     {
         return Some(FFmpegError::CodecNotFound(stderr.trim().to_string()));
     }
-    if stderr.contains("Invalid data found when processing input")
-        || stderr.contains("Unsupported codec")
+    if stderr.contains("Unsupported codec")
         || stderr.contains("unsupported codec")
         || stderr.contains("Invalid argument")
         || stderr.contains("invalid argument")
@@ -430,87 +302,59 @@ fn classify_stderr_error(stderr: &str, video_path: &Path, time_range: &TimeRange
     {
         return Some(FFmpegError::HWAccelNotAvailable(stderr.trim().to_string()));
     }
-    let _ = (video_path, time_range); // suppress unused warnings when caller uses generic fallback
     None
 }
 
-
-fn apply_fade_effect(
-    input_path: &Path,
-    output_path: &Path,
-    duration: f64,
-) -> Result<(), FFmpegError> {
+fn apply_fade_effect(input_path: &Path, output_path: &Path, duration: f64) -> Result<(), FFmpegError> {
     let fade_out_start = duration - fade::FADE_OUT_DURATION;
-
     if fade_out_start <= fade::FADE_IN_DURATION {
-        std::fs::rename(input_path, output_path)
-            .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to rename file: {}", e)))?;
+        std::fs::rename(input_path, output_path).map_err(|e| {
+            FFmpegError::failed(format!("Failed to rename file: {}", e), None)
+        })?;
         return Ok(());
     }
 
     let args = command_builder::build_fade_command(input_path, output_path, duration);
-
-    let output = Command::new("ffmpeg")
-        .args(&args)
-        .output()
-        .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to apply fade effect: {}", e)))?;
-
+    let output = Command::new("ffmpeg").args(&args).output().map_err(|e| {
+        FFmpegError::failed(format!("Failed to apply fade effect: {}", e), None)
+    })?;
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-
-        // If fade fails due to corrupted input, just use the file without fade
-        if stderr.contains("unspecified pixel format")
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        if (stderr.contains("unspecified pixel format")
             || stderr.contains("Cannot determine format")
-            || stderr.contains("Could not find codec parameters")
+            || stderr.contains("Could not find codec parameters"))
+            && std::fs::rename(input_path, output_path).is_ok()
         {
-            // Try to rename the temp file to output (skip fade)
-            if std::fs::rename(input_path, output_path).is_ok() {
-                return Ok(());
-            }
+            return Ok(());
         }
-
-        return Err(FFmpegError::ExecutionFailed(format!(
-            "Failed to apply fade effect: {}",
-            stderr
-        )));
+        return Err(FFmpegError::failed(
+            "Failed to apply fade effect".to_string(),
+            Some(stderr),
+        ));
     }
-
     let _ = std::fs::remove_file(input_path);
     Ok(())
 }
 
-/// Validate that the output file exists and has content
 fn validate_output(output_path: &Path) -> Result<(), FFmpegError> {
     if !output_path.exists() {
-        return Err(FFmpegError::ExecutionFailed(
-            "Output file was not created".to_string(),
-        ));
+        return Err(FFmpegError::failed("Output file was not created".to_string(), None));
     }
-
     let metadata = std::fs::metadata(output_path)
-        .map_err(|e| FFmpegError::ExecutionFailed(format!("Cannot read output file: {}", e)))?;
-
+        .map_err(|e| FFmpegError::failed(format!("Cannot read output file: {}", e), None))?;
     if metadata.len() == 0 {
-        return Err(FFmpegError::ExecutionFailed(
-            "Output file is empty (0 bytes)".to_string(),
+        return Err(FFmpegError::failed("Output file is empty (0 bytes)".to_string(), None));
+    }
+    if metadata.len() < 1024 {
+        return Err(FFmpegError::failed(
+            format!("Output file is too small ({} bytes), likely corrupted", metadata.len()),
+            None,
         ));
     }
-
-    // Basic validation: file should be at least 1KB for a valid video
-    if metadata.len() < 1024 {
-        return Err(FFmpegError::ExecutionFailed(format!(
-            "Output file is too small ({} bytes), likely corrupted",
-            metadata.len()
-        )));
-    }
-
     Ok(())
 }
 
-/// Validate that the extracted clip has the expected duration
-/// Allows for a small tolerance (0.5 seconds) to account for keyframe alignment
-fn validate_clip_duration(output_path: &Path, expected_duration: f64) -> Result<(), FFmpegError> {
-    // Use ffprobe to get the actual duration of the extracted clip
+fn duration_matches(output_path: &Path, expected_duration: f64) -> Result<bool, FFmpegError> {
     let output = Command::new("ffprobe")
         .args([
             "-v",
@@ -522,57 +366,135 @@ fn validate_clip_duration(output_path: &Path, expected_duration: f64) -> Result<
         ])
         .arg(output_path)
         .output()
-        .map_err(|e| FFmpegError::ExecutionFailed(format!("Failed to run ffprobe: {}", e)))?;
-
+        .map_err(|e| FFmpegError::failed(format!("Failed to run ffprobe: {}", e), None))?;
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(FFmpegError::ExecutionFailed(format!(
-            "ffprobe failed to get clip duration: {}",
-            stderr
-        )));
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(FFmpegError::failed(
+            "ffprobe failed to get clip duration".to_string(),
+            Some(stderr),
+        ));
     }
-
     let duration_str = String::from_utf8_lossy(&output.stdout);
     let actual_duration: f64 = duration_str.trim().parse().map_err(|e| {
-        FFmpegError::ExecutionFailed(format!(
-            "Failed to parse clip duration '{}': {}",
-            duration_str.trim(),
-            e
-        ))
+        FFmpegError::failed(
+            format!("Failed to parse clip duration '{}': {}", duration_str.trim(), e),
+            None,
+        )
     })?;
-
-    // Allow 0.5 second tolerance for keyframe alignment
-    const DURATION_TOLERANCE: f64 = 0.5;
-    let duration_diff = (actual_duration - expected_duration).abs();
-
-    if duration_diff > DURATION_TOLERANCE {
-        return Err(FFmpegError::ExecutionFailed(format!(
-            "Extracted clip duration ({:.2}s) differs significantly from expected ({:.2}s). \
-             This may indicate seeking issues or keyframe problems in the source video.",
-            actual_duration, expected_duration
-        )));
-    }
-
-    Ok(())
+    Ok((actual_duration - expected_duration).abs() <= 0.5)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_ffmpeg_availability() {
-        let result = FFmpegExecutor::check_availability();
-        match result {
-            Ok(_) => println!("FFmpeg is available"),
-            Err(FFmpegError::NotFound) => println!("FFmpeg not found"),
-            Err(e) => panic!("Unexpected error: {:?}", e),
+    fn walk(want_audio: bool, outcomes: &[Outcome]) -> Vec<Decision> {
+        let mut history = Vec::new();
+        let mut steps = Vec::new();
+        loop {
+            let decision = decide(want_audio, &history);
+            steps.push(decision);
+            match decision {
+                Decision::Run(attempt) => {
+                    history.push((attempt, outcomes[history.len()]));
+                }
+                Decision::Fade | Decision::Fail => break,
+            }
         }
+        steps
     }
 
     #[test]
-    fn test_executor_creation() {
-        let executor = FFmpegExecutor::new(Resolution::Hd1080, true, false);
-        assert!(!executor.use_hw_accel);
+    fn duration_ok_fades_after_hybrid() {
+        let steps = walk(true, &[Outcome::DurationOk]);
+        assert_eq!(
+            steps,
+            vec![
+                Decision::Run(Attempt {
+                    seek: SeekMode::Hybrid,
+                    include_audio: true,
+                }),
+                Decision::Fade,
+            ]
+        );
+    }
+
+    #[test]
+    fn duration_miss_retries_conservative_once() {
+        let steps = walk(true, &[Outcome::DurationMiss, Outcome::DurationOk]);
+        assert_eq!(steps[1], Decision::Run(Attempt {
+            seek: SeekMode::Conservative,
+            include_audio: true,
+        }));
+        assert_eq!(steps[2], Decision::Fade);
+    }
+
+    #[test]
+    fn second_duration_miss_fails() {
+        let steps = walk(true, &[Outcome::DurationMiss, Outcome::DurationMiss]);
+        assert_eq!(*steps.last().unwrap(), Decision::Fail);
+    }
+
+    #[test]
+    fn corrupt_then_ok_uses_recovery_and_fades() {
+        let steps = walk(true, &[Outcome::Corrupt, Outcome::DurationOk]);
+        assert_eq!(
+            steps[1],
+            Decision::Run(Attempt {
+                seek: SeekMode::Recovery,
+                include_audio: true,
+            })
+        );
+        assert_eq!(steps[2], Decision::Fade);
+    }
+
+    #[test]
+    fn audio_failure_drops_audio_then_fades() {
+        let steps = walk(true, &[Outcome::AudioFail, Outcome::DurationOk]);
+        assert_eq!(
+            steps[1],
+            Decision::Run(Attempt {
+                seek: SeekMode::Hybrid,
+                include_audio: false,
+            })
+        );
+        assert_eq!(steps[2], Decision::Fade);
+    }
+
+    #[test]
+    fn recovery_audio_failure_drops_audio_and_still_fades() {
+        let steps = walk(true, &[Outcome::Corrupt, Outcome::AudioFail, Outcome::DurationOk]);
+        assert_eq!(
+            steps[2],
+            Decision::Run(Attempt {
+                seek: SeekMode::Recovery,
+                include_audio: false,
+            })
+        );
+        assert_eq!(steps[3], Decision::Fade);
+    }
+    #[test]
+    fn recovery_packet_error_is_an_audio_drop() {
+        let stderr = "Error submitting packet to decoder";
+        assert_eq!(
+            outcome_from_failure(
+                Attempt {
+                    seek: SeekMode::Hybrid,
+                    include_audio: true,
+                },
+                stderr,
+            ),
+            Some(Outcome::Corrupt)
+        );
+        assert_eq!(
+            outcome_from_failure(
+                Attempt {
+                    seek: SeekMode::Recovery,
+                    include_audio: true,
+                },
+                stderr,
+            ),
+            Some(Outcome::AudioFail)
+        );
     }
 }

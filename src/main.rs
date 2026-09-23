@@ -156,29 +156,35 @@ fn main() {
     let ffmpeg_executor =
         FFmpegExecutor::new(args.resolution.clone(), args.include_audio, args.hw_accel);
 
-    // Create appropriate ClipSelector based on strategy flag
-    let selector: Box<dyn ClipSelector> = match args.strategy {
-        SelectionStrategy::Random => Box::new(RandomSelector),
-        SelectionStrategy::IntenseAudio => {
-            Box::new(IntenseAudioSelector::new(ffmpeg_executor.clone()))
-        }
-        SelectionStrategy::Action => Box::new(ActionSelector::new(ffmpeg_executor.clone())),
-    };
-
-    // Create ClipConfig from CLI arguments
     let clip_config = selector::ClipConfig {
         min_duration: args.min_duration,
         max_duration: args.max_duration,
     };
+    let selector: Box<dyn ClipSelector> = match args.strategy {
+        SelectionStrategy::Random => Box::new(RandomSelector::new(
+            args.intro_exclusion_percent,
+            args.outro_exclusion_percent,
+            args.clip_count,
+            clip_config.clone(),
+        )),
+        SelectionStrategy::IntenseAudio => Box::new(IntenseAudioSelector::new(
+            args.intro_exclusion_percent,
+            args.outro_exclusion_percent,
+            args.clip_count,
+            clip_config.clone(),
+        )),
+        SelectionStrategy::Action => Box::new(ActionSelector::new(
+            args.intro_exclusion_percent,
+            args.outro_exclusion_percent,
+            args.clip_count,
+            clip_config,
+        )),
+    };
 
-    // Create VideoProcessor with selector and executor
     let processor = Arc::new(VideoProcessor::new(
         selector,
         ffmpeg_executor,
-        args.intro_exclusion_percent,
-        args.outro_exclusion_percent,
         args.clip_count,
-        clip_config,
         args.force,
     ));
 
